@@ -1,0 +1,59 @@
+package com.resonance.android
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+
+data class Song(val id: String, val title: String, val artist: String, val album: String = "", val duration: Int = 0, val coverArt: String = "", val addedByEmail: String = "", val isManual: Boolean = true)
+data class NowPlaying(val song: Song? = null, val isPlaying: Boolean = false)
+
+class Api(private val prefs: android.content.SharedPreferences) {
+    private val http = OkHttpClient()
+    // Always fetch directly from prefs so we get updates made by other processes
+    val base: String get() = prefs.getString("base", "") ?: ""
+    val token: String get() = prefs.getString("token", "") ?: ""
+    
+    fun setBase(value: String) {
+        prefs.edit().putString("base", value.trimEnd('/')).commit()
+        android.util.Log.d("ResonanceApi", "Base URL saved: $value")
+    }
+    
+    fun setToken(value: String) {
+        prefs.edit().putString("token", value).commit()
+        android.util.Log.d("ResonanceApi", "Token saved, length: ${value.length}")
+    }
+    
+    // Using a more standard request building
+    private fun buildRequest(path: String, method: String = "GET", body: JSONObject? = null): Request {
+        val t = prefs.getString("token", "") ?: ""
+        val b = prefs.getString("base", "") ?: ""
+        android.util.Log.d("ResonanceApi", "buildRequest path: $path, token length: ${t.length}")
+        val url = if (b.isEmpty()) "" else "$b/api/$path"
+        val builder = Request.Builder().url(url).header("Authorization", "Bearer $t")
+        if (method != "GET") {
+            val mediaType = "application/json".toMediaType()
+            val requestBody = (body?.toString() ?: "").toRequestBody(mediaType)
+            builder.method(method, requestBody)
+        }
+        return builder.build()
+    }
+
+    suspend fun json(path: String, method: String = "GET", body: JSONObject? = null): String = withContext(Dispatchers.IO) {
+        http.newCall(buildRequest(path, method, body)).execute().use { response ->
+            val value = response.body?.string() ?: ""
+            if (!response.isSuccessful) throw IllegalStateException(runCatching { JSONObject(value).optString("error") }.getOrDefault("Request failed (${response.code})"))
+            value
+        }
+    }
+    fun websocket(onChange: () -> Unit): WebSocket {
+        val t = prefs.getString("token", "") ?: ""
+        val b = prefs.getString("base", "") ?: ""
+        return http.newWebSocket(
+            Request.Builder().url(b.replaceFirst(Regex("^http"), "ws") + "/ws").header("Sec-WebSocket-Protocol", t).build(),
+            object : WebSocketListener() { override fun onMessage(webSocket: WebSocket, text: String) = onChange() }
+        )
+    }
+}

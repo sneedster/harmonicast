@@ -143,30 +143,35 @@ export function listAllowedEmails(): { email: string; created_at: string }[] {
 // silently sign the victim's browser into the attacker's account.
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
-const pendingOAuthStates = new Map<string, number>();
+interface PendingOAuthState {
+  expiresAt: number;
+  mobileRedirect: string | null;
+}
+
+const pendingOAuthStates = new Map<string, PendingOAuthState>();
 
 function pruneOAuthStates(): void {
   const now = Date.now();
-  for (const [value, expiresAt] of pendingOAuthStates) {
-    if (expiresAt <= now) pendingOAuthStates.delete(value);
+  for (const [value, pending] of pendingOAuthStates) {
+    if (pending.expiresAt <= now) pendingOAuthStates.delete(value);
   }
 }
 
-export function createOAuthState(): string {
+export function createOAuthState(mobileRedirect: string | null = null): string {
   pruneOAuthStates();
   const state = randomBytes(32).toString('hex');
-  pendingOAuthStates.set(state, Date.now() + OAUTH_STATE_TTL_MS);
+  pendingOAuthStates.set(state, { expiresAt: Date.now() + OAUTH_STATE_TTL_MS, mobileRedirect });
   return state;
 }
 
-/** Verifies and consumes a state value. Returns false if unknown or expired. */
-export function consumeOAuthState(state: unknown): boolean {
-  if (typeof state !== 'string' || !state) return false;
+/** Verifies and consumes a state value. Returns the pending app redirect if any. */
+export function consumeOAuthState(state: unknown): PendingOAuthState | null {
+  if (typeof state !== 'string' || !state) return null;
   pruneOAuthStates();
-  const expiresAt = pendingOAuthStates.get(state);
-  if (expiresAt === undefined) return false;
+  const pending = pendingOAuthStates.get(state);
+  if (!pending) return null;
   pendingOAuthStates.delete(state);
-  return expiresAt > Date.now();
+  return pending.expiresAt > Date.now() ? pending : null;
 }
 
 // ── Google OAuth helpers ──────────────────────────────────────────────

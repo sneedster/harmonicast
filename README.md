@@ -85,6 +85,16 @@ Resonance uses Google OAuth for sign-in with an invite-only access model.
    ```
 5. Open the Vite URL (usually `http://localhost:5173`). Vite proxies `/api` and `/ws` to the server on port 3001.
 
+### Android app
+
+The native Android client lives in [`android/`](android/). It supports Google sign-in, real-time queue/search/voting, and host playback using the same API as the web client.
+
+1. Ensure the server has `PUBLIC_URL`, Google OAuth credentials, and a Subsonic connection configured as described above.
+2. Open the `android` directory in Android Studio (JDK 17 and Android SDK 35), then run the `app` configuration on a device.
+3. Enter the public/LAN URL of your Resonance server and sign in. The app returns from Google using the `resonance://auth` deep link.
+
+For LAN HTTP servers, cleartext traffic is deliberately enabled for this app. Use HTTPS for any server reachable outside your trusted network.
+
 ## How Host / Guest Works
 
 - **Admin-controlled access**: set `ADMIN_EMAIL` to designate the host. Only the admin can create the first account. After signing in, the host invites others by adding their Google email in the Settings page.
@@ -133,8 +143,10 @@ Check which authentication methods are configured.
 #### `GET /api/auth/google`
 Redirects to Google's OAuth consent screen. After consent, Google redirects back to `/api/auth/google/callback`.
 
+The Android app uses `?mobile_redirect=resonance://auth`; this is the only accepted mobile return URL and the resulting token is placed in the URL fragment.
+
 #### `GET /api/auth/google/callback`
-OAuth callback endpoint. Exchanges the code for user info, checks the invite list, creates a session, and redirects to `/?auth_token=<token>&auth_email=<email>`.
+OAuth callback endpoint. Exchanges the code for user info, checks the invite list, creates a session, and redirects with `#auth_token=<token>&auth_email=<email>`.
 
 #### `POST /api/auth/signout`
 Sign out (invalidates the current token). Requires auth.

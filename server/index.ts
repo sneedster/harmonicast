@@ -73,7 +73,12 @@ app.get('/api/auth/google', (req, res) => {
   if (!isGoogleOAuthConfigured()) {
     return res.status(400).json({ error: 'Google OAuth is not configured. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and PUBLIC_URL environment variables.' });
   }
-  res.redirect(buildGoogleAuthUrl(createOAuthState()));
+  // Native clients may request the fixed app deep link. Keeping this allowlist
+  // narrow avoids turning the OAuth endpoint into an open redirector.
+  const mobileRedirect = req.query.mobile_redirect === 'resonance://auth'
+    ? 'resonance://auth'
+    : null;
+  res.redirect(buildGoogleAuthUrl(createOAuthState(mobileRedirect)));
 });
 
 app.get('/api/auth/google/callback', async (req, res) => {
@@ -82,7 +87,8 @@ app.get('/api/auth/google/callback', async (req, res) => {
     return res.redirect(`/?auth_error=${encodeURIComponent(String(error))}`);
   }
   // Reject callbacks that did not originate from a sign-in we started.
-  if (!consumeOAuthState(state)) {
+  const pendingState = consumeOAuthState(state);
+  if (!pendingState) {
     return res.redirect('/?auth_error=invalid_state');
   }
   if (!code || typeof code !== 'string') {
@@ -134,10 +140,14 @@ app.get('/api/auth/google/callback', async (req, res) => {
 
     const deviceName = parseDeviceName(req.headers['user-agent']);
     const token = createSession(user.id, deviceName);
-    // Return the token in the URL fragment, not the query string: fragments are
-    // never transmitted to a server, so the token stays out of access logs,
-    // proxy logs and Referer headers.
-    res.redirect(`/#auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
+    // For mobile redirects, use query parameters because Chrome Custom Tabs strip fragments
+    // from deep links. For web, continue using fragments.
+    const target = pendingState.mobileRedirect || '/';
+    if (target === 'resonance://auth') {
+      res.redirect(`${target}?auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
+    } else {
+      res.redirect(`${target}#auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
+    }
   } catch (err) {
     console.error('OAuth callback error:', err);
     res.redirect('/?auth_error=oauth_failed');
