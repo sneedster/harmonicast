@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background_dark">#1a1a2e</color>
+    <color name="accent_blue">#3d8bff</color>
+    <color name="jukebox_on">#4CAF50</color>
+    <color name="jukebox_off">#607D8B</color>
+</resources>

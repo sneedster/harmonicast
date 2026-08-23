@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#1a1a2e"
+    android:padding="24dp">
+
+    <ProgressBar
+        android:id="@+id/loading"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginTop="120dp"
+        android:visibility="visible" />
+
+    <LinearLayout
+        android:id="@+id/not_configured"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Not Configured"
+            android:textColor="#e0e0e0"
+            android:textSize="20sp"
+            android:gravity="center" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/player_controls"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Now Playing"
+            android:textColor="#8a8a9a"
+            android:textSize="13sp"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/now_playing_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Nothing playing"
+            android:textColor="#ffffff"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:maxLines="2"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/now_playing_artist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#b0b0c0"
+            android:textSize="16sp"
+            android:layout_marginBottom="24dp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <ProgressBar
+            android:id="@+id/progress_bar"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:progressTint="#3d8bff"
+            android:layout_marginBottom="32dp"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="32dp">
+
+            <ImageButton
+                android:id="@+id/play_pause"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:src="@android:drawable/ic_media_play"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:tint="#ffffff"
+                android:layout_marginEnd="32dp" />
+
+            <ImageButton
+                android:id="@+id/next_button"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:src="@android:drawable/ic_media_next"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:tint="#ffffff" />
+
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#2a2a3e"
+            android:layout_marginBottom="24dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Jukebox Mode"
+            android:textColor="#8a8a9a"
+            android:textSize="13sp"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/jukebox_toggle"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="Jukebox: OFF"
+            android:textSize="16sp"
+            android:textColor="#ffffff"
+            android:background="#607D8B"
+            android:textAllCaps="false" />
+
+    </LinearLayout>
+
+</LinearLayout>

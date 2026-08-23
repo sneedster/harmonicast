@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Resonance" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:statusBarColor">#1a1a2e</item>
+        <item name="android:windowBackground">#1a1a2e</item>
+    </style>
+</resources>
