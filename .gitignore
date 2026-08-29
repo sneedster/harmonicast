@@ -33,3 +33,8 @@ android/captures/
 android/gradle/
 android/gradlew
 android/gradlew.bat
+!android/gradle/
+!android/gradle/wrapper/
+!android/gradle/wrapper/**
+!android/gradlew
+!android/gradlew.bat

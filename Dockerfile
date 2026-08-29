@@ -11,19 +11,26 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Install server dependencies
-COPY server/package.json server/package-lock.json* ./server/
-RUN cd server && npm install
+COPY server/package.json server/package-lock.json ./server/
+RUN cd server && npm ci --omit=dev
 
 # Copy built frontend
 COPY --from=build /app/dist ./dist
 
 # Copy server source
 COPY server/ ./server/
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/resonance-entrypoint
+
+RUN apk add --no-cache su-exec && mkdir -p /app/data && chown -R node:node /app
 
 ENV NODE_ENV=production
 ENV PORT=3001
+ENV DATA_DIR=/app/data
 
 EXPOSE 3001
 
 WORKDIR /app/server
-CMD ["npx", "tsx", "index.ts"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3001/api/auth/config').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+ENTRYPOINT ["/usr/local/bin/resonance-entrypoint"]
+CMD ["node", "--import", "tsx", "index.ts"]

@@ -35,14 +35,17 @@ Designed for road trips: run the server on your Unraid box, open the web app on 
 ### Using Docker (recommended)
 
 1. Clone this repo.
-2. Edit `docker-compose.yml` and fill in the environment variables (see [Configuration](#configuration)).
-3. Build and run:
+2. Copy `.env.example` to `.env` and fill in the environment variables (see [Configuration](#configuration)).
+3. Pull and run:
    ```bash
+   docker compose pull
    docker compose up -d
    ```
-4. Open `http://localhost:8080` in your browser.
+4. Open `http://localhost:3001` in your browser (or the host port you map in Compose).
 5. Sign in with Google using the email you set as `ADMIN_EMAIL` — this user becomes the host.
 6. Configure your music server connection (or pre-configure it via env vars), then start playing.
+
+Pin `RESONANCE_IMAGE_TAG` in `.env` to an immutable release tag after testing.
 
 ### Google OAuth Setup
 
@@ -57,9 +60,8 @@ Resonance uses Google OAuth for sign-in with an invite-only access model.
 
 ### Using Docker on Unraid
 
-1. Build the image: `docker build -t resonance .`
-2. In Unraid, create a container with:
-   - Image: `resonance`
+1. Import [`unraid/resonance.xml`](unraid/resonance.xml) as a custom template, or create a container with:
+   - Image: `mjstrong/resonance:latest`
    - Port: `3001` mapped to your preferred host port
    - Volume: `/app/data` mapped to your appdata folder (for persistent SQLite storage)
 3. Set the environment variables (see [Configuration](#configuration)).
@@ -110,7 +112,7 @@ For LAN HTTP servers, cleartext traffic is deliberately enabled for this app. Us
 |----------|---------|-------------|
 | `PORT` | `3001` | Port the server listens on |
 | `DATA_DIR` | `../data` | Directory for the SQLite database file |
-| `PUBLIC_URL` | _(none)_ | The public URL where users access Resonance (no trailing slash). Must match the redirect URI in Google Cloud Console. Example: `http://localhost:8080` |
+| `PUBLIC_URL` | _(none)_ | The public URL where users access Resonance (no trailing slash). Must match the redirect URI in Google Cloud Console. Example: `http://localhost:3001` |
 | `GOOGLE_CLIENT_ID` | _(none)_ | Google OAuth 2.0 Client ID (from Google Cloud Console) |
 | `GOOGLE_CLIENT_SECRET` | _(none)_ | Google OAuth 2.0 Client Secret |
 | `ADMIN_EMAIL` | _(none)_ | The email address of the admin/owner. This user is always the host and is the only one who can create the first account. After the admin has signed in, they can invite more people from the Settings page. |

@@ -428,12 +428,14 @@ class ResonanceMediaService : MediaLibraryService() {
         positionSaveJob = scope.launch {
             while (true) {
                 kotlinx.coroutines.delay(2000)
-                val pos = player.currentPosition
-                if (pos >= 0) {
+                // ExoPlayer reports milliseconds; the Resonance API stores
+                // seconds so browser and Android hosts can resume consistently.
+                val positionSeconds = player.currentPosition / 1000.0
+                if (positionSeconds >= 0) {
                     try {
                         api.json(
                             "now-playing/position", "PUT",
-                            JSONObject().put("position", pos)
+                            JSONObject().put("position", positionSeconds)
                         )
                     } catch (e: Exception) {
                         Log.e("ResonanceMedia", "Failed to save position", e)
