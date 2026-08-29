@@ -56,7 +56,7 @@ export function plexSignInUrl(): string {
 }
 
 export async function signOut(): Promise<void> {
-  try { await request('/api/auth/signout', { method: 'POST' }); } catch {}
+  try { await request('/api/auth/signout', { method: 'POST' }); } catch { /* local sign-out still succeeds */ }
   clearToken();
 }
 
@@ -214,7 +214,7 @@ export async function setJukeboxModeApi(enabled: boolean): Promise<void> {
 
 // ── WebSocket ─────────────────────────────────────────────────────────
 
-type WsMessageHandler = (type: string, data?: any) => void;
+type WsMessageHandler = (type: string, data?: unknown) => void;
 
 export function connectWebSocket(onMessage: WsMessageHandler): WebSocket | null {
   const token = getToken();
@@ -228,9 +228,11 @@ export function connectWebSocket(onMessage: WsMessageHandler): WebSocket | null 
 
   ws.onmessage = (event) => {
     try {
-      const msg = JSON.parse(event.data);
-      onMessage(msg.type, msg.data);
-    } catch {}
+      const msg: unknown = JSON.parse(event.data);
+      if (typeof msg !== 'object' || msg === null) return;
+      const { type, data } = msg as Record<string, unknown>;
+      if (typeof type === 'string') onMessage(type, data);
+    } catch { /* ignore malformed WebSocket messages */ }
   };
 
   return ws;

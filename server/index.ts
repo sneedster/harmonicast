@@ -641,7 +641,7 @@ app.delete('/api/queue/auto', requireAuth, (req, res) => {
 });
 
 app.post('/api/queue/similar', requireAuth, requireActivePlayer, async (req, res) => {
-  const np = getNowPlaying() as any;
+  const np = getNowPlaying();
   const source = getActivePlexSource();
   if (!source) return res.status(409).json({ error: 'Similar-track playback requires Plex' });
   if (!np?.song_id) return res.status(400).json({ error: 'No song is currently playing' });
@@ -702,7 +702,7 @@ app.post('/api/vote', requireAuth, async (req, res) => {
     if (vote !== 'up' && vote !== 'down') throw new Error('Invalid vote');
     const plexSource = getActivePlexSource();
     if (plexSource) {
-      const np = getNowPlaying() as any;
+      const np = getNowPlaying();
       if (!np?.song_id) throw new Error('No song is currently playing');
       const track = await getPlexTrack(plexSource, np.song_id);
       const rating = await ratePlexTrack(plexSource, np.song_id, (track.userRating ?? 5) + (vote === 'up' ? 1 : -1));
@@ -713,7 +713,7 @@ app.post('/api/vote', requireAuth, async (req, res) => {
     // Legacy Subsonic fallback only.
     const stats = voteOnCurrent(req.user.id, vote);
     if (vote === 'down') {
-      const np = getNowPlaying() as any;
+      const np = getNowPlaying();
       if (np?.is_auto_queue) broadcastForceSkip();
     }
     res.json({ ok: true, stats });

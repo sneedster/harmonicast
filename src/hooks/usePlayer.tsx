@@ -125,7 +125,7 @@ export function PlayerProvider({
       .then((track) => { if (!cancelled) setPlexRating(track.rating); })
       .catch(() => { if (!cancelled) setPlexRating(null); });
     return () => { cancelled = true; };
-  }, [current?.id]);
+  }, [current]);
 
   const coverUrl = useCallback(
     (coverArt: string, size = 300) => buildCoverArtUrl(connRef.current, coverArt, size),
@@ -170,8 +170,6 @@ export function PlayerProvider({
   const advance = useCallback(
     async (reason: 'ended' | 'skip') => {
       const prev = currentRef.current;
-      const audio = audioRef.current;
-      const progress = audio && audio.duration ? audio.currentTime / audio.duration : 0;
       if (prev) {
         if (reason === 'ended') {
           void scrobble(connRef.current, prev.id, true);
@@ -261,7 +259,7 @@ export function PlayerProvider({
     // Re-broadcast now-playing so all clients see the new device is active.
     void updateNowPlaying(current, true, currentIsAutoRef.current);
     return () => audio.removeEventListener('canplay', playWhenReady);
-  }, [current?.id, isHost]);
+  }, [current, isHost, isPlaying, volume]);
 
   useEffect(() => {
     if (!isHost || !current) return;
@@ -274,7 +272,7 @@ export function PlayerProvider({
       window.clearInterval(interval);
       save();
     };
-  }, [current?.id, isHost]);
+  }, [current, isHost]);
 
   // ── Shared state: load queue + now-playing from server, subscribe via WS ──
 
@@ -373,7 +371,10 @@ export function PlayerProvider({
           jukeboxRef.current = mode;
         });
       } else if (type === 'playback_position') {
-        const pos = typeof data?.position === 'number' ? data.position : 0;
+        const position = typeof data === 'object' && data !== null
+          ? (data as { position?: unknown }).position
+          : undefined;
+        const pos = typeof position === 'number' ? position : 0;
         if (isHostRef.current) {
           // Host doesn't use server position for its own progress bar
         } else {
@@ -414,7 +415,7 @@ export function PlayerProvider({
       }
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [isHost, isPlaying, current?.id, duration]);
+  }, [isHost, isPlaying, current, duration]);
 
   // ── Host-only actions ─────────────────────────────────────────────────
 
@@ -422,8 +423,6 @@ export function PlayerProvider({
     (song: Song) => {
       if (!isHost) return;
       const prev = currentRef.current;
-      const audio = audioRef.current;
-      const progress = audio && audio.duration ? audio.currentTime / audio.duration : 0;
       if (prev && prev.id !== song.id) {
         pushHistory(prev);
       }
@@ -553,7 +552,7 @@ export function PlayerProvider({
         jukeboxRef.current = wasEnabled;
       }
     })();
-  }, [dequeueNext, isHost, startPlaying]);
+  }, [isHost, startPlaying]);
 
   const value = useMemo<PlayerContextValue>(
     () => ({
@@ -575,6 +574,7 @@ export function PlayerProvider({
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function usePlayer(): PlayerContextValue {
   const ctx = useContext(PlayerContext);
   if (!ctx) throw new Error('usePlayer must be used within a PlayerProvider');

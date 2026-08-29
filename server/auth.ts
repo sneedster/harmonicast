@@ -1,5 +1,20 @@
 import { randomBytes } from 'node:crypto';
+import type { NextFunction, Request, Response } from 'express';
 import { db } from './db.js';
+
+export interface AuthenticatedUser {
+  id: number;
+  email: string;
+  name: string | null;
+  plex_id: string | null;
+}
+
+declare module 'express-serve-static-core' {
+  interface Request {
+    token: string | null;
+    user: AuthenticatedUser | null;
+  }
+}
 
 // ── Session management ───────────────────────────────────────────────
 
@@ -69,7 +84,7 @@ export function purgeExpiredSessions(): void {
   db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
 }
 
-export function getUserByToken(token: string) {
+export function getUserByToken(token: string): AuthenticatedUser | null {
   if (!token) return null;
   // Expiry is enforced here, not just swept in the background, so an expired
   // token stops working the moment it lapses.
@@ -78,7 +93,7 @@ export function getUserByToken(token: string) {
     JOIN users u ON s.user_id = u.id
     WHERE s.token = ? AND s.expires_at > datetime('now')
   `).get(token);
-  return row || null;
+  return (row as AuthenticatedUser | undefined) ?? null;
 }
 
 // ── User management ───────────────────────────────────────────────────
@@ -157,7 +172,7 @@ export function isPlexOAuthConfigured(): boolean {
 
 // ── Express middleware ────────────────────────────────────────────────
 
-export function authMiddleware(req: any, _res: any, next: any) {
+export function authMiddleware(req: Request, _res: Response, next: NextFunction) {
   // The Authorization header is the primary auth path. A token in the query
   // string would normally be written to server and proxy access logs on every
   // request, turning any log entry into a lasting account takeover.
@@ -177,7 +192,7 @@ export function authMiddleware(req: any, _res: any, next: any) {
   next();
 }
 
-export function requireAuth(req: any, res: any, next: any) {
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.user) {
     return res.status(401).json({ error: 'Authentication required' });
   }

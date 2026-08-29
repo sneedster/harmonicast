@@ -1,4 +1,4 @@
-import type { Connection, Song } from '@/types';
+import type { Song } from '@/types';
 import { request } from '@/lib/api';
 
 export interface QueueRow {

@@ -1,6 +1,22 @@
 import { db } from './db.js';
 import { randomUUID } from 'node:crypto';
 
+interface NowPlayingRow {
+  song_id: string | null;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  cover_art: string;
+  is_playing: number;
+  is_auto_queue: number;
+  playback_position: number;
+}
+
+interface VoteRow { vote: 'up' | 'down'; }
+interface HostRow { host_user_id: number | null; }
+interface ActiveSessionRow { active_player_session: string | null; }
+
 // ── Stats ────────────────────────────────────────────────────────────
 
 export function recordPlayEvent({ song_id, title, artist, album, duration, cover_art, event, progress }) {
@@ -178,7 +194,7 @@ export function clearAutoQueue() {
 // ── Now Playing ───────────────────────────────────────────────────────
 
 export function getNowPlaying() {
-  return db.prepare('SELECT * FROM now_playing WHERE id = 1').get();
+  return db.prepare('SELECT * FROM now_playing WHERE id = 1').get() as NowPlayingRow | undefined;
 }
 
 export function updatePlaybackPosition(position: number) {
@@ -214,7 +230,7 @@ export function voteOnCurrent(userId, vote) {
 
   const songId = np.song_id;
   const previous = db.prepare('SELECT vote FROM votes WHERE song_id = ? AND user_id = ?')
-    .get(songId, userId) as any;
+    .get(songId, userId) as VoteRow | undefined;
 
   if (previous?.vote === vote) {
     // Same vote again: no double counting.
@@ -315,12 +331,12 @@ export function isHost(userId) {
 }
 
 export function getHostUserId() {
-  const row = db.prepare('SELECT host_user_id FROM settings WHERE id = 1').get() as any;
+  const row = db.prepare('SELECT host_user_id FROM settings WHERE id = 1').get() as HostRow | undefined;
   return row?.host_user_id ?? null;
 }
 
 export function getActivePlayerSession() {
-  const row = db.prepare('SELECT active_player_session FROM settings WHERE id = 1').get() as any;
+  const row = db.prepare('SELECT active_player_session FROM settings WHERE id = 1').get() as ActiveSessionRow | undefined;
   return row?.active_player_session ?? null;
 }
 

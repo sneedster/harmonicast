@@ -10,7 +10,7 @@ import { SearchView } from '@/components/SearchView';
 import { QueueView } from '@/components/QueueView';
 import { NowPlayingView } from '@/components/NowPlayingView';
 import { SettingsView } from '@/components/SettingsView';
-import { claimPlayer, getConnection, getPlayerStatus, getMe, signOut, listSessions, type SessionDevice } from '@/lib/api';
+import { claimPlayer, getConnection, getPlayerStatus, getMe, signOut } from '@/lib/api';
 
 type Tab = 'nowplaying' | 'search' | 'queue' | 'settings';
 
@@ -210,7 +210,6 @@ export default function App() {
   const [isHostUser, setIsHostUser] = useState(false);
   const [isActivePlayer, setIsActivePlayer] = useState(false);
   const [showDeviceModal, setShowDeviceModal] = useState(false);
-  const [sessions, setSessions] = useState<SessionDevice[]>([]);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -254,7 +253,7 @@ export default function App() {
       if (info.isHost) {
         if (!info.hasActivePlayer) {
           // No device is playing yet — auto-claim this one
-          await claimPlayer().catch(() => {});
+          await claimPlayer().catch(() => { /* connection refresh will retry */ });
           if (!cancelled) setIsActivePlayer(true);
         } else if (info.isActivePlayer) {
           setIsActivePlayer(true);
@@ -269,19 +268,11 @@ export default function App() {
     return () => { cancelled = true; };
   }, [userEmail]);
 
-  const refreshSessions = useCallback(async () => {
-    if (!isHostUser) return;
-    try { setSessions(await listSessions()); } catch {}
-  }, [isHostUser]);
-
-  useEffect(() => { void refreshSessions(); }, [refreshSessions]);
-
   const handleTakeOver = useCallback(async () => {
     await claimPlayer();
     setIsActivePlayer(true);
     setShowDeviceModal(false);
-    void refreshSessions();
-  }, [refreshSessions]);
+  }, []);
 
   const handleWatchAsGuest = useCallback(() => {
     setIsActivePlayer(false);
@@ -297,8 +288,7 @@ export default function App() {
       await claimPlayer().catch(() => {});
       setIsActivePlayer(true);
     }
-    void refreshSessions();
-  }, [refreshSessions]);
+  }, []);
 
   async function handleSignOut() {
     await signOut();

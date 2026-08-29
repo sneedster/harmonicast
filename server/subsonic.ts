@@ -63,7 +63,7 @@ export async function search(conn, query) {
 }
 
 export async function scrobble(conn, id, submission) {
-  try { await subsonicCall(conn, 'scrobble', { id, submission }); } catch {}
+  try { await subsonicCall(conn, 'scrobble', { id, submission }); } catch { /* best-effort */ }
 }
 
 function toSong(raw) {

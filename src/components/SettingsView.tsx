@@ -2,12 +2,12 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { Settings, Clock, Users, Loader2, Check, MonitorSpeaker, Pencil, Server } from 'lucide-react';
 import { usePlayer } from '@/hooks/usePlayer';
 import {
-  updateSettings, claimPlayer, listSessions, setDeviceName,
+  updateSettings, claimPlayer, listSessions, setDeviceName as setSessionDeviceName,
   getPlexSource, getServerVersion, type PlexSourceInfo, type SessionDevice,
 } from '@/lib/api';
 
 export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
-  const { isHost, isActivePlayer, cooldownMinutes, maxRequestsPerUser } = usePlayer();
+  const { isActivePlayer, cooldownMinutes, maxRequestsPerUser } = usePlayer();
   const [cooldown, setCooldown] = useState(cooldownMinutes);
   const [maxReq, setMaxReq] = useState(maxRequestsPerUser);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -15,7 +15,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   const [sessions, setSessions] = useState<SessionDevice[]>([]);
   const [switching, setSwitching] = useState(false);
   const [editingName, setEditingName] = useState(false);
-  const [deviceName, setDeviceName] = useState('');
+  const [deviceName, setDeviceNameInput] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [plexSource, setPlexSource] = useState<PlexSourceInfo | null>(null);
   const [serverVersion, setServerVersion] = useState<string | null>(null);
@@ -53,7 +53,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
     if (!deviceName.trim()) return;
     setSavingName(true);
     try {
-      await setDeviceName(deviceName.trim());
+      await setSessionDeviceName(deviceName.trim());
       const updated = await listSessions();
       setSessions(updated);
       setEditingName(false);
@@ -147,7 +147,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
                 <input
                   type="text"
                   value={deviceName}
-                  onChange={(e) => setDeviceName(e.target.value)}
+                  onChange={(e) => setDeviceNameInput(e.target.value)}
                   maxLength={100}
                   placeholder="e.g. Living Room Laptop"
                   autoFocus
@@ -171,7 +171,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
               <button
                 onClick={() => {
                   const me = sessions.find(s => s.token === localStorage.getItem('resonance_token'));
-                  setDeviceName(me?.deviceName ?? '');
+                  setDeviceNameInput(me?.deviceName ?? '');
                   setEditingName(true);
                 }}
                 className="flex items-center gap-1.5 text-xs text-ink-400 transition hover:text-white"
