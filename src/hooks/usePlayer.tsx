@@ -8,21 +8,16 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Connection, Song, SongStats } from '@/types';
+import type { Connection, Song } from '@/types';
 import {
   coverArtUrl as buildCoverArtUrl,
   scrobble,
   streamUrl,
 } from '@/lib/subsonic';
-import {
-  fetchStatsFor,
-  recordPlayEvent,
-} from '@/lib/stats';
 import { connectWebSocket, savePlaybackPosition, setJukeboxModeApi } from '@/lib/api';
 import {
   addToQueue,
   clearAutoQueue,
-  clearOldVotes,
   dequeueNext,
   fetchCooldownMinutes,
   fetchJukeboxMode,
@@ -30,10 +25,8 @@ import {
   fetchNowPlaying,
   fetchQueue,
   fetchQueueSongs,
-  fetchVoteCounts,
   updateNowPlaying,
   voteOnCurrent,
-  type VoteCounts,
 } from '@/lib/jukeboxState';
 
 interface PlayerContextValue {
@@ -42,7 +35,6 @@ interface PlayerContextValue {
   isHostUser: boolean;
   isActivePlayer: boolean;
   current: Song | null;
-  currentStats: SongStats | null;
   queue: Song[];
   queueRows: { id: string; addedByEmail: string; isManual: boolean }[];
   history: Song[];
@@ -53,8 +45,6 @@ interface PlayerContextValue {
   jukeboxMode: boolean;
   loadingNext: boolean;
   streamError: string | null;
-  statsVersion: number;
-  voteCounts: VoteCounts;
   cooldownMinutes: number;
   maxRequestsPerUser: number;
   coverUrl: (coverArt: string, size?: number) => string | null;
@@ -90,7 +80,6 @@ export function PlayerProvider({
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [current, setCurrent] = useState<Song | null>(null);
-  const [currentStats, setCurrentStats] = useState<SongStats | null>(null);
   const [queue, setQueue] = useState<Song[]>([]);
   const [queueRows, setQueueRows] = useState<{ id: string; addedByEmail: string; isManual: boolean }[]>([]);
   const [history, setHistory] = useState<Song[]>([]);
@@ -101,8 +90,6 @@ export function PlayerProvider({
   const [jukeboxMode, setJukeboxMode] = useState(false);
   const loadingNext = false;
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [statsVersion, setStatsVersion] = useState(0);
-  const [voteCounts, setVoteCounts] = useState<VoteCounts>({ up: 0, down: 0 });
   const [cooldownMinutes, setCooldownMinutes] = useState(30);
   const [maxRequestsPerUser, setMaxRequestsPerUser] = useState(5);
 
@@ -124,27 +111,10 @@ export function PlayerProvider({
   useEffect(() => { jukeboxRef.current = jukeboxMode; }, [jukeboxMode]);
   useEffect(() => { isHostRef.current = isHost; }, [isHost]);
 
-  const bumpStats = useCallback(() => setStatsVersion((v) => v + 1), []);
-
   const coverUrl = useCallback(
     (coverArt: string, size = 300) => buildCoverArtUrl(connRef.current, coverArt, size),
     [],
   );
-
-  const loadCurrentStats = useCallback(async (song: Song) => {
-    const map = await fetchStatsFor([song.id]);
-    setCurrentStats(map.get(song.id) ?? null);
-  }, []);
-
-  const refreshVoteCounts = useCallback(async () => {
-    const song = currentRef.current;
-    if (!song) {
-      setVoteCounts({ up: 0, down: 0 });
-      return;
-    }
-    const counts = await fetchVoteCounts(song.id);
-    setVoteCounts(counts);
-  }, []);
 
   // ── Host: audio playback ──────────────────────────────────────────────
 
@@ -162,11 +132,9 @@ export function PlayerProvider({
     audio.volume = volume;
     audio.play().catch(() => {});
     setIsPlaying(true);
-    void loadCurrentStats(song);
     void scrobble(connRef.current, song.id, false);
     void updateNowPlaying(song, true, isAutoQueue);
-    void clearOldVotes(song.id);
-  }, [loadCurrentStats, volume]);
+  }, [volume]);
 
   const pushHistory = useCallback((song: Song) => {
     setHistory((h) => [song, ...h].slice(0, 100));
@@ -190,10 +158,7 @@ export function PlayerProvider({
       const progress = audio && audio.duration ? audio.currentTime / audio.duration : 0;
       if (prev) {
         if (reason === 'ended') {
-          void recordPlayEvent(prev, 'complete', 1).then(bumpStats);
           void scrobble(connRef.current, prev.id, true);
-        } else {
-          void recordPlayEvent(prev, 'skip', progress).then(bumpStats);
         }
         pushHistory(prev);
       }
@@ -205,12 +170,11 @@ export function PlayerProvider({
         if (audioEl) audioEl.pause();
         setCurrent(null);
         currentRef.current = null;
-        setCurrentStats(null);
         setIsPlaying(false);
         void updateNowPlaying(null, false);
       }
     },
-    [bumpStats, dequeueOrPick, pushHistory, startPlaying],
+    [dequeueOrPick, pushHistory, startPlaying],
   );
 
   endedHandlerRef.current = () => { void advance('ended'); };
@@ -327,7 +291,6 @@ export function PlayerProvider({
         pendingSeekRef.current = pos;
         setCurrentTime(pos);
         lastPosTimeRef.current = Date.now();
-        void loadCurrentStats(nowPlaying.song);
       }
     }
 
@@ -367,7 +330,6 @@ export function PlayerProvider({
               pendingSeekRef.current = pos;
               setCurrentTime(pos);
               lastPosTimeRef.current = Date.now();
-              void loadCurrentStats(np.song);
             } else {
               currentIsAutoRef.current = np.isAutoQueue;
             }
@@ -385,12 +347,9 @@ export function PlayerProvider({
           } else {
             setCurrent(null);
             currentRef.current = null;
-            setCurrentStats(null);
             setIsPlaying(false);
           }
         });
-      } else if (type === 'votes') {
-        void refreshVoteCounts();
       } else if (type === 'jukebox') {
         void fetchJukeboxMode().then((mode) => {
           if (cancelled) return;
@@ -450,12 +409,11 @@ export function PlayerProvider({
       const audio = audioRef.current;
       const progress = audio && audio.duration ? audio.currentTime / audio.duration : 0;
       if (prev && prev.id !== song.id) {
-        if (progress < 0.98) void recordPlayEvent(prev, 'skip', progress).then(bumpStats);
         pushHistory(prev);
       }
       startPlaying(song, false);
     },
-    [bumpStats, isHost, pushHistory, startPlaying],
+    [isHost, pushHistory, startPlaying],
   );
 
   const enqueue = useCallback(
@@ -524,23 +482,18 @@ export function PlayerProvider({
     async (event: 'thumbs_up' | 'thumbs_down') => {
       const song = currentRef.current;
       if (!song) return;
-      // The vote endpoint is the single place a thumbs rating change is applied;
-      // it enforces one vote per person per song and returns the new stats.
       try {
-        const updated = await voteOnCurrent(event === 'thumbs_up' ? 'up' : 'down');
-        if (updated) setCurrentStats(updated);
+        await voteOnCurrent(event === 'thumbs_up' ? 'up' : 'down');
       } catch {
         // No song playing, or the vote was rejected.
       }
-      bumpStats();
-      void refreshVoteCounts();
       // Host-side fallback: if the host downvotes an auto-queued song, skip it
       // immediately even if the server's force_skip broadcast hasn't arrived yet.
       if (isHost && event === 'thumbs_down' && currentIsAutoRef.current) {
         void advance('skip');
       }
     },
-    [advance, bumpStats, isHost, refreshVoteCounts],
+    [advance, isHost],
   );
 
   const thumbsUp = useCallback(() => { void vote('thumbs_up'); }, [vote]);
@@ -603,16 +556,16 @@ export function PlayerProvider({
 
   const value = useMemo<PlayerContextValue>(
     () => ({
-      connection, isHost, isHostUser, isActivePlayer, current, currentStats, queue, queueRows, history,
+      connection, isHost, isHostUser, isActivePlayer, current, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
-      streamError, statsVersion, voteCounts, cooldownMinutes, maxRequestsPerUser,
+      streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
       thumbsUp, thumbsDown, toggleJukebox, startRandomPlayback,
     }),
     [
-      connection, isHost, isHostUser, isActivePlayer, current, currentStats, queue, queueRows, history,
+      connection, isHost, isHostUser, isActivePlayer, current, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
-      streamError, statsVersion, voteCounts, cooldownMinutes, maxRequestsPerUser,
+      streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
       thumbsUp, thumbsDown, toggleJukebox, startRandomPlayback,
     ],

@@ -1,4 +1,4 @@
-import type { Connection, Song, SongStats } from '@/types';
+import type { Connection, Song } from '@/types';
 import { request } from '@/lib/api';
 
 export interface QueueRow {
@@ -97,14 +97,13 @@ export async function dequeueNext(): Promise<{ song: Song | null; isManual: bool
   return request<{ song: Song | null; isManual: boolean }>('/api/queue/dequeue', { method: 'POST' });
 }
 
-// Returns the song's updated stats. The rating change is applied server-side,
-// guarded by one-vote-per-user, so repeat calls cannot inflate it.
-export async function voteOnCurrent(vote: 'up' | 'down'): Promise<SongStats | null> {
-  const res = await request<{ ok: boolean; stats: SongStats | null }>('/api/vote', {
+// Plex is the shared rating authority, so every successful tap adjusts its
+// owner-account rating and deliberately has no per-user attribution.
+export async function voteOnCurrent(vote: 'up' | 'down'): Promise<void> {
+  await request('/api/vote', {
     method: 'POST',
     body: JSON.stringify({ vote }),
   });
-  return res.stats ?? null;
 }
 
 export async function clearOldVotes(songId: string): Promise<void> {
