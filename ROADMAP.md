@@ -29,8 +29,10 @@
   artists) in Android and the web player. Metadata is fetched only when opened.
 - Completed: on-demand Plex album context (year and summary) in the shared
   discovery views. Metadata is fetched only when opened.
-- Better queue controls where Android Auto exposes supported controls.
-- Playback-device visibility in Plex, if it can be implemented without
-  weakening the current proxy/player model.
+- Completed: Android Auto queue controls supported by the platform: Track
+  Radio, active Radio-queue feedback, and Clear upcoming queue.
+- Deferred: playback-device visibility in Plex. Resonance remains a shared
+  proxy player; do not simulate per-guest Plex clients until Plex offers a
+  reliable supported path for proxy/headless player sessions.
 - Completed: weighted auto-queue selection using Plex ratings, play history,
   skips, and recency cooldowns.
