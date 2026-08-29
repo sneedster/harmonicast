@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -61,9 +62,9 @@ class ResonanceViewModel : ViewModel() {
     var notice by mutableStateOf(""); private set
     var queue by mutableStateOf<List<Song>>(emptyList()); var nowPlaying by mutableStateOf(NowPlaying())
     var playbackPosition by mutableFloatStateOf(0f); private set
-    var trackDetails by mutableStateOf<PlexTrackDetails?>(null); private set
-    var trackDetailsLoading by mutableStateOf(false); private set
-    var trackDetailsError by mutableStateOf(""); private set
+    var artistDiscovery by mutableStateOf<ArtistDiscovery?>(null); private set
+    var artistDiscoveryLoading by mutableStateOf(false); private set
+    var artistDiscoveryError by mutableStateOf(""); private set
     var isHost by mutableStateOf(false); var isActivePlayer by mutableStateOf(false)
     var configured by mutableStateOf(true)
     var needsPlexSetup by mutableStateOf(false); private set
@@ -281,24 +282,19 @@ class ResonanceViewModel : ViewModel() {
     fun nextSong() { controller?.seekToNext() }
     fun seekTo(seconds: Float) { controller?.seekTo((seconds.coerceAtLeast(0f) * 1_000).toLong()) }
 
-    fun loadTrackDetails(song: Song) {
+    fun loadArtistDiscovery(song: Song) {
         viewModelScope.launch {
-            trackDetailsLoading = true
-            trackDetails = null
-            trackDetailsError = ""
+            artistDiscoveryLoading = true
+            artistDiscovery = null
+            artistDiscoveryError = ""
             try {
-                val item = JSONObject(api.json("plex/tracks/${URLEncoder.encode(song.id, "UTF-8")}"))
-                trackDetails = PlexTrackDetails(
-                    rating = if (item.has("rating") && !item.isNull("rating")) item.optInt("rating").coerceIn(0, 10) else null,
-                    playCount = item.optInt("playCount"),
-                    skipCount = item.optInt("skipCount"),
-                    lastPlayed = item.optString("lastPlayed").ifBlank { null },
-                    duration = item.optInt("duration", song.duration),
-                )
+                val item = JSONObject(api.json("plex/tracks/${URLEncoder.encode(song.id, "UTF-8")}/discovery"))
+                fun strings(key: String) = item.optJSONArray(key)?.let { a -> List(a.length()) { a.optString(it) }.filter { it.isNotBlank() } } ?: emptyList()
+                artistDiscovery = ArtistDiscovery(item.optString("name", song.artist), item.optString("bio"), strings("genres"), strings("similarArtists"))
             } catch (e: Exception) {
-                trackDetailsError = e.message ?: "Could not load track details"
+                artistDiscoveryError = e.message ?: "Could not load artist discovery"
             } finally {
-                trackDetailsLoading = false
+                artistDiscoveryLoading = false
             }
         }
     }
@@ -512,8 +508,18 @@ class MainActivity : ComponentActivity() {
                 }
             },
         )
-        Column(
-            Modifier.fillMaxSize(),
+        if (detailsOpen && song != null) {
+            ArtistDiscoveryPage(vm, song) { detailsOpen = false }
+        } else Column(
+            Modifier.fillMaxSize().pointerInput(song?.id) {
+                var upward = 0f
+                detectVerticalDragGestures(onVerticalDrag = { change, amount ->
+                    if (amount < 0) { change.consume(); upward -= amount }
+                }, onDragEnd = {
+                    if (upward > 90f && song != null) { detailsOpen = true; vm.loadArtistDiscovery(song) }
+                    upward = 0f
+                })
+            },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -564,18 +570,10 @@ class MainActivity : ComponentActivity() {
             Text(song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (song.album.isNotBlank()) Text(song.album, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            song.rating?.let { rating ->
-                val filledStars = (rating / 2).coerceIn(0, 5)
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    repeat(5) { index ->
-                        Icon(
-                            if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder,
-                            if (index == 0) "Plex rating $rating out of 10" else null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(26.dp),
-                        )
-                    }
-                }
+            val rating = song.rating ?: 0
+            val filledStars = (rating / 2).coerceIn(0, 5)
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                repeat(5) { index -> Icon(if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder, if (index == 0) "Plex rating $rating out of 10" else null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp)) }
             }
             if (duration > 0f) {
                 Column(Modifier.fillMaxWidth()) {
@@ -598,14 +596,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            OutlinedButton(onClick = {
-                detailsOpen = true
-                vm.loadTrackDetails(song)
-            }) {
-                Icon(Icons.Default.Info, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Track details")
-            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.ThumbDown, "Vote down") }
                 FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.size(64.dp)) {
@@ -623,32 +613,6 @@ class MainActivity : ComponentActivity() {
             }
             if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Play on this device") }
 
-            if (detailsOpen) {
-                AlertDialog(
-                    onDismissRequest = { detailsOpen = false },
-                    title = { Text("Track details") },
-                    text = {
-                        when {
-                            vm.trackDetailsLoading -> Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                Spacer(Modifier.width(12.dp)); Text("Loading from Plex…")
-                            }
-                            vm.trackDetailsError.isNotBlank() -> Text(vm.trackDetailsError, color = MaterialTheme.colorScheme.error)
-                            vm.trackDetails != null -> {
-                                val details = vm.trackDetails!!
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    DetailLine("Rating", details.rating?.let { "$it / 10" } ?: "Not rated")
-                                    DetailLine("Plays", details.playCount.toString())
-                                    DetailLine("Skips", details.skipCount.toString())
-                                    DetailLine("Last played", details.lastPlayed?.take(10) ?: "Never")
-                                    DetailLine("Length", formatDuration(details.duration))
-                                }
-                            }
-                        }
-                    },
-                    confirmButton = { TextButton(onClick = { detailsOpen = false }) { Text("Close") } },
-                )
-            }
         } else {
             Spacer(Modifier.height(100.dp))
             Text("Nothing is playing")
@@ -657,6 +621,35 @@ class MainActivity : ComponentActivity() {
                 Button({ vm.startRandomPlayback() }, enabled = vm.isActivePlayer) { Text("Play random music") }
             }
         }
+        }
+    }
+}
+
+@Composable private fun ArtistDiscoveryPage(vm: ResonanceViewModel, song: Song, close: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().pointerInput(song.id) {
+            var downward = 0f
+            detectVerticalDragGestures(onVerticalDrag = { change, amount -> if (amount > 0) { change.consume(); downward += amount } }, onDragEnd = { if (downward > 90f) close() })
+        },
+        verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Artist discovery", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            TextButton(onClick = close) { Text("Down") }
+        }
+        when {
+            vm.artistDiscoveryLoading -> CircularProgressIndicator()
+            vm.artistDiscoveryError.isNotBlank() -> Text(vm.artistDiscoveryError, color = MaterialTheme.colorScheme.error)
+            vm.artistDiscovery != null -> {
+                val info = vm.artistDiscovery!!
+                Text(info.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                if (info.genres.isNotEmpty()) DetailLine("Genres", info.genres.joinToString(" · "))
+                if (info.bio.isNotBlank()) Text(info.bio, style = MaterialTheme.typography.bodyLarge)
+                if (info.similarArtists.isNotEmpty()) {
+                    Text("Similar artists", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(info.similarArtists.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
+                }
+            }
         }
     }
 }

@@ -393,6 +393,28 @@ export async function getPlexTrack(source: PlexSource, id: string, fetcher: Plex
   return song;
 }
 
+/** Fetch artist-facing Plex material only when a client opens the discovery view. */
+export async function getPlexArtistDiscovery(source: PlexSource, trackId: string, fetcher: PlexFetch = fetch) {
+  const track = await getConfiguredPlexTrack(source, trackId, fetcher);
+  const artistKey = String(track.grandparentRatingKey ?? '');
+  if (!artistKey) throw new Error('This track has no Plex artist');
+  const [artistContainer, relatedContainer] = await Promise.all([
+    plexServerJson(source, `/library/metadata/${artistKey}`, fetcher),
+    plexServerJson(source, `/library/metadata/${artistKey}/related?type=8`, fetcher).catch(() => ({})),
+  ]);
+  const artist = metadataArray(artistContainer)[0] ?? {};
+  return {
+    name: typeof artist.title === 'string' ? artist.title : typeof track.grandparentTitle === 'string' ? track.grandparentTitle : 'Unknown artist',
+    bio: typeof artist.summary === 'string' ? artist.summary : '',
+    genres: Array.isArray(artist.Genre) ? artist.Genre.map((genre) => typeof genre?.tag === 'string' ? genre.tag : '').filter(Boolean) : [],
+    similarArtists: metadataArray(relatedContainer)
+      .filter((item) => item.type === 'artist' || item.type === 8)
+      .map((item) => typeof item.title === 'string' ? item.title : '')
+      .filter(Boolean)
+      .slice(0, 12),
+  };
+}
+
 async function plexServerAction(
   connection: PlexConnection,
   path: string,

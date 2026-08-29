@@ -27,7 +27,7 @@ import {
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
 import {
   beginPlexSetup, buildPlexAuthUrl, canAccessConfiguredPlexLibrary, clearPlexSetup, connectOwnedPlexServer,
-  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexRecentlyAddedTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack,
+  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexRecentlyAddedTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack, getPlexArtistDiscovery,
   getPlexSetup, getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listOwnedPlexServers, listPlexMusicLibraries,
   plexHeaders, ratePlexTrack, savePersistedPlexSource, scrobblePlexTrack, searchPlexTracks,
 } from './plex.js';
@@ -276,6 +276,13 @@ app.get('/api/plex/tracks/:id', requireAuth, async (req, res) => {
     console.error('Plex track metadata error:', err);
     res.status(502).json({ error: 'Could not load Plex track metadata' });
   }
+});
+
+app.get('/api/plex/tracks/:id/discovery', requireAuth, async (req, res) => {
+  const source = getActivePlexSource();
+  if (!source) return res.status(404).json({ error: 'No Plex source configured' });
+  try { res.json(await getPlexArtistDiscovery(source, req.params.id)); }
+  catch (err) { console.error('Plex artist discovery failed:', err); res.status(502).json({ error: 'Could not load artist discovery' }); }
 });
 
 // ── Plex OAuth (PIN/forwarding flow) ─────────────────────────────────
