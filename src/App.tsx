@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Disc3, Search, ListMusic, BarChart3, LogOut, Radio, User, Unplug, Music2, Settings, MonitorSpeaker, Loader2 } from 'lucide-react';
+import { Disc3, Search, ListMusic, BarChart3, LogOut, Radio, User, Music2, Settings, MonitorSpeaker, Loader2 } from 'lucide-react';
 import type { Connection } from '@/types';
-import { saveConn, clearConnection, connectionFromInfo } from '@/lib/connectionStore';
+import { connectionFromInfo } from '@/lib/connectionStore';
 import { PlayerProvider, usePlayer } from '@/hooks/usePlayer';
-import { ConnectionSetup } from '@/components/ConnectionSetup';
 import { PlexSetup } from '@/components/PlexSetup';
 import { AuthScreen } from '@/components/AuthScreen';
 import { PlayerBar } from '@/components/PlayerBar';
@@ -101,15 +100,6 @@ function JukeboxApp({
     };
   }, [current?.id]);
 
-  async function handleDisconnect() {
-    try {
-      await clearConnection();
-      onSignOut();
-    } catch {
-      // Expected for non-hosts
-    }
-  }
-
   return (
     <div className="flex flex-col bg-ink-950" style={{ height: '100dvh' }}>
       <header className="flex items-center justify-between border-b border-ink-800 px-4 py-3 sm:px-6">
@@ -147,15 +137,6 @@ function JukeboxApp({
               <MonitorSpeaker className="h-3.5 w-3.5" /><span className="hidden sm:inline">Play here</span>
             </button>
           )}
-          {isHostUser && isHost && (
-            <button
-              onClick={handleDisconnect}
-              className="flex items-center gap-1.5 rounded-full border border-red-500/30 px-3 py-1.5 text-xs text-red-400 transition hover:bg-red-500/10 hover:text-red-300"
-              title="Disconnect the music server (host only)"
-            >
-              <Unplug className="h-3.5 w-3.5" /><span className="hidden sm:inline">Disconnect</span>
-            </button>
-          )}
           <button
             onClick={onSignOut}
             className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-ink-400 transition hover:bg-ink-800 hover:text-white"
@@ -189,7 +170,7 @@ function JukeboxApp({
       {isHost && !current && !jukeboxMode && (
         <div className="flex items-center justify-center gap-2 border-t border-ink-800 bg-ink-900/60 px-4 py-2 text-center text-xs text-ink-500">
           <Radio className="h-3.5 w-3.5" />
-          Tip: turn on the jukebox to let the weighted random play take over.
+          Start with Search, then choose Play now. Turn on Jukebox later for continuous playback.
         </div>
       )}
       <PlayerBar />
@@ -377,16 +358,13 @@ export default function App() {
 
   if (needsSetup && !connection) {
     return (
-      <ConnectionSetup
-        onConnected={async (conn) => {
-          await saveConn(conn);
-          await claimPlayer().catch(() => {});
-          setConnection(conn);
-          setNeedsSetup(false);
-          setIsHostUser(true);
-          setIsActivePlayer(true);
-        }}
-      />
+      <main className="flex min-h-screen items-center justify-center bg-ink-950 p-5">
+        <div className="w-full max-w-lg rounded-2xl border border-ink-800 bg-ink-900 p-7 text-center shadow-2xl">
+          <h1 className="text-xl font-semibold text-white">Plex source needs setup</h1>
+          <p className="mt-3 text-sm leading-relaxed text-ink-400">This installation does not have a selected Plex Music library. Sign in again with the Plex account that owns the server to complete setup.</p>
+          <button onClick={() => void handleSignOut()} className="mt-6 rounded-xl border border-ink-700 px-4 py-2 text-sm text-ink-200">Sign out</button>
+        </div>
+      </main>
     );
   }
 

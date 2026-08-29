@@ -32,7 +32,7 @@ export function SearchView() {
     <div className="animate-fade-in">
       <h2 className="mb-1 text-lg font-semibold text-white">Search your library</h2>
       <p className="mb-4 text-sm text-ink-400">
-        Find any track on your server, play it now or add it to the queue.
+        Find a Plex track, play it now on the active device, or add it to the shared queue.
       </p>
 
       <form onSubmit={handleSearch} className="mb-6 flex gap-2">

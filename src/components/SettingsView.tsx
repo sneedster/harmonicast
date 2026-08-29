@@ -188,15 +188,13 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
           </div>
           <div className="rounded-2xl border border-ink-800 bg-ink-900/80 p-6">
             <p className="text-sm font-medium text-white">{plexSource.server?.name || 'Plex server'}</p>
-            {plexSource.libraries?.map((library) => (
+            {plexSource.libraries?.filter((library) => library.key === plexSource.selectedLibraryKey).map((library) => (
               <div key={library.key} className="mt-3 flex items-center justify-between rounded-lg border border-ink-800 bg-ink-850/50 px-4 py-2.5">
                 <span className="text-sm text-ink-200">{library.title}</span>
-                <span className={library.key === plexSource.selectedLibraryKey ? 'text-xs font-medium text-emerald-400' : 'text-xs text-ink-500'}>
-                  {library.key === plexSource.selectedLibraryKey ? 'Active' : 'Available'}
-                </span>
+                <span className="text-xs font-medium text-emerald-400">Selected Music library</span>
               </div>
             ))}
-            <p className="mt-4 text-xs text-ink-500">The Plex server token remains in the deployment environment and is not shown here.</p>
+            <p className="mt-4 text-xs leading-relaxed text-ink-500">Plex controls guest access: share this Music library in Plex, then guests can sign in to Resonance. The owner token stays in local Resonance data and is never shown to clients.</p>
           </div>
         </div>
       )}

@@ -57,7 +57,7 @@ export function SongRow({ song, index }: { song: Song; index?: number }) {
         <button
           onClick={handleEnqueue}
           title="Add to queue"
-          className="rounded-full p-2 text-ink-400 opacity-0 transition hover:bg-ink-700 hover:text-white group-hover:opacity-100"
+          className="rounded-full p-2 text-ink-300 transition hover:bg-ink-700 hover:text-white"
         >
           {added ? <Check className="h-4 w-4 text-emerald-400" /> : <Plus className="h-4 w-4" />}
         </button>
@@ -65,7 +65,7 @@ export function SongRow({ song, index }: { song: Song; index?: number }) {
           <button
             onClick={() => playNow(song)}
             title="Play now"
-            className="rounded-full bg-white p-2 text-ink-950 opacity-0 transition hover:scale-105 group-hover:opacity-100"
+            className="rounded-full bg-white p-2 text-ink-950 transition hover:scale-105"
           >
             <Play className="h-3.5 w-3.5 translate-x-px" fill="currentColor" />
           </button>
