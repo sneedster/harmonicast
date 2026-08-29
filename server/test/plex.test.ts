@@ -8,7 +8,16 @@ import type { PlexFetch, PlexSource } from '../plex.js';
 const dataDir = mkdtempSync(join(tmpdir(), 'resonance-plex-test-'));
 process.env.DATA_DIR = dataDir;
 const { initDb } = await import('../db.js');
-const { getPlexRelatedTracks } = await import('../plex.js');
+const {
+  beginPlexSetup,
+  clearPlexSetup,
+  getActivePlexSource,
+  getPersistedPlexSource,
+  getPlexRelatedTracks,
+  getPlexSetup,
+  getPlexTrack,
+  savePersistedPlexSource,
+} = await import('../plex.js');
 initDb();
 
 test.after(() => rmSync(dataDir, { recursive: true, force: true }));
@@ -25,6 +34,22 @@ const source: PlexSource = {
 function response(body: unknown): Response {
   return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
 }
+
+test('first-run Plex setup persists the selected server and clears its temporary token', () => {
+  clearPlexSetup();
+  beginPlexSetup(42, 'temporary-owner-token');
+  assert.deepEqual(getPlexSetup(), { userId: 42, token: 'temporary-owner-token' });
+
+  savePersistedPlexSource({
+    ...source,
+    baseUrl: 'http://plex.example.test/web',
+  });
+  assert.deepEqual(getPersistedPlexSource(), source);
+  assert.deepEqual(getActivePlexSource(), source);
+
+  clearPlexSetup();
+  assert.equal(getPlexSetup(), null);
+});
 
 test('Track Radio uses Plex nearest with sonic-analysis distance and excludes its seed', async () => {
   const requestedUrls: string[] = [];
@@ -53,4 +78,48 @@ test('Track Radio uses Plex nearest with sonic-analysis distance and excludes it
   assert.equal(nearest.searchParams.get('maxDistance'), '0.25');
   assert.deepEqual(songs.map((song) => song.id), ['plex:server-1:102', 'plex:server-1:103']);
   assert.deepEqual(songs.map((song) => song.artist), ['Artist One', 'Artist Two']);
+});
+
+test('Plex track metadata provides Android Auto-safe title, artist, album, and artwork fields', async () => {
+  const requestedUrls: string[] = [];
+  const fetcher: PlexFetch = async (input) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (new URL(url).pathname === '/') {
+      return response({ MediaContainer: { machineIdentifier: 'server-1', friendlyName: 'Test Plex' } });
+    }
+    return response({
+      MediaContainer: {
+        Metadata: [{
+          type: 10,
+          ratingKey: '101',
+          title: 'Metadata Track',
+          grandparentTitle: 'Metadata Artist',
+          parentTitle: 'Metadata Album',
+          duration: 201_600,
+          userRating: 8,
+          viewCount: 12,
+          skipCount: 3,
+          lastViewedAt: 1_700_000_000,
+          librarySectionID: '5',
+        }],
+      },
+    });
+  };
+
+  const song = await getPlexTrack(source, 'plex:server-1:101', fetcher);
+
+  assert.ok(requestedUrls.some((url) => new URL(url).pathname === '/library/metadata/101'));
+  assert.deepEqual(song, {
+    id: 'plex:server-1:101',
+    title: 'Metadata Track',
+    artist: 'Metadata Artist',
+    album: 'Metadata Album',
+    duration: 202,
+    coverArt: 'plex:server-1:101',
+    userRating: 8,
+    viewCount: 12,
+    skipCount: 3,
+    lastViewedAt: '2023-11-14T22:13:20.000Z',
+  });
 });
