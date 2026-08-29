@@ -95,6 +95,11 @@ export async function searchLibrary(query: string): Promise<Song[]> {
   return request(`/api/search?q=${encodeURIComponent(query)}`);
 }
 
+/** A small rotating set for visual kiosk browsing; search covers the library. */
+export async function discoverLibrary(): Promise<Song[]> {
+  return request('/api/discover');
+}
+
 export async function saveConnection(conn: {
   baseUrl: string; username: string; password: string; serverName?: string;
 }): Promise<void> {

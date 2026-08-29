@@ -872,6 +872,28 @@ app.get('/api/search', requireAuth, async (req, res) => {
   }
 });
 
+// Kiosk discovery is intentionally a rotating, bounded selection rather than
+// a library dump. Search remains available for any specific track.
+app.get('/api/discover', requireAuth, async (req, res) => {
+  const plexSource = getActivePlexSource();
+  if (plexSource) {
+    try {
+      return res.json(await getPlexRandomTracks(plexSource, 30));
+    } catch (err) {
+      console.error('Plex discovery failed:', err);
+      return res.status(502).json({ error: 'Could not load Plex picks' });
+    }
+  }
+  const conn = getConnection();
+  if (!conn) return res.status(400).json({ error: 'No music server configured' });
+  try {
+    return res.json(await getRandomSongs(conn, 30));
+  } catch (err) {
+    console.error('Music discovery failed:', err);
+    return res.status(502).json({ error: 'Could not load music picks' });
+  }
+});
+
 app.get('/api/random-songs', requireAuth, async (req, res) => {
   const plexSource = getActivePlexSource();
   if (plexSource) {

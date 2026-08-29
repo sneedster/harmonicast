@@ -1,7 +1,7 @@
-import { useState, type FormEvent } from 'react';
-import { ListMusic, Loader2, Pause, Play, Plus, Search, SkipForward, X } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { ListMusic, Loader2, Pause, Play, Plus, RefreshCw, Search, SkipForward, X } from 'lucide-react';
 import type { Song } from '@/types';
-import { searchLibrary } from '@/lib/api';
+import { discoverLibrary, searchLibrary } from '@/lib/api';
 import { CoverArt } from '@/components/CoverArt';
 import { usePlayer } from '@/hooks/usePlayer';
 
@@ -12,8 +12,23 @@ export function KioskView({ onExit }: { onExit: () => void }) {
   const { current, isPlaying, isHost, queue, enqueue, next, startRandomPlayback, togglePlay } = usePlayer();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Song[]>([]);
+  const [picks, setPicks] = useState<Song[]>([]);
+  const [loadingPicks, setLoadingPicks] = useState(true);
   const [searching, setSearching] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  async function loadPicks() {
+    setLoadingPicks(true);
+    try {
+      setPicks(await discoverLibrary());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not load tonight\'s picks.');
+    } finally {
+      setLoadingPicks(false);
+    }
+  }
+
+  useEffect(() => { void loadPicks(); }, []);
 
   async function handleSearch(event: FormEvent) {
     event.preventDefault();
@@ -98,6 +113,14 @@ export function KioskView({ onExit }: { onExit: () => void }) {
             )) : <p className="rounded-2xl border border-dashed border-ink-700 px-4 py-8 text-center text-ink-500">No upcoming tracks yet.</p>}
           </div>
         </aside>
+
+        <section className="rounded-[2rem] border border-white/10 bg-ink-950/55 p-5 shadow-2xl backdrop-blur lg:col-span-2 sm:p-7">
+          <div className="flex items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-400">Browse the room</p><h2 className="mt-1 text-2xl font-black text-white">Tonight's picks</h2></div><button onClick={() => void loadPicks()} disabled={loadingPicks} className="flex min-h-12 items-center gap-2 rounded-full border border-ink-600 px-4 text-sm font-bold text-ink-300 transition hover:border-amber-400 hover:text-amber-300 disabled:opacity-60"><RefreshCw className={`h-4 w-4 ${loadingPicks ? 'animate-spin' : ''}`} /> Fresh picks</button></div>
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-6">
+            {picks.slice(0, 12).map((song) => <button key={song.id} onClick={() => void requestSong(song)} className="group text-left"><CoverArt coverArt={song.coverArt} size={240} className="aspect-square h-auto w-full border border-ink-700 transition group-hover:border-amber-400 group-hover:shadow-lg group-hover:shadow-amber-500/15" rounded="rounded-2xl" /><span className="mt-2 block truncate text-sm font-bold text-white">{song.title}</span><span className="block truncate text-xs text-ink-400">{song.artist}</span></button>)}
+            {loadingPicks && Array.from({ length: 6 }).map((_, index) => <div key={index} className="aspect-square animate-pulse rounded-2xl bg-ink-800" />)}
+          </div>
+        </section>
 
         <section className="rounded-[2rem] border border-white/10 bg-ink-950/55 p-5 shadow-2xl backdrop-blur lg:col-span-2 sm:p-7">
           <h2 className="text-2xl font-black text-white">Request a song</h2>
