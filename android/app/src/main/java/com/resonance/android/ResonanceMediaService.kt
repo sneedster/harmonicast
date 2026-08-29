@@ -43,6 +43,7 @@ class ResonanceMediaService : MediaLibraryService() {
     private var webSocket: okhttp3.WebSocket? = null
     private val currentIsAuto = AtomicReference(false)
     private var positionSaveJob: kotlinx.coroutines.Job? = null
+    private var previousMediaItem: MediaItem? = null
 
     companion object {
         private const val ROOT_ID = "resonance:root"
@@ -91,6 +92,15 @@ class ResonanceMediaService : MediaLibraryService() {
                 // Android Auto can start a search result without toggling the
                 // playing flag again. Publish the item transition as well so
                 // the phone UI immediately reflects the selected track.
+                val previous = previousMediaItem
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && previous != null && mediaItem != null) {
+                    // When Android Auto is given the shared queue as its real
+                    // playback timeline, ExoPlayer advances locally. Consume
+                    // that same track from Resonance so the shared queue and
+                    // Android Auto's “Up next” view stay in lockstep.
+                    consumeAutoTransition(previous, mediaItem)
+                }
+                previousMediaItem = mediaItem
                 syncCurrentPlaybackState(player.isPlaying)
             }
         })
@@ -207,15 +217,7 @@ class ResonanceMediaService : MediaLibraryService() {
                 if (parentId == QUEUE_ID) {
                     return scope.future {
                         try {
-                            val queueJson = api.json("queue")
-                            Log.d("ResonanceMedia", "Fetched queue: $queueJson")
-                            val array = JSONArray(queueJson)
-                            val items = mutableListOf<MediaItem>()
-                            for (i in 0 until array.length()) {
-                                val o = array.getJSONObject(i)
-                                val song = Song(o.optString("id"), o.optString("title"), o.optString("artist"), o.optString("album"), o.optInt("duration"), o.optString("coverArt"))
-                                items.add(createMediaItem(song))
-                            }
+                            val items = fetchQueueSongs().map(::createMediaItem)
                             LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                         } catch (e: Exception) {
                             Log.e("ResonanceMedia", "Get children failed", e)
@@ -421,6 +423,8 @@ class ResonanceMediaService : MediaLibraryService() {
                 Log.d("ResonanceMedia", "WS message: $type")
                 if (type == "force_skip") {
                     advance("skip")
+                } else if (type == "queue") {
+                    refreshAndroidAutoQueue()
                 } else if (type == "player_session") {
                     scope.launch {
                         try {
@@ -440,6 +444,80 @@ class ResonanceMediaService : MediaLibraryService() {
                 Log.e("ResonanceMedia", "Failed to parse WS message", e)
             }
         })
+    }
+
+    /**
+     * Inform Android Auto that the browsable queue changed, and mirror the
+     * shared queue into ExoPlayer's timeline. Auto's “Up next” screen is a
+     * player timeline, not a media-browser request, so doing only one of
+     * these leaves one of its queue views stale.
+     */
+    private fun refreshAndroidAutoQueue() {
+        scope.launch {
+            try {
+                val songs = fetchQueueSongs()
+                mediaLibrarySession?.notifyChildrenChanged(QUEUE_ID, songs.size, null)
+                synchronizePlayerTimeline(songs)
+            } catch (e: Exception) {
+                Log.e("ResonanceMedia", "Failed to refresh Android Auto queue", e)
+            }
+        }
+    }
+
+    private suspend fun fetchQueueSongs(): List<Song> {
+        val array = JSONArray(api.json("queue"))
+        return buildList {
+            for (i in 0 until array.length()) {
+                val o = array.getJSONObject(i)
+                add(Song(
+                    o.optString("id"), o.optString("title"), o.optString("artist"),
+                    o.optString("album"), o.optInt("duration"), o.optString("coverArt"),
+                ))
+            }
+        }
+    }
+
+    private fun synchronizePlayerTimeline(queue: List<Song>) {
+        val current = player.currentMediaItem ?: return
+        val items = listOf(current) + queue.map(::createMediaItem)
+        val currentIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
+        val desiredIds = items.map { it.mediaId }
+        if (player.currentMediaItemIndex == 0 && currentIds == desiredIds) return
+
+        val position = player.currentPosition
+        val wasPlaying = player.isPlaying
+        player.setMediaItems(items, 0, position)
+        player.prepare()
+        if (wasPlaying) player.play()
+    }
+
+    private fun consumeAutoTransition(previous: MediaItem, current: MediaItem) {
+        scope.launch {
+            try {
+                val metadata = previous.mediaMetadata
+                api.json(
+                    "stats/play-event", "POST",
+                    JSONObject()
+                        .put("song_id", previous.mediaId)
+                        .put("title", metadata.title ?: "")
+                        .put("artist", metadata.artist ?: "")
+                        .put("album", metadata.albumTitle ?: "")
+                        .put("event", "complete")
+                        .put("progress", 1)
+                )
+                api.json("scrobble", "POST", JSONObject().put("id", previous.mediaId).put("submission", true))
+
+                val response = JSONObject(api.json("queue/dequeue", "POST", JSONObject()))
+                val dequeued = response.optJSONObject("song")
+                if (dequeued?.optString("id") != current.mediaId) {
+                    Log.w("ResonanceMedia", "Auto transition did not match the shared queue head")
+                }
+                currentIsAuto.set(!response.optBoolean("isManual", true))
+                syncCurrentPlaybackState(player.isPlaying)
+            } catch (e: Exception) {
+                Log.e("ResonanceMedia", "Failed to consume Android Auto queue transition", e)
+            }
+        }
     }
 
     private fun syncCurrentPlaybackState(isPlaying: Boolean) {
