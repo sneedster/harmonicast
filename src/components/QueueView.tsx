@@ -1,10 +1,10 @@
-import { ListMusic, Play, User } from 'lucide-react';
+import { ListMusic, Play, Trash2, User } from 'lucide-react';
 import { usePlayer } from '@/hooks/usePlayer';
 import { CoverArt } from '@/components/CoverArt';
 import { formatTime } from '@/lib/format';
 
 export function QueueView() {
-  const { isHost, queue, queueRows, current, playNow } = usePlayer();
+  const { isHost, queue, queueRows, current, playNow, clearQueue } = usePlayer();
 
   return (
     <div className="animate-fade-in">
@@ -12,6 +12,16 @@ export function QueueView() {
         <ListMusic className="h-5 w-5 text-amber-400" />
         <h2 className="text-lg font-semibold text-white">Up next</h2>
         <span className="text-sm text-ink-500">({queue.length})</span>
+        {isHost && queue.length > 0 && (
+          <button
+            onClick={() => {
+              if (window.confirm('Clear every upcoming track from the shared queue?')) clearQueue();
+            }}
+            className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-ink-400 transition hover:bg-red-500/10 hover:text-red-400"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Clear queue
+          </button>
+        )}
       </div>
 
       {queue.length === 0 ? (

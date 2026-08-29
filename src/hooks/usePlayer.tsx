@@ -27,6 +27,7 @@ import {
   updateNowPlaying,
   voteOnCurrent,
   queueSimilarTracks,
+  clearQueue as clearSharedQueue,
 } from '@/lib/jukeboxState';
 
 interface PlayerContextValue {
@@ -59,6 +60,7 @@ interface PlayerContextValue {
   thumbsUp: () => void;
   thumbsDown: () => void;
   queueSimilar: () => void;
+  clearQueue: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -523,6 +525,15 @@ export function PlayerProvider({
     }).catch(() => {});
   }, [isHost]);
 
+  const clearQueue = useCallback(() => {
+    if (!isHost) return;
+    void clearSharedQueue().then(() => {
+      setQueue([]);
+      queueRef.current = [];
+      setQueueRows([]);
+    }).catch(() => {});
+  }, [isHost]);
+
   /** Starts automatic playback from the selected source without requiring a manual search. */
   const startRandomPlayback = useCallback(() => {
     if (!isHost || currentRef.current) return;
@@ -550,14 +561,14 @@ export function PlayerProvider({
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
-      thumbsUp, thumbsDown, queueSimilar, startRandomPlayback,
+      thumbsUp, thumbsDown, queueSimilar, clearQueue, startRandomPlayback,
     }),
     [
       connection, isHost, isHostUser, isActivePlayer, current, plexRating, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
-      thumbsUp, thumbsDown, queueSimilar, startRandomPlayback,
+      thumbsUp, thumbsDown, queueSimilar, clearQueue, startRandomPlayback,
     ],
   );
 

@@ -217,6 +217,7 @@ class ResonanceViewModel : ViewModel() {
     fun add(song: Song) = action("queue", "POST", JSONObject().put("song", songJson(song))) { refresh() }
     fun vote(up: Boolean) = action("vote", "POST", JSONObject().put("vote", if (up) "up" else "down"))
     fun claim() = action("player/claim", "POST", JSONObject()) { refresh() }
+    fun clearQueue() = action("queue", "DELETE", JSONObject()) { refresh() }
     fun queueSimilar() {
         viewModelScope.launch {
             try {
@@ -445,8 +446,35 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun Queue(vm: ResonanceViewModel) {
+    var confirmClear by remember { mutableStateOf(false) }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Clear queue?") },
+            text = { Text("This removes every upcoming track from the shared queue. The current song will keep playing.") },
+            confirmButton = {
+                TextButton(onClick = { confirmClear = false; vm.clearQueue() }) { Text("Clear queue") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
+        )
+    }
     LazyColumn(Modifier.fillMaxSize()) {
-        item { Text("Queue", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(20.dp)) }
+        item {
+            Row(
+                Modifier.fillMaxWidth().padding(20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Queue", style = MaterialTheme.typography.headlineMedium)
+                if (vm.isHost && vm.queue.isNotEmpty()) {
+                    TextButton(onClick = { confirmClear = true }) {
+                        Icon(Icons.Default.DeleteSweep, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Clear")
+                    }
+                }
+            }
+        }
         items(vm.queue, key = { it.id }) { SongRow(vm, it, false) }
     }
 }
