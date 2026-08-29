@@ -15,8 +15,9 @@
 ## Release hardening
 
 - Make lint and the automated test suite required release checks.
-- Produce a versioned/signed Android release APK rather than distributing only
-  debug builds.
+- Generate and securely back up the local Android signing identity, then
+  produce a versioned/signed release APK rather than distributing only debug
+  builds.
 - Run a documented clean-install and upgrade verification pass against Docker,
   web, Android, and Android Auto.
 

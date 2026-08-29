@@ -1,0 +1,7 @@
+# Copy this file to signing.properties and replace every placeholder.
+# Both this file and the keystore stay outside Git; keep a backup of the
+# keystore and these values because future updates must use the same key.
+storeFile=release.keystore
+storePassword=replace-with-a-strong-password
+keyAlias=resonance
+keyPassword=replace-with-a-strong-password

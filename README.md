@@ -92,6 +92,25 @@ uses the compatible local Java/SDK setup:
 The project deliberately permits cleartext Android traffic for trusted LAN
 servers; use HTTPS for any server reachable outside that network.
 
+### Signed Android release APK
+
+Create the local signing identity once. The keystore and passwords are ignored
+by Git and must be backed up securely—future updates need the same key.
+
+```bash
+./android/create-release-keystore.sh
+```
+
+Then build a signed, versioned APK. The result is written to the ignored
+`android/releases/` directory.
+
+```bash
+VERSION_NAME=1.0.0 VERSION_CODE=1 ./android/build-release.sh
+```
+
+To upgrade an installed copy, increase `VERSION_CODE` and keep the same
+keystore. Do not distribute an APK if you have lost the keystore.
+
 ## Configuration
 
 | Variable | Default | Purpose |

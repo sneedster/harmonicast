@@ -27,6 +27,9 @@ dist-ssr
 **/build/
 *.hprof
 android/local.properties
+android/signing.properties
+android/release.keystore
+android/releases/
 android/captures/
 .externalNativeBuild
 .cxx
