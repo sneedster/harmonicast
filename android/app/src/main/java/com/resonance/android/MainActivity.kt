@@ -417,6 +417,11 @@ class MainActivity : ComponentActivity() {
                 },
                 actions = {
                     if (vm.loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    if (vm.isHost && !vm.isActivePlayer) {
+                        IconButton(onClick = { vm.claim() }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Take control of playback on this device")
+                        }
+                    }
                     IconButton(onClick = { vm.refresh() }) {
                         Icon(imageVector = Icons.Default.Refresh, contentDescription = "Refresh")
                     }
@@ -624,13 +629,13 @@ class MainActivity : ComponentActivity() {
                     Text("Queue Track Radio")
                 }
             }
-            if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Play on this device") }
+            if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Take control on this device") }
 
         } else {
             Spacer(Modifier.height(100.dp))
             Text("Nothing is playing")
             if (vm.isHost) {
-                Button({ vm.claim() }, enabled = !vm.isActivePlayer) { Text("Claim this device as player") }
+                Button({ vm.claim() }, enabled = !vm.isActivePlayer) { Text("Take control on this device") }
                 Button({ vm.startRandomPlayback() }, enabled = vm.isActivePlayer) { Text("Play random music") }
             }
         }

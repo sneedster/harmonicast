@@ -6,8 +6,8 @@ an image back to source.
 
 | Channel | Version / tag | Source | Notes |
 | --- | --- | --- | --- |
-| Docker | `mjstrong/resonance:1.0.8` | Prepared with this release commit | Server and web release; also published as `latest` and an immutable `main-<commit>` tag. |
-| Android | GitHub release `v1.0.14` / APK `1.0.14` (code 15) | `d2e9da0` | Current signed Android client; unchanged by the server-only album-search fix. |
+| Docker | `mjstrong/resonance:1.0.9` | Release commit | Server and web release; also published as `latest` and an immutable `main-<commit>` tag. Includes album search and the full-screen kiosk attract display. |
+| Android | GitHub release `v1.0.15` / APK `1.0.15` (code 16) | Release commit | Signed Android client with a persistent owner-only Take control action. |
 
 ## Release rules
 

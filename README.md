@@ -41,7 +41,7 @@ to web or Android clients.
 1. Copy `.env.example` to `.env`.
 2. Set `PUBLIC_URL` to the exact URL users will open, without a trailing slash.
    For example: `https://resonance.example.com`.
-3. Keep `RESONANCE_IMAGE_TAG=1.0.8` for a pinned release, or change it to
+3. Keep `RESONANCE_IMAGE_TAG=1.0.9` for a pinned release, or change it to
    `latest` if you intentionally want new releases automatically.
 4. Start it:
 
@@ -61,7 +61,7 @@ unless you intentionally want to reset the installation and repeat Plex setup.
 Import [`unraid/resonance.xml`](unraid/resonance.xml), or create a container
 with these settings:
 
-- Image: `mjstrong/resonance:1.0.8` (or `latest`)
+- Image: `mjstrong/resonance:1.0.9` (or `latest`)
 - Port: container `3001` mapped to your chosen host port
 - Volume: `/app/data` mapped to an Unraid appdata directory
 - Variable: `PUBLIC_URL` set to the exact browser-facing URL
@@ -111,7 +111,7 @@ Then build a signed, versioned APK. The result is written to the ignored
 `android/releases/` directory.
 
 ```bash
-VERSION_NAME=1.0.14 VERSION_CODE=15 ./android/build-release.sh
+VERSION_NAME=1.0.15 VERSION_CODE=16 ./android/build-release.sh
 ```
 
 This runs the required server, web, Docker image, and Compose checks before
