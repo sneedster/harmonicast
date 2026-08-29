@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.browser.customtabs.CustomTabsIntent
@@ -484,6 +485,7 @@ class MainActivity : ComponentActivity() {
         val throwDistance = with(density) { (maxWidth + artworkSize).toPx() }
         val skipThreshold = throwDistance * 0.35f
         var swipeOffset by remember(song?.id) { mutableFloatStateOf(0f) }
+        var swipeStartedAt by remember(song?.id) { mutableLongStateOf(0L) }
         var throwingSongAway by remember(song?.id) { mutableStateOf(false) }
         var detailsOpen by remember(song?.id) { mutableStateOf(false) }
         var scrubPosition by remember(song?.id) { mutableFloatStateOf(vm.playbackPosition) }
@@ -537,6 +539,7 @@ class MainActivity : ComponentActivity() {
                     .fillMaxWidth()
                     .pointerInput(song.id, vm.isActivePlayer) {
                         detectHorizontalDragGestures(
+                            onDragStart = { swipeOffset = 0f; swipeStartedAt = SystemClock.uptimeMillis() },
                             onHorizontalDrag = { change, amount ->
                                 if (vm.isActivePlayer && amount < 0f) {
                                     change.consume()
@@ -544,7 +547,10 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onDragEnd = {
-                                if (swipeOffset <= -skipThreshold) throwingSongAway = true
+                                // A deliberate flick should feel immediate even when it
+                                // travels less than the long-drag distance.
+                                val fastFlick = swipeOffset < -72f && SystemClock.uptimeMillis() - swipeStartedAt < 180L
+                                if (swipeOffset <= -skipThreshold || fastFlick) throwingSongAway = true
                                 else swipeOffset = 0f
                             },
                             onDragCancel = { swipeOffset = 0f },
@@ -562,18 +568,6 @@ class MainActivity : ComponentActivity() {
                         alpha = (1f + animatedSwipeOffset / throwDistance * 0.55f).coerceIn(0.45f, 1f)
                     },
                 )
-                if (vm.isActivePlayer && animatedSwipeOffset < -12f) {
-                    Surface(
-                        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
-                        shape = RoundedCornerShape(20.dp),
-                    ) {
-                        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.SkipNext, null)
-                            Text("Skip", Modifier.padding(start = 4.dp))
-                        }
-                    }
-                }
             }
             Text(song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
