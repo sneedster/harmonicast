@@ -1,5 +1,7 @@
 # Resonance
 
+Resonance is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`).
+
 Resonance is a self-hosted, shared music player for a Plex Music library. One
 browser or Android device is the active player; anyone granted access to the
 selected Plex library can sign in, search, queue music, and vote. The active
