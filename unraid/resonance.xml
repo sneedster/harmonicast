@@ -8,19 +8,13 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/sneedster/resonance</Support>
   <Project>https://github.com/sneedster/resonance</Project>
-  <Overview>Self-hosted collaborative music jukebox for Subsonic-compatible servers. Configure Google OAuth before first sign-in.</Overview>
+  <Overview>Self-hosted collaborative Plex music jukebox. On first launch, sign in with the Plex account that owns the server and choose its Music library.</Overview>
   <Category>MediaApp:Music</Category>
   <WebUI>http://[IP]:[PORT:3001]</WebUI>
   <Icon>https://raw.githubusercontent.com/sneedster/resonance/main/android/app/src/main/res/drawable/ic_jukebox.xml</Icon>
   <ExtraParams>--security-opt no-new-privileges:true</ExtraParams>
   <Config Name="Web UI port" Target="3001" Default="3001" Mode="tcp" Description="Resonance web application" Type="Port" Display="always" Required="true" Mask="false">3001</Config>
   <Config Name="Application data" Target="/app/data" Default="/mnt/user/appdata/resonance" Mode="rw" Description="Persistent SQLite database" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/resonance</Config>
-  <Config Name="Public URL" Target="PUBLIC_URL" Default="http://[IP]:[PORT:3001]" Mode="" Description="Must match the Google OAuth redirect URI, without a trailing slash" Type="Variable" Display="always" Required="true" Mask="false">http://[IP]:[PORT:3001]</Config>
-  <Config Name="Google client ID" Target="GOOGLE_CLIENT_ID" Default="" Mode="" Description="Google OAuth web client ID" Type="Variable" Display="always" Required="true" Mask="false"></Config>
-  <Config Name="Google client secret" Target="GOOGLE_CLIENT_SECRET" Default="" Mode="" Description="Google OAuth web client secret" Type="Variable" Display="always" Required="true" Mask="true"></Config>
-  <Config Name="Admin email" Target="ADMIN_EMAIL" Default="" Mode="" Description="Google account allowed to create the first host user" Type="Variable" Display="always" Required="true" Mask="false"></Config>
-  <Config Name="Music server URL" Target="MUSIC_SERVER_URL" Default="" Mode="" Description="Optional Subsonic-compatible server URL" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="Music server user" Target="MUSIC_SERVER_USER" Default="" Mode="" Description="Optional Subsonic username" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="Music server password" Target="MUSIC_SERVER_PASSWORD" Default="" Mode="" Description="Optional Subsonic password" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
-  <Config Name="Music server name" Target="MUSIC_SERVER_NAME" Default="" Mode="" Description="Optional display name" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Public URL" Target="PUBLIC_URL" Default="http://[IP]:[PORT:3001]" Mode="" Description="Exact browser-facing Resonance URL, without a trailing slash. Required for the Plex sign-in return URL." Type="Variable" Display="always" Required="true" Mask="false">http://[IP]:[PORT:3001]</Config>
+  <Config Name="Plex client identifier" Target="PLEX_CLIENT_IDENTIFIER" Default="" Mode="" Description="Optional stable Plex client ID. Leave blank to generate and persist one automatically." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>
