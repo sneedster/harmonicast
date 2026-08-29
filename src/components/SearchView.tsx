@@ -1,18 +1,17 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Search, Loader2, Music2 } from 'lucide-react';
 import type { Song } from '@/types';
 import { searchLibrary } from '@/lib/api';
 import { SongRow } from '@/components/SongRow';
 
-export function SearchView() {
-  const [query, setQuery] = useState('');
+export function SearchView({ initialQuery = '' }: { initialQuery?: string }) {
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<Song[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSearch(e: FormEvent) {
-    e.preventDefault();
-    const q = query.trim();
+  async function runSearch(rawQuery: string) {
+    const q = rawQuery.trim();
     if (!q) return;
     setStatus('loading');
     setError(null);
@@ -24,6 +23,13 @@ export function SearchView() {
       setError(err instanceof Error ? err.message : 'Search failed.');
       setStatus('error');
     }
+  }
+
+  useEffect(() => { if (initialQuery.trim()) void runSearch(initialQuery); }, [initialQuery]);
+
+  async function handleSearch(e: FormEvent) {
+    e.preventDefault();
+    await runSearch(query);
   }
 
   return (

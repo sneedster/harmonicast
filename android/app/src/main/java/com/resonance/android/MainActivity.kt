@@ -440,7 +440,7 @@ class MainActivity : ComponentActivity() {
     ) { pad ->
         Box(Modifier.padding(pad)) {
             when (tab) {
-                0 -> Now(vm)
+                0 -> Now(vm) { term -> vm.query = term; vm.search(); tab = 2 }
                 1 -> Queue(vm)
                 else -> Search(vm)
             }
@@ -488,7 +488,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun Now(vm: ResonanceViewModel) {
+@Composable private fun Now(vm: ResonanceViewModel, onSearch: (String) -> Unit) {
     val song = vm.nowPlaying.song
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
         val artworkSize = minOf((maxWidth - 12.dp).coerceAtLeast(180.dp), maxHeight * 0.5f)
@@ -580,9 +580,9 @@ class MainActivity : ComponentActivity() {
                     },
                 )
             }
-            Text(song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TextButton(onClick = { onSearch(song.artist) }) { Text(song.artist, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (song.album.isNotBlank()) Text(song.album, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (song.album.isNotBlank()) TextButton(onClick = { onSearch(song.album) }) { Text(song.album, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             val rating = song.rating ?: 0
             val filledStars = (rating / 2).coerceIn(0, 5)
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {

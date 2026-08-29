@@ -81,6 +81,9 @@ function JukeboxApp({
 }) {
   const { connection, current, isPlaying, jukeboxMode, isHost } = usePlayer();
   const [tab, setTab] = useState<Tab>('nowplaying');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchRequest, setSearchRequest] = useState(0);
+  const openSearch = (query: string) => { setSearchQuery(query); setSearchRequest((value) => value + 1); setTab('search'); };
   const isKiosk = window.location.pathname.replace(/\/+$/, '') === '/kiosk';
   const lastSongIdRef = useRef<string | null>(null);
   const switchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -168,8 +171,8 @@ function JukeboxApp({
 
       <main className="flex-1 overflow-y-auto scrollbar-thin px-4 py-6 sm:px-6">
         <div className="mx-auto max-w-3xl">
-          {tab === 'nowplaying' && <NowPlayingView />}
-          {tab === 'search' && <SearchView />}
+          {tab === 'nowplaying' && <NowPlayingView onSearch={openSearch} />}
+          {tab === 'search' && <SearchView key={searchRequest} initialQuery={searchQuery} />}
           {tab === 'queue' && <QueueView />}
           {tab === 'settings' && <SettingsView isHostUser={isHostUser} />}
         </div>

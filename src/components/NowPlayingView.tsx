@@ -6,7 +6,7 @@ import { AndroidAppDownload } from '@/components/AndroidAppDownload';
 import { formatTime } from '@/lib/format';
 import { getPlexArtistDiscovery, type PlexArtistDiscovery } from '@/lib/api';
 
-export function NowPlayingView() {
+export function NowPlayingView({ onSearch }: { onSearch: (query: string) => void }) {
   const {
     isHost,
     isHostUser,
@@ -91,9 +91,9 @@ export function NowPlayingView() {
       {/* Track info */}
       <div className="text-center">
         <h2 className="text-xl font-bold text-white sm:text-2xl">{current.title}</h2>
-        <p className="mt-1 text-sm text-ink-400 sm:text-base">{current.artist}</p>
+        <button onClick={() => onSearch(current.artist)} className="mt-1 text-sm text-ink-400 transition hover:text-amber-300 sm:text-base">{current.artist}</button>
         {current.album && (
-          <p className="mt-0.5 text-xs text-ink-500">{current.album}</p>
+          <button onClick={() => onSearch(current.album)} className="mt-0.5 block text-xs text-ink-500 transition hover:text-amber-300">{current.album}</button>
         )}
         <p className="mt-2 text-sm font-medium text-amber-400">
           Plex rating · {plexRating === null ? 'Not rated yet' : `${plexRating.toFixed(0)} / 10`}
