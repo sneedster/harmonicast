@@ -33,7 +33,7 @@ export function NowPlayingView() {
         <p className="text-sm font-medium text-ink-300">Nothing playing right now</p>
         <p className="text-xs text-ink-500">
           {isHost
-            ? 'Start the jukebox or pick a track to begin.'
+            ? 'Search your Plex library, then choose Play now to begin.'
             : 'Waiting for the host to start music.'}
         </p>
       </div>

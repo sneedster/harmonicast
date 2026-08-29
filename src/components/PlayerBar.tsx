@@ -193,7 +193,7 @@ export function PlayerBar() {
               <div>
                 <p className="text-sm font-medium text-ink-300">Nothing playing</p>
                 <p className="text-xs text-ink-500">
-                  Start the jukebox or pick a track to begin.
+                  Search your Plex library, then choose Play now to begin.
                 </p>
               </div>
             </div>

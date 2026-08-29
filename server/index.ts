@@ -27,7 +27,7 @@ import {
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
 import {
   beginPlexSetup, buildPlexAuthUrl, canAccessConfiguredPlexLibrary, clearPlexSetup, connectOwnedPlexServer,
-  createPlexPin, getActivePlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexServerInfo,
+  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexServerInfo,
   getPlexSetup, getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listOwnedPlexServers, listPlexMusicLibraries,
   plexHeaders, savePersistedPlexSource, searchPlexTracks,
 } from './plex.js';
@@ -356,10 +356,14 @@ app.get('/api/connection', requireAuth, (req, res) => {
   const activeSession = getActivePlayerSession();
   const activeDeviceName = activeSession ? getSessionDeviceName(activeSession) : null;
   if (plexSource) {
+    const persistedSource = getPersistedPlexSource();
+    const sourceName = persistedSource
+      ? `${persistedSource.serverName} · ${persistedSource.libraryName}`
+      : 'Plex Music';
     return res.json({
       configured: true,
       baseUrl: plexSource.baseUrl,
-      serverName: 'Plex Music',
+      serverName: sourceName,
       isHost: hostUserId === req.user.id,
       isActivePlayer: req.token === activeSession,
       hasActivePlayer: !!activeSession,
