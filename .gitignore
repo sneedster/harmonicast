@@ -22,11 +22,6 @@ dist-ssr
 *.sw?
 .env
 
-# Retired project scaffolding
-.bolt/
-supabase/
-data/
-
 # Android
 .gradle/
 **/build/
