@@ -249,7 +249,10 @@ export function PlayerProvider({
     if (!isHost || !current || !audioRef.current) return;
     const audio = audioRef.current;
     const expectedPath = `/api/stream/${encodeURIComponent(current.id)}`;
-    if (new URL(audio.src).pathname === expectedPath) {
+    // A newly created HTMLAudioElement has an empty source. Constructing a URL
+    // from that empty string throws and previously took down the web client
+    // before it could load the active track.
+    if (audio.src && new URL(audio.src).pathname === expectedPath) {
       audio.volume = volume;
       return;
     }
