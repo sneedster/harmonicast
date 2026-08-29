@@ -215,6 +215,19 @@ class ResonanceViewModel : ViewModel() {
             }
         }
     }
+
+    /** Enables Jukebox, populates its random queue, and starts its first song. */
+    fun startRandomPlayback() {
+        viewModelScope.launch {
+            try {
+                val response = api.json("jukebox", "POST", JSONObject().put("enabled", true))
+                jukeboxMode = JSONObject(response).optBoolean("jukeboxMode", true)
+                controller?.seekToNext()
+            } catch (e: Exception) {
+                error = "Failed to start random playback"
+            }
+        }
+    }
     
     fun startSettingsPolling() {
         settingsPollJob?.cancel()
@@ -422,7 +435,7 @@ class MainActivity : ComponentActivity() {
             Text("Nothing is playing")
             if (vm.isHost) {
                 Button({ vm.claim() }, enabled = !vm.isActivePlayer) { Text("Claim this device as player") }
-                Button({ vm.nextSong() }, enabled = vm.isActivePlayer && vm.queue.isNotEmpty()) { Text("Start queue") }
+                Button({ vm.startRandomPlayback() }, enabled = vm.isActivePlayer) { Text("Play random music") }
             }
             
             Spacer(Modifier.height(8.dp))
