@@ -1,3 +1,5 @@
+import type { Song } from '@/types';
+
 // API client for the self-hosted Resonance server.
 // All requests go to the same origin (the server serves both API and static files).
 
@@ -86,6 +88,11 @@ export interface ConnectionInfo {
 
 export async function getConnection(): Promise<ConnectionInfo> {
   return request<ConnectionInfo>('/api/connection');
+}
+
+/** Search the selected music source. Plex-backed deployments use `/api/search`. */
+export async function searchLibrary(query: string): Promise<Song[]> {
+  return request(`/api/search?q=${encodeURIComponent(query)}`);
 }
 
 export async function saveConnection(conn: {

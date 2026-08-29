@@ -1,12 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { Search, Loader2, Music2 } from 'lucide-react';
 import type { Song } from '@/types';
-import { usePlayer } from '@/hooks/usePlayer';
-import { search as searchSongs } from '@/lib/subsonic';
+import { searchLibrary } from '@/lib/api';
 import { SongRow } from '@/components/SongRow';
 
 export function SearchView() {
-  const { connection } = usePlayer();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Song[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
@@ -19,7 +17,7 @@ export function SearchView() {
     setStatus('loading');
     setError(null);
     try {
-      const songs = await searchSongs(connection, q);
+      const songs = await searchLibrary(q);
       setResults(songs);
       setStatus('done');
     } catch (err) {
