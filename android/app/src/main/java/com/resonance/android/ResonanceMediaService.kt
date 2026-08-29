@@ -51,7 +51,9 @@ class ResonanceMediaService : MediaLibraryService() {
         private const val PLAY_RANDOM_ID = "resonance:play-random"
         private const val QUEUE_ID = "resonance:queue"
         private const val COMMAND_PLAY_SIMILAR = "android.resonance.PLAY_SIMILAR"
+        private const val COMMAND_CLEAR_QUEUE = "android.resonance.CLEAR_QUEUE"
         private val PLAY_SIMILAR_COMMAND = SessionCommand(COMMAND_PLAY_SIMILAR, Bundle())
+        private val CLEAR_QUEUE_COMMAND = SessionCommand(COMMAND_CLEAR_QUEUE, Bundle())
     }
 
     @OptIn(UnstableApi::class)
@@ -148,6 +150,7 @@ class ResonanceMediaService : MediaLibraryService() {
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_ITEM)
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_LIBRARY_ROOT)
                     .add(PLAY_SIMILAR_COMMAND)
+                    .add(CLEAR_QUEUE_COMMAND)
                     .build()
 
                 val availablePlayerCommands = ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
@@ -337,18 +340,25 @@ class ResonanceMediaService : MediaLibraryService() {
                 customCommand: SessionCommand,
                 args: Bundle,
             ): ListenableFuture<SessionResult> {
-                if (customCommand.customAction != COMMAND_PLAY_SIMILAR) {
-                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
-                }
-                Log.d("ResonanceMedia", "Android Auto requested Track Radio queue")
                 return scope.future {
                     try {
-                        val result = JSONObject(api.json("queue/similar", "POST", JSONObject()))
-                        val added = result.optInt("added", 0)
-                        Log.d("ResonanceMedia", "Queued $added Track Radio songs from Android Auto")
-                        SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putInt("added", added) })
+                        when (customCommand.customAction) {
+                            COMMAND_PLAY_SIMILAR -> {
+                                Log.d("ResonanceMedia", "Android Auto requested Track Radio queue")
+                                val result = JSONObject(api.json("queue/similar", "POST", JSONObject()))
+                                val added = result.optInt("added", 0)
+                                Log.d("ResonanceMedia", "Queued $added Track Radio songs from Android Auto")
+                                SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putInt("added", added) })
+                            }
+                            COMMAND_CLEAR_QUEUE -> {
+                                Log.d("ResonanceMedia", "Android Auto requested queue clear")
+                                api.json("queue", "DELETE", JSONObject())
+                                SessionResult(SessionResult.RESULT_SUCCESS)
+                            }
+                            else -> SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
+                        }
                     } catch (e: Exception) {
-                        Log.e("ResonanceMedia", "Failed to queue similar tracks", e)
+                        Log.e("ResonanceMedia", "Android Auto custom command failed", e)
                         SessionResult(SessionResult.RESULT_ERROR_UNKNOWN)
                     }
                 }
@@ -418,6 +428,11 @@ class ResonanceMediaService : MediaLibraryService() {
                 CommandButton.Builder(CommandButton.ICON_RADIO)
                     .setSessionCommand(PLAY_SIMILAR_COMMAND)
                     .setDisplayName("Queue Track Radio")
+                    .setSlots(CommandButton.SLOT_OVERFLOW)
+                    .build(),
+                CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+                    .setSessionCommand(CLEAR_QUEUE_COMMAND)
+                    .setDisplayName("Clear upcoming queue")
                     .setSlots(CommandButton.SLOT_OVERFLOW)
                     .build(),
             ))
