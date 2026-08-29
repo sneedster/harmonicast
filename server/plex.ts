@@ -249,21 +249,40 @@ async function plexSourceMachineIdentifier(source: PlexSource, fetcher: PlexFetc
   return (await getPlexServerInfo(source, fetcher)).machineIdentifier;
 }
 
-/** Search only the configured Plex Music library. */
+/** Search the configured Plex Music library by track title and artist name. */
 export async function searchPlexTracks(
   source: PlexSource,
   query: string,
   fetcher: PlexFetch = fetch,
 ): Promise<PlexSong[]> {
-  const params = new URLSearchParams({ query: query.trim(), type: '10', limit: '40' });
-  const [machineIdentifier, container] = await Promise.all([
+  const search = query.trim();
+  if (!search) return [];
+  const trackParams = new URLSearchParams({ query: search, type: '10', limit: '40' });
+  const artistParams = new URLSearchParams({ query: search, type: '8', limit: '8' });
+  const [machineIdentifier, trackContainer, artistContainer] = await Promise.all([
     plexSourceMachineIdentifier(source, fetcher),
-    plexServerJson(source, `/library/sections/${source.libraryKey}/search?${params}`, fetcher),
+    plexServerJson(source, `/library/sections/${source.libraryKey}/search?${trackParams}`, fetcher),
+    plexServerJson(source, `/library/sections/${source.libraryKey}/search?${artistParams}`, fetcher),
   ]);
-  return metadataArray(container).flatMap((metadata) => {
+  const artistRatingKeys = metadataArray(artistContainer)
+    .filter((metadata) => metadata.type === 'artist' || metadata.type === 8)
+    .map((metadata) => String(metadata.ratingKey ?? ''))
+    .filter(Boolean);
+  const artistTrackContainers = await Promise.all(
+    artistRatingKeys.map((ratingKey) => plexServerJson(
+      source,
+      `/library/metadata/${ratingKey}/allLeaves?type=10&limit=40`,
+      fetcher,
+    )),
+  );
+  const songs = [
+    ...metadataArray(trackContainer),
+    ...artistTrackContainers.flatMap(metadataArray),
+  ].flatMap((metadata) => {
     const song = mapPlexSong(metadata, machineIdentifier);
     return song ? [song] : [];
   });
+  return [...new Map(songs.map((song) => [song.id, song])).values()].slice(0, 40);
 }
 
 /** Fetch a bounded random page of tracks from the configured Music library. */

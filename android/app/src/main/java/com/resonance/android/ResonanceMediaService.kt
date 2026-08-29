@@ -83,35 +83,15 @@ class ResonanceMediaService : MediaLibraryService() {
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                val item = player.currentMediaItem ?: return
-                val songId = item.mediaId
-                val title = item.mediaMetadata.title?.toString() ?: ""
-                val artist = item.mediaMetadata.artist?.toString() ?: ""
-                val album = item.mediaMetadata.albumTitle?.toString() ?: ""
-                val coverArt = item.mediaMetadata.artworkUri?.toString()?.let {
-                    val idParam = it.substringAfter("cover-art/").substringBefore("?")
-                    java.net.URLDecoder.decode(idParam, "UTF-8")
-                } ?: ""
-                val isAuto = currentIsAuto.get()
-                scope.launch {
-                    try {
-                        api.json(
-                            "now-playing", "POST",
-                            JSONObject()
-                                .put("song", JSONObject()
-                                    .put("id", songId)
-                                    .put("title", title)
-                                    .put("artist", artist)
-                                    .put("album", album)
-                                    .put("coverArt", coverArt))
-                                .put("isPlaying", isPlaying)
-                                .put("isAutoQueue", isAuto)
-                        )
-                    } catch (e: Exception) {
-                        Log.e("ResonanceMedia", "Failed to sync play state", e)
-                    }
-                }
+                syncCurrentPlaybackState(isPlaying)
                 if (isPlaying) startPositionSaving() else stopPositionSaving()
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // Android Auto can start a search result without toggling the
+                // playing flag again. Publish the item transition as well so
+                // the phone UI immediately reflects the selected track.
+                syncCurrentPlaybackState(player.isPlaying)
             }
         })
 
@@ -434,7 +414,7 @@ class ResonanceMediaService : MediaLibraryService() {
     private fun connectWebSocket() {
         if (api.base.isEmpty() || api.token.isEmpty()) return
         webSocket?.close(1000, null)
-        webSocket = api.websocket { text ->
+        webSocket = api.websocket(onMessage = { text ->
             try {
                 val msg = JSONObject(text)
                 val type = msg.optString("type")
@@ -458,6 +438,41 @@ class ResonanceMediaService : MediaLibraryService() {
                 }
             } catch (e: Exception) {
                 Log.e("ResonanceMedia", "Failed to parse WS message", e)
+            }
+        })
+    }
+
+    private fun syncCurrentPlaybackState(isPlaying: Boolean) {
+        val item = player.currentMediaItem ?: return
+        val songId = item.mediaId
+        val title = item.mediaMetadata.title?.toString() ?: ""
+        val artist = item.mediaMetadata.artist?.toString() ?: ""
+        val album = item.mediaMetadata.albumTitle?.toString() ?: ""
+        val coverArt = item.mediaMetadata.artworkUri?.toString()?.let {
+            val idParam = it.substringAfter("cover-art/").substringBefore("?")
+            java.net.URLDecoder.decode(idParam, "UTF-8")
+        } ?: ""
+        val isAuto = currentIsAuto.get()
+        scope.launch {
+            try {
+                // The server deliberately clears the active session on a
+                // restart. A device that is already playing must reclaim it
+                // before it can restore the shared now-playing state.
+                if (isPlaying) api.json("player/claim", "POST", JSONObject())
+                api.json(
+                    "now-playing", "POST",
+                    JSONObject()
+                        .put("song", JSONObject()
+                            .put("id", songId)
+                            .put("title", title)
+                            .put("artist", artist)
+                            .put("album", album)
+                            .put("coverArt", coverArt))
+                        .put("isPlaying", isPlaying)
+                        .put("isAutoQueue", isAuto)
+                )
+            } catch (e: Exception) {
+                Log.e("ResonanceMedia", "Failed to sync play state", e)
             }
         }
     }

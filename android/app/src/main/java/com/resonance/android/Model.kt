@@ -55,12 +55,16 @@ class Api(private val prefs: android.content.SharedPreferences) {
             value
         }
     }
-    fun websocket(onMessage: (String) -> Unit): WebSocket {
+    fun websocket(onMessage: (String) -> Unit, onDisconnected: () -> Unit = {}): WebSocket {
         val t = prefs.getString("token", "") ?: ""
         val b = prefs.getString("base", "") ?: ""
         return http.newWebSocket(
             Request.Builder().url(b.replaceFirst(Regex("^http"), "ws") + "/ws").header("Sec-WebSocket-Protocol", t).build(),
-            object : WebSocketListener() { override fun onMessage(webSocket: WebSocket, text: String) = onMessage(text) }
+            object : WebSocketListener() {
+                override fun onMessage(webSocket: WebSocket, text: String) = onMessage(text)
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = onDisconnected()
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = onDisconnected()
+            }
         )
     }
 }

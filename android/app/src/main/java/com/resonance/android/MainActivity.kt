@@ -31,6 +31,7 @@ import androidx.media3.session.SessionToken
 import coil.compose.AsyncImage
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
@@ -41,6 +42,8 @@ class ResonanceViewModel : ViewModel() {
     private lateinit var context: Context
     private lateinit var api: Api
     private var socket: okhttp3.WebSocket? = null
+    private var socketReconnectJob: kotlinx.coroutines.Job? = null
+    private var socketStopped = false
     var ready by mutableStateOf(false); private set
     var loading by mutableStateOf(false); var error by mutableStateOf("")
     var queue by mutableStateOf<List<Song>>(emptyList()); var nowPlaying by mutableStateOf(NowPlaying())
@@ -109,8 +112,7 @@ class ResonanceViewModel : ViewModel() {
                     val npJson = api.json("now-playing")
                     val np = JSONObject(npJson)
                     nowPlaying = NowPlaying(np.optJSONObject("song")?.let(::song), np.optBoolean("isPlaying"))
-                    socket?.close(1000, null)
-                    socket = api.websocket { refresh() }
+                    ensureSocket()
                     if (isHost) loadPlexSource()
                 } else if (needsPlexSetup && isPlexSetupOwner) {
                     loadPlexServers()
@@ -122,6 +124,23 @@ class ResonanceViewModel : ViewModel() {
                 loading = false
             }
         }
+    }
+
+    private fun ensureSocket() {
+        if (socketStopped || socket != null || !ready) return
+        socket = api.websocket(
+            onMessage = { refresh() },
+            onDisconnected = {
+                socket = null
+                if (!socketStopped) {
+                    socketReconnectJob?.cancel()
+                    socketReconnectJob = viewModelScope.launch {
+                        delay(1_000)
+                        ensureSocket()
+                    }
+                }
+            },
+        )
     }
 
     private fun loadPlexSource() {
@@ -241,6 +260,8 @@ class ResonanceViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        socketStopped = true
+        socketReconnectJob?.cancel()
         socket?.close(1000, null)
         controller?.let { MediaController.releaseFuture(com.google.common.util.concurrent.Futures.immediateFuture(it)) }
     }
@@ -260,6 +281,12 @@ class MainActivity : ComponentActivity() {
             val vm: ResonanceViewModel = viewModel()
             LaunchedEffect(Unit) { vm.initialize(applicationContext) }
             LaunchedEffect(authUri) { authUri?.let(vm::receiveAuth) }
+            LaunchedEffect(vm.ready) {
+                while (vm.ready) {
+                    delay(5_000)
+                    vm.refresh()
+                }
+            }
             ResonanceApp(vm)
         }
     }
