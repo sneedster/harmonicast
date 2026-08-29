@@ -127,10 +127,15 @@ The Vite development server proxies `/api` and `/ws` to port 3001.
 Useful local checks:
 
 ```bash
+npm test
 npm run build
 npm run typecheck
 ./android/build-debug.sh
 ```
+
+`npm test` runs the server suite in the same Node 20 Alpine runtime as the
+production image. It needs Docker but does not modify the checkout or require
+Plex credentials.
 
 ## API notes
 

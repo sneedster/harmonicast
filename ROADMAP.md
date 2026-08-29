@@ -8,12 +8,14 @@
 - Plex Sonic Analysis **Track Radio** queueing.
 - Web, Android, and Android Auto playback, queue, voting, and Track Radio.
 - Docker Hub image, Compose deployment, and Unraid template.
+- Isolated Node 20 regression tests for Track Radio, queue fairness, and
+  active-player session ownership.
 
 ## Release hardening
 
-- Resolve the existing ESLint debt and make lint a required release check.
-- Add automated coverage for Plex source setup, queue ordering, active-player
-  ownership, Track Radio, and Android Auto metadata resolution.
+- Make lint and the automated test suite required release checks.
+- Extend automated coverage to Plex source setup and Android Auto metadata
+  resolution.
 - Produce a versioned/signed Android release APK rather than distributing only
   debug builds.
 - Run a documented clean-install and upgrade verification pass against Docker,
