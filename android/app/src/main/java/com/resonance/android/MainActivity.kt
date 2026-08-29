@@ -125,6 +125,9 @@ class ResonanceViewModel : ViewModel() {
                 } else if (needsPlexSetup && isPlexSetupOwner) {
                     loadPlexServers()
                 }
+                // Refresh runs continuously. A transient network failure must not
+                // leave its error visible after a later request succeeds.
+                error = ""
             } catch (e: Exception) {
                 error = e.message ?: "Could not connect"
                 if ((e.message ?: "").contains("Authentication required")) ready = false
