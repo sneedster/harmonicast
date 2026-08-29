@@ -24,3 +24,14 @@ explicitly skipped for local troubleshooting.
 2. A signed APK increments both version name and version code.
 3. README, `.env.example`, Compose, and the Unraid template agree on port
    `3001`, persistent path `/app/data`, and `PUBLIC_URL`.
+
+## Artifact tracking
+
+- Every Docker release that changes server or web code gets a new numbered
+  tag, `latest`, and `main-<source-commit>` tag. Its OCI revision label must
+  match that source commit.
+- Android releases advance only when the Android client changes. Each signed
+  APK records its source tag through the matching GitHub release.
+- `RELEASES.md` is the human-readable ledger of the currently published
+  Docker image and Android APK. Update it in the same commit that prepares a
+  new release.

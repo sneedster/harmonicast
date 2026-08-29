@@ -10,6 +10,10 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /app
 
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.source="https://github.com/sneedster/resonance" \
+      org.opencontainers.image.revision="$VCS_REF"
+
 # Install server dependencies
 COPY server/package.json server/package-lock.json ./server/
 RUN cd server && npm ci --omit=dev
