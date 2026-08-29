@@ -7,7 +7,7 @@ import {
   fetchTopRated,
 } from '@/lib/stats';
 import { CoverArt } from '@/components/CoverArt';
-import { formatTime, ratingColor, ratingLabel } from '@/lib/format';
+import { ratingColor } from '@/lib/format';
 
 export function StatsView() {
   const [topRated, setTopRated] = useState<SongStats[]>([]);
