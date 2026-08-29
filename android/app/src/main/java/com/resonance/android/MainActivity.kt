@@ -60,6 +60,10 @@ class ResonanceViewModel : ViewModel() {
     var loading by mutableStateOf(false); var error by mutableStateOf("")
     var notice by mutableStateOf(""); private set
     var queue by mutableStateOf<List<Song>>(emptyList()); var nowPlaying by mutableStateOf(NowPlaying())
+    var playbackPosition by mutableFloatStateOf(0f); private set
+    var trackDetails by mutableStateOf<PlexTrackDetails?>(null); private set
+    var trackDetailsLoading by mutableStateOf(false); private set
+    var trackDetailsError by mutableStateOf(""); private set
     var isHost by mutableStateOf(false); var isActivePlayer by mutableStateOf(false)
     var configured by mutableStateOf(true)
     var needsPlexSetup by mutableStateOf(false); private set
@@ -125,6 +129,7 @@ class ResonanceViewModel : ViewModel() {
                     val npJson = api.json("now-playing")
                     val np = JSONObject(npJson)
                     nowPlaying = NowPlaying(np.optJSONObject("song")?.let(::song), np.optBoolean("isPlaying"))
+                    playbackPosition = np.optDouble("playbackPosition", 0.0).toFloat().coerceAtLeast(0f)
                     ensureSocket()
                     if (isHost) loadPlexSource()
                 } else if (needsPlexSetup && isPlexSetupOwner) {
@@ -274,6 +279,29 @@ class ResonanceViewModel : ViewModel() {
     }
 
     fun nextSong() { controller?.seekToNext() }
+    fun seekTo(seconds: Float) { controller?.seekTo((seconds.coerceAtLeast(0f) * 1_000).toLong()) }
+
+    fun loadTrackDetails(song: Song) {
+        viewModelScope.launch {
+            trackDetailsLoading = true
+            trackDetails = null
+            trackDetailsError = ""
+            try {
+                val item = JSONObject(api.json("plex/tracks/${URLEncoder.encode(song.id, "UTF-8")}"))
+                trackDetails = PlexTrackDetails(
+                    rating = if (item.has("rating") && !item.isNull("rating")) item.optInt("rating").coerceIn(0, 10) else null,
+                    playCount = item.optInt("playCount"),
+                    skipCount = item.optInt("skipCount"),
+                    lastPlayed = item.optString("lastPlayed").ifBlank { null },
+                    duration = item.optInt("duration", song.duration),
+                )
+            } catch (e: Exception) {
+                trackDetailsError = e.message ?: "Could not load track details"
+            } finally {
+                trackDetailsLoading = false
+            }
+        }
+    }
 
     private fun action(path: String, method: String, body: JSONObject, done: () -> Unit = {}) {
         viewModelScope.launch {
@@ -453,6 +481,19 @@ class MainActivity : ComponentActivity() {
         val skipThreshold = throwDistance * 0.35f
         var swipeOffset by remember(song?.id) { mutableFloatStateOf(0f) }
         var throwingSongAway by remember(song?.id) { mutableStateOf(false) }
+        var detailsOpen by remember(song?.id) { mutableStateOf(false) }
+        var scrubPosition by remember(song?.id) { mutableFloatStateOf(vm.playbackPosition) }
+        var isScrubbing by remember(song?.id) { mutableStateOf(false) }
+        val duration = song?.duration?.toFloat()?.coerceAtLeast(0f) ?: 0f
+        LaunchedEffect(song?.id, vm.playbackPosition, isScrubbing) {
+            if (!isScrubbing) scrubPosition = vm.playbackPosition.coerceIn(0f, duration)
+        }
+        LaunchedEffect(song?.id, vm.nowPlaying.isPlaying, duration, isScrubbing) {
+            while (vm.nowPlaying.isPlaying && duration > 0f && !isScrubbing) {
+                delay(500)
+                scrubPosition = (scrubPosition + 0.5f).coerceAtMost(duration)
+            }
+        }
         val animatedSwipeOffset by animateFloatAsState(
             targetValue = if (throwingSongAway) -throwDistance else swipeOffset,
             animationSpec = if (throwingSongAway) {
@@ -536,6 +577,35 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            if (duration > 0f) {
+                Column(Modifier.fillMaxWidth()) {
+                    Slider(
+                        value = scrubPosition.coerceIn(0f, duration),
+                        onValueChange = {
+                            isScrubbing = true
+                            scrubPosition = it
+                        },
+                        onValueChangeFinished = {
+                            vm.seekTo(scrubPosition)
+                            isScrubbing = false
+                        },
+                        valueRange = 0f..duration,
+                        enabled = vm.isActivePlayer,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(formatDuration(scrubPosition.toInt()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(formatDuration(duration.toInt()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            OutlinedButton(onClick = {
+                detailsOpen = true
+                vm.loadTrackDetails(song)
+            }) {
+                Icon(Icons.Default.Info, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Track details")
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.ThumbDown, "Vote down") }
                 FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.size(64.dp)) {
@@ -552,6 +622,33 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Play on this device") }
+
+            if (detailsOpen) {
+                AlertDialog(
+                    onDismissRequest = { detailsOpen = false },
+                    title = { Text("Track details") },
+                    text = {
+                        when {
+                            vm.trackDetailsLoading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(12.dp)); Text("Loading from Plex…")
+                            }
+                            vm.trackDetailsError.isNotBlank() -> Text(vm.trackDetailsError, color = MaterialTheme.colorScheme.error)
+                            vm.trackDetails != null -> {
+                                val details = vm.trackDetails!!
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    DetailLine("Rating", details.rating?.let { "$it / 10" } ?: "Not rated")
+                                    DetailLine("Plays", details.playCount.toString())
+                                    DetailLine("Skips", details.skipCount.toString())
+                                    DetailLine("Last played", details.lastPlayed?.take(10) ?: "Never")
+                                    DetailLine("Length", formatDuration(details.duration))
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { detailsOpen = false }) { Text("Close") } },
+                )
+            }
         } else {
             Spacer(Modifier.height(100.dp))
             Text("Nothing is playing")
@@ -562,6 +659,18 @@ class MainActivity : ComponentActivity() {
         }
         }
     }
+}
+
+@Composable private fun DetailLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontWeight = FontWeight.Medium)
+    }
+}
+
+private fun formatDuration(totalSeconds: Int): String {
+    val seconds = totalSeconds.coerceAtLeast(0)
+    return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
 @Composable private fun Queue(vm: ResonanceViewModel) {
