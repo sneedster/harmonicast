@@ -15,8 +15,12 @@ between the web client, Android app, and Android Auto.
 - Automatic weighted playback when the request queue runs out.
 - Plex-backed 1–10 ratings, completed-play scrobbles, and playback history.
 - **Track Radio** uses Plex Sonic Analysis to queue up to 20 nearby tracks.
+- On-demand artist discovery: biography, genres, similar artists, and album
+  context from Plex—without bulk metadata indexing.
+- Touch-friendly kiosk mode with curated picks, live search, guest mode, and
+  attract mode.
 - Web player, native Android player, and Android Auto search, queue, voting,
-  Next, and Track Radio controls.
+  Next, Track Radio, and supported queue controls.
 
 Resonance is experimental software. Keep it on a trusted network or put it
 behind HTTPS and appropriate access controls before exposing it publicly.
@@ -37,7 +41,8 @@ to web or Android clients.
 1. Copy `.env.example` to `.env`.
 2. Set `PUBLIC_URL` to the exact URL users will open, without a trailing slash.
    For example: `https://resonance.example.com`.
-3. Optionally pin `RESONANCE_IMAGE_TAG` to a tested image tag.
+3. Keep `RESONANCE_IMAGE_TAG=1.0.7` for a pinned release, or change it to
+   `latest` if you intentionally want new releases automatically.
 4. Start it:
 
    ```bash
@@ -56,7 +61,7 @@ unless you intentionally want to reset the installation and repeat Plex setup.
 Import [`unraid/resonance.xml`](unraid/resonance.xml), or create a container
 with these settings:
 
-- Image: `mjstrong/resonance:latest` (or a pinned `main-<commit>` tag)
+- Image: `mjstrong/resonance:1.0.7` (or `latest`)
 - Port: container `3001` mapped to your chosen host port
 - Volume: `/app/data` mapped to an Unraid appdata directory
 - Variable: `PUBLIC_URL` set to the exact browser-facing URL
@@ -81,8 +86,9 @@ The Android client is in [`android/`](android/). Enter your Resonance URL, sign
 in through Plex, and select **Play here** to make that phone the active player.
 
 Android Auto supports search, browsing the shared Request queue, Up next,
-play/pause, Next, and **Queue Track Radio**. Its Up next list is synchronized
-from the shared Resonance queue. The checked-in build helper
+play/pause, Next, **Queue Track Radio**, and **Clear upcoming queue**. Track
+Radio shows a ready indicator while its tracks remain in the shared queue. Its
+Up next list is synchronized from the shared Resonance queue. The checked-in build helper
 uses the compatible local Java/SDK setup:
 
 ```bash
@@ -105,7 +111,7 @@ Then build a signed, versioned APK. The result is written to the ignored
 `android/releases/` directory.
 
 ```bash
-VERSION_NAME=1.0.2 VERSION_CODE=3 ./android/build-release.sh
+VERSION_NAME=1.0.14 VERSION_CODE=15 ./android/build-release.sh
 ```
 
 This runs the required server, web, Docker image, and Compose checks before
@@ -124,9 +130,7 @@ local troubleshooting; do not use it for a published APK.
 | `PLEX_CLIENT_IDENTIFIER` | generated | Optional stable Plex client ID; generated and persisted when omitted |
 
 No Plex URL, Plex token, Music library key, or administrator email belongs in
-the environment for a normal first-time setup. The optional `MUSIC_SERVER_*`
-variables are legacy Subsonic migration support only and should be left unset
-for Plex deployments.
+the environment for a normal first-time setup.
 
 ## Development
 
@@ -173,11 +177,13 @@ image or APK:
 2. **Docker upgrade:** start from a copy of a real installation's data volume,
    recreate it with the candidate image, confirm the existing Plex source and
    queue remain available, and play a track.
-3. **Web:** sign in, claim playback, play/pause/skip, search by artist and
-   title, add Track Radio, vote, and confirm the shared queue updates.
+3. **Web:** sign in, claim playback, play/pause/skip, use the Now Playing
+   artist and album search links, open artist discovery, add Track Radio, vote,
+   and confirm the shared queue updates.
 4. **Android and Android Auto:** install the new APK over the prior version,
    reconnect it, repeat playback and voting, then verify the same controls and
-   shared queue in Android Auto or DHU.
+   shared queue in Android Auto or DHU, including Track Radio's ready state and
+   Clear upcoming queue.
 
 Do not publish a Docker image or GitHub APK release until the automated gate
 and the relevant manual checks have passed.
@@ -193,6 +199,8 @@ consumers. Key integration routes are:
   selected Plex library search and playback.
 - `GET|POST|DELETE /api/queue` and `POST /api/queue/similar`: shared queue and
   Track Radio.
+- `GET /api/plex/tracks/:id/discovery`: on-demand artist and album context for
+  a selected Plex track.
 - `GET|POST /api/now-playing`, `POST /api/player/claim`, and
   `GET /api/player/status`: active-player coordination.
 - `POST /api/vote` and `POST /api/scrobble`: shared Plex ratings and completed

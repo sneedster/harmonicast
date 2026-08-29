@@ -11,7 +11,7 @@
 - Isolated Node 20 regression tests for first-run Plex source selection,
   Track Radio, queue fairness, active-player ownership, and the Plex metadata
   Android Auto consumes.
-- Local signed Android release workflow, with a verified 1.0.1 release APK.
+- Local signed Android release workflow, with versioned signed APK releases.
 - Touch-friendly kiosk mode with curated discovery, live search, host-aware
   entry, and idle/attract behavior.
 
@@ -23,7 +23,7 @@
 - Completed: documented clean-install and upgrade verification pass for Docker,
   web, Android, and Android Auto.
 
-## Future enhancements
+## Status
 
 - Completed: on-demand Plex artist discovery (biography, genres, and similar
   artists) in Android and the web player. Metadata is fetched only when opened.
@@ -36,3 +36,6 @@
   reliable supported path for proxy/headless player sessions.
 - Completed: weighted auto-queue selection using Plex ratings, play history,
   skips, and recency cooldowns.
+
+There are no active planned enhancements. New work is driven by real-use
+feedback and should be added here before implementation.

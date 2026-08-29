@@ -1,14 +1,14 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>Resonance</Name>
-  <Repository>mjstrong/resonance:latest</Repository>
+  <Repository>mjstrong/resonance:1.0.7</Repository>
   <Registry>https://hub.docker.com/r/mjstrong/resonance</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
   <Support>https://github.com/sneedster/resonance</Support>
   <Project>https://github.com/sneedster/resonance</Project>
-  <Overview>Self-hosted collaborative Plex music jukebox. On first launch, sign in with the Plex account that owns the server and choose its Music library.</Overview>
+  <Overview>Self-hosted collaborative Plex music jukebox with shared playback, requests, Track Radio, web, Android, Android Auto, and kiosk mode. On first launch, sign in with the Plex account that owns the server and choose its Music library.</Overview>
   <Category>MediaApp:Music</Category>
   <WebUI>http://[IP]:[PORT:3001]</WebUI>
   <Icon>https://raw.githubusercontent.com/sneedster/resonance/main/public/resonance-icon.png</Icon>
