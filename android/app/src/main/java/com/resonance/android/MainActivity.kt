@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -48,6 +47,12 @@ class ResonanceViewModel : ViewModel() {
     var queue by mutableStateOf<List<Song>>(emptyList()); var nowPlaying by mutableStateOf(NowPlaying())
     var isHost by mutableStateOf(false); var isActivePlayer by mutableStateOf(false)
     var configured by mutableStateOf(true)
+    var needsPlexSetup by mutableStateOf(false); private set
+    var isPlexSetupOwner by mutableStateOf(false); private set
+    var plexServers by mutableStateOf<List<PlexServer>>(emptyList()); private set
+    var plexLibraries by mutableStateOf<List<PlexLibrary>>(emptyList()); private set
+    var selectedPlexServer by mutableStateOf<PlexServer?>(null); private set
+    var plexSourceLabel by mutableStateOf(""); private set
     var results by mutableStateOf<List<Song>>(emptyList()); var query by mutableStateOf("")
     var controller by mutableStateOf<MediaController?>(null); private set
     var savedBaseUrl by mutableStateOf("")
@@ -101,6 +106,8 @@ class ResonanceViewModel : ViewModel() {
                 configured = connection.optBoolean("configured")
                 isHost = connection.optBoolean("isHost")
                 isActivePlayer = connection.optBoolean("isActivePlayer")
+                needsPlexSetup = connection.optBoolean("needsPlexSetup")
+                isPlexSetupOwner = connection.optBoolean("isSetupOwner")
                 if (configured) {
                     queue = songs(JSONArray(api.json("queue")))
                     val npJson = api.json("now-playing")
@@ -110,6 +117,9 @@ class ResonanceViewModel : ViewModel() {
                     jukeboxMode = JSONObject(settingsJson).optBoolean("jukeboxMode", false)
                     socket?.close(1000, null)
                     socket = api.websocket { refresh() }
+                    if (isHost) loadPlexSource()
+                } else if (needsPlexSetup && isPlexSetupOwner) {
+                    loadPlexServers()
                 }
             } catch (e: Exception) {
                 error = e.message ?: "Could not connect"
@@ -120,8 +130,65 @@ class ResonanceViewModel : ViewModel() {
         }
     }
 
-    fun configureMusicServer(baseUrl: String, user: String, password: String, name: String) = 
-        action("connection", "POST", JSONObject().put("baseUrl", baseUrl).put("username", user).put("password", password).put("serverName", name)) { refresh() }
+    private fun loadPlexSource() {
+        viewModelScope.launch {
+            runCatching {
+                val source = JSONObject(api.json("plex/source"))
+                if (source.optBoolean("configured")) {
+                    val server = source.optJSONObject("server")?.optString("name").orEmpty()
+                    val selectedKey = source.optString("selectedLibraryKey")
+                    val libraries = source.optJSONArray("libraries") ?: JSONArray()
+                    val library = (0 until libraries.length()).asSequence()
+                        .map { libraries.getJSONObject(it) }
+                        .firstOrNull { it.optString("key") == selectedKey }
+                        ?.optString("title").orEmpty()
+                    plexSourceLabel = listOf(server, library).filter { it.isNotBlank() }.joinToString(" · ")
+                }
+            }
+        }
+    }
+
+    private fun loadPlexServers() {
+        viewModelScope.launch {
+            try {
+                val items = JSONObject(api.json("setup/plex/servers")).optJSONArray("servers") ?: JSONArray()
+                plexServers = List(items.length()) { index ->
+                    val item = items.getJSONObject(index)
+                    PlexServer(item.optString("machineIdentifier"), item.optString("name"))
+                }
+            } catch (e: Exception) {
+                error = e.message ?: "Could not load owned Plex servers"
+            }
+        }
+    }
+
+    fun choosePlexServer(server: PlexServer) {
+        selectedPlexServer = server
+        plexLibraries = emptyList()
+        viewModelScope.launch {
+            loading = true
+            try {
+                val response = JSONObject(api.json("setup/plex/servers/${URLEncoder.encode(server.machineIdentifier, "UTF-8")}/libraries"))
+                val items = response.optJSONArray("libraries") ?: JSONArray()
+                plexLibraries = List(items.length()) { index ->
+                    val item = items.getJSONObject(index)
+                    PlexLibrary(item.optString("key"), item.optString("title"))
+                }
+                if (plexLibraries.isEmpty()) error = "This Plex server has no Music libraries."
+            } catch (e: Exception) {
+                error = e.message ?: "Could not reach that Plex server"
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    fun selectPlexLibrary(library: PlexLibrary) {
+        val server = selectedPlexServer ?: return
+        action("setup/plex/select", "POST", JSONObject()
+            .put("machineIdentifier", server.machineIdentifier)
+            .put("libraryKey", library.key)) { refresh() }
+    }
 
     fun search() {
         viewModelScope.launch {
@@ -239,13 +306,20 @@ class MainActivity : ComponentActivity() {
 @Composable private fun Home(vm: ResonanceViewModel) {
     var tab by remember { mutableIntStateOf(0) }
     if (!vm.configured) {
-        MusicServerSetup(vm)
+        PlexMusicSetup(vm)
         return
     }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Resonance") },
+                title = {
+                    Column {
+                        Text("Resonance")
+                        if (vm.plexSourceLabel.isNotBlank()) {
+                            Text(vm.plexSourceLabel, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                },
                 actions = {
                     if (vm.loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                     IconButton(onClick = { vm.refresh() }) {
@@ -283,21 +357,34 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun MusicServerSetup(vm: ResonanceViewModel) {
-    var url by remember { mutableStateOf("") }
-    var user by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var name by remember { mutableStateOf("") }
+@Composable private fun PlexMusicSetup(vm: ResonanceViewModel) {
     Box(Modifier.fillMaxSize().padding(28.dp), Alignment.Center) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Connect music server", style = MaterialTheme.typography.headlineSmall)
-            Text("Set up a Subsonic-compatible server.")
-            OutlinedTextField(url, { url = it }, label = { Text("Server URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(user, { user = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(password, { password = it }, label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(name, { name = it }, label = { Text("Display name (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Button({ vm.configureMusicServer(url, user, password, name) }, enabled = url.isNotBlank() && user.isNotBlank() && password.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                Text("Connect")
+            if (!vm.needsPlexSetup) {
+                Text("Plex source needs setup", style = MaterialTheme.typography.headlineSmall)
+                Text("Sign in again with the Plex account that owns the server to finish setup.")
+            } else if (!vm.isPlexSetupOwner) {
+                Text("Plex setup is in progress", style = MaterialTheme.typography.headlineSmall)
+                Text("The Plex account that began setup must choose the server and Music library before anyone else can use this installation.")
+            } else {
+                Text("Choose your Plex music", style = MaterialTheme.typography.headlineSmall)
+                Text("Select a Plex server you own, then choose its Music library. Plex sharing controls guest access.")
+                if (vm.loading) CircularProgressIndicator()
+                if (vm.selectedPlexServer == null) {
+                    vm.plexServers.forEach { server ->
+                        OutlinedButton(onClick = { vm.choosePlexServer(server) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(server.name)
+                        }
+                    }
+                    if (!vm.loading && vm.plexServers.isEmpty()) Text("No owned Plex servers were found.")
+                } else {
+                    Text("${vm.selectedPlexServer?.name} — choose a Music library", style = MaterialTheme.typography.titleSmall)
+                    vm.plexLibraries.forEach { library ->
+                        Button(onClick = { vm.selectPlexLibrary(library) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(library.title)
+                        }
+                    }
+                }
             }
             if (vm.error.isNotBlank()) Text(vm.error, color = MaterialTheme.colorScheme.error)
         }

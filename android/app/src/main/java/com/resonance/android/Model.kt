@@ -9,6 +9,8 @@ import org.json.JSONObject
 
 data class Song(val id: String, val title: String, val artist: String, val album: String = "", val duration: Int = 0, val coverArt: String = "", val addedByEmail: String = "", val isManual: Boolean = true)
 data class NowPlaying(val song: Song? = null, val isPlaying: Boolean = false)
+data class PlexServer(val machineIdentifier: String, val name: String)
+data class PlexLibrary(val key: String, val title: String)
 
 class Api(private val prefs: android.content.SharedPreferences) {
     private val http = OkHttpClient()
