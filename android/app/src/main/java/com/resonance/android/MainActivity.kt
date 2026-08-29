@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -292,7 +293,12 @@ class ResonanceViewModel : ViewModel() {
     }
 
     private fun songs(a: JSONArray) = List(a.length()) { song(a.getJSONObject(it)) }
-    private fun song(o: JSONObject) = Song(o.optString("id"), o.optString("title"), o.optString("artist"), o.optString("album"), o.optInt("duration"), o.optString("coverArt"), o.optString("addedByEmail"), o.optBoolean("isManual", true))
+    private fun song(o: JSONObject) = Song(
+        o.optString("id"), o.optString("title"), o.optString("artist"), o.optString("album"),
+        o.optInt("duration"), o.optString("coverArt"),
+        if (o.has("rating") && !o.isNull("rating")) o.optInt("rating").coerceIn(0, 10) else null,
+        o.optString("addedByEmail"), o.optBoolean("isManual", true),
+    )
     private fun songJson(s: Song) = JSONObject().put("id", s.id).put("title", s.title).put("artist", s.artist).put("album", s.album).put("duration", s.duration).put("coverArt", s.coverArt)
 }
 
@@ -516,6 +522,19 @@ class MainActivity : ComponentActivity() {
             Text(song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (song.album.isNotBlank()) Text(song.album, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            song.rating?.let { rating ->
+                val filledStars = (rating / 2).coerceIn(0, 5)
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    repeat(5) { index ->
+                        Icon(
+                            if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder,
+                            if (index == 0) "Plex rating $rating out of 10" else null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
+                }
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.ThumbDown, "Vote down") }
                 FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.size(64.dp)) {

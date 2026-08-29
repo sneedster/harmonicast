@@ -665,11 +665,24 @@ app.post('/api/queue/similar', requireAuth, requireActivePlayer, async (req, res
 
 // ── Now Playing ───────────────────────────────────────────────────────
 
-app.get('/api/now-playing', requireAuth, (req, res) => {
+app.get('/api/now-playing', requireAuth, async (req, res) => {
   const np = getNowPlaying();
   if (!np || !np.song_id) return res.json({ song: null, isPlaying: false, isAutoQueue: false, playbackPosition: 0 });
+
+  // Queue rows intentionally only retain the metadata needed for playback.
+  // Plex remains the canonical shared rating store, so hydrate that one field
+  // for the now-playing view without making Plex availability block playback.
+  let rating = null;
+  const plexSource = getActivePlexSource();
+  if (plexSource && np.song_id.startsWith('plex:')) {
+    try {
+      rating = (await getPlexTrack(plexSource, np.song_id)).userRating;
+    } catch (err) {
+      console.warn('Could not load now-playing Plex rating:', err.message);
+    }
+  }
   res.json({
-    song: { id: np.song_id, title: np.title, artist: np.artist, album: np.album, duration: np.duration, coverArt: np.cover_art },
+    song: { id: np.song_id, title: np.title, artist: np.artist, album: np.album, duration: np.duration, coverArt: np.cover_art, rating },
     isPlaying: !!np.is_playing,
     isAutoQueue: !!np.is_auto_queue,
     playbackPosition: np.playback_position || 0,
