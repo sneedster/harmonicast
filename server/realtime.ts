@@ -18,6 +18,16 @@ export function initWebSocket(server) {
   });
 
   wss.on('connection', (ws, req) => {
+    const removeClient = () => clients.delete(ws);
+    // A malformed close frame from a client can cause `ws` to emit an error
+    // (for example, close code 1006 is reserved). Without this listener Node
+    // treats it as an unhandled EventEmitter error and terminates the server.
+    ws.on('error', (err) => {
+      removeClient();
+      console.warn('WebSocket client error:', err?.code || err?.message || 'unknown error');
+    });
+    ws.on('close', removeClient);
+
     const token = (req.headers['sec-websocket-protocol'] || '').split(',')[0].trim();
     if (!token || !getUserByToken(token)) {
       // 1008 = policy violation.
@@ -25,7 +35,6 @@ export function initWebSocket(server) {
       return;
     }
     clients.add(ws);
-    ws.on('close', () => clients.delete(ws));
   });
 }
 

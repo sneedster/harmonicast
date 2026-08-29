@@ -46,7 +46,12 @@ class Api(private val prefs: android.content.SharedPreferences) {
     suspend fun json(path: String, method: String = "GET", body: JSONObject? = null): String = withContext(Dispatchers.IO) {
         http.newCall(buildRequest(path, method, body)).execute().use { response ->
             val value = response.body?.string() ?: ""
-            if (!response.isSuccessful) throw IllegalStateException(runCatching { JSONObject(value).optString("error") }.getOrDefault("Request failed (${response.code})"))
+            if (!response.isSuccessful) {
+                val message = runCatching { JSONObject(value).optString("error") }
+                    .getOrDefault("Request failed (${response.code})")
+                android.util.Log.e("ResonanceApi", "$method /api/$path failed (${response.code}): $message")
+                throw IllegalStateException(message.ifBlank { "Request failed (${response.code})" })
+            }
             value
         }
     }

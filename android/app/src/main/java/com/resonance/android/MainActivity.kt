@@ -198,6 +198,17 @@ class ResonanceViewModel : ViewModel() {
     fun add(song: Song) = action("queue", "POST", JSONObject().put("song", songJson(song))) { refresh() }
     fun vote(up: Boolean) = action("vote", "POST", JSONObject().put("vote", if (up) "up" else "down"))
     fun claim() = action("player/claim", "POST", JSONObject()) { refresh() }
+    fun queueSimilar() {
+        viewModelScope.launch {
+            try {
+                val added = JSONObject(api.json("queue/similar", "POST", JSONObject())).optInt("added", 0)
+                error = if (added > 0) "Queued $added similar tracks next" else "No similar tracks were found"
+                refresh()
+            } catch (e: Exception) {
+                error = e.message ?: "Could not queue similar tracks"
+            }
+        }
+    }
 
     /** Enables Jukebox, populates its random queue, and starts its first song. */
     fun startRandomPlayback() {
@@ -386,6 +397,13 @@ class MainActivity : ComponentActivity() {
                 }
                 IconButton(onClick = { vm.vote(true) }) { Icon(Icons.Default.ThumbUp, "Vote up") }
                 IconButton(onClick = { vm.nextSong() }, enabled = vm.isActivePlayer) { Icon(Icons.Default.SkipNext, "Next") }
+            }
+            if (vm.isHost) {
+                OutlinedButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer) {
+                    Icon(Icons.Default.AutoAwesome, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Queue similar tracks next")
+                }
             }
             if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Play on this device") }
         } else {

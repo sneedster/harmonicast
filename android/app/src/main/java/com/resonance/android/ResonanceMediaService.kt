@@ -68,6 +68,14 @@ class ResonanceMediaService : MediaLibraryService() {
         api = Api(getSharedPreferences("resonance", Context.MODE_PRIVATE))
 
         exoPlayer.addListener(object : Player.Listener {
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                Log.e(
+                    "ResonanceMedia",
+                    "Playback failed (${error.errorCodeName}): ${error.message ?: "no message"}",
+                    error,
+                )
+            }
+
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) {
                     advance("ended")
@@ -337,10 +345,12 @@ class ResonanceMediaService : MediaLibraryService() {
                 if (customCommand.customAction != COMMAND_PLAY_SIMILAR) {
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
                 }
+                Log.d("ResonanceMedia", "Android Auto requested similar-track queue")
                 return scope.future {
                     try {
                         val result = JSONObject(api.json("queue/similar", "POST", JSONObject()))
                         val added = result.optInt("added", 0)
+                        Log.d("ResonanceMedia", "Queued $added similar tracks from Android Auto")
                         SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putInt("added", added) })
                     } catch (e: Exception) {
                         Log.e("ResonanceMedia", "Failed to queue similar tracks", e)
