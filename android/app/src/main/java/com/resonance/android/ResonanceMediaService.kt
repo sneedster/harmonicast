@@ -271,17 +271,26 @@ class ResonanceMediaService : MediaLibraryService() {
                 mediaItems: MutableList<MediaItem>
             ): ListenableFuture<MutableList<MediaItem>> {
                 Log.d("ResonanceMedia", "onAddMediaItems: ${mediaItems.size} items")
-                return Futures.immediateFuture(mediaItems.map {
-                    val songId = it.mediaId
-                    val streamUri = Uri.parse("${api.base}/api/stream/${java.net.URLEncoder.encode(songId, "UTF-8")}?token=${java.net.URLEncoder.encode(api.token, "UTF-8")}")
-                    it.buildUpon()
-                        .setUri(streamUri)
-                        .setMediaMetadata(it.mediaMetadata.buildUpon()
-                            .setIsPlayable(true)
-                            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-                            .build())
-                        .build()
-                }.toMutableList())
+                return scope.future {
+                    // Android Auto often sends only a media ID when a user
+                    // chooses an item from a browsed queue. Resolve it back
+                    // to the shared queue entry before building the playable
+                    // item; otherwise title, artist and cover art are lost
+                    // when now-playing is published.
+                    val queuedSongs = if (mediaItems.any { it.mediaMetadata.title.isNullOrBlank() }) {
+                        fetchQueueSongs().associateBy { it.id }
+                    } else emptyMap()
+                    mediaItems.map { item ->
+                        val metadata = item.mediaMetadata
+                        val song = queuedSongs[item.mediaId] ?: Song(
+                            item.mediaId,
+                            metadata.title?.toString().orEmpty().ifBlank { item.mediaId },
+                            metadata.artist?.toString().orEmpty(),
+                            metadata.albumTitle?.toString().orEmpty(),
+                        )
+                        createMediaItem(song)
+                    }.toMutableList()
+                }
             }
 
             override fun onSetMediaItems(
