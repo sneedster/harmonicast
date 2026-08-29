@@ -3,6 +3,10 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
+if [[ "${RESONANCE_SKIP_RELEASE_CHECKS:-0}" != "1" ]]; then
+  "$script_dir/../scripts/release-check.sh"
+fi
+
 export JAVA_HOME="${JAVA_HOME:-/home/mjstrong/.local/share/jdks/temurin-21}"
 export ANDROID_HOME="${ANDROID_HOME:-/home/mjstrong/Android/Sdk}"
 

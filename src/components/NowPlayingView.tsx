@@ -1,8 +1,10 @@
-import { ThumbsDown, ThumbsUp, Volume2, Loader2, Radio, WandSparkles } from 'lucide-react';
+import { ThumbsDown, ThumbsUp, Volume2, Loader2, Radio, WandSparkles, Info, X } from 'lucide-react';
+import { useState } from 'react';
 import { usePlayer } from '@/hooks/usePlayer';
 import { CoverArt } from '@/components/CoverArt';
 import { AndroidAppDownload } from '@/components/AndroidAppDownload';
 import { formatTime } from '@/lib/format';
+import { getPlexTrackDetails, type PlexTrackDetails } from '@/lib/api';
 
 export function NowPlayingView() {
   const {
@@ -17,6 +19,17 @@ export function NowPlayingView() {
     thumbsDown,
     queueSimilar,
   } = usePlayer();
+  const [details, setDetails] = useState<PlexTrackDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+
+  async function openDetails() {
+    if (!current) return;
+    setDetailsLoading(true); setDetailsError(null);
+    try { setDetails(await getPlexTrackDetails(current.id)); }
+    catch (error) { setDetailsError(error instanceof Error ? error.message : 'Could not load Plex details.'); }
+    finally { setDetailsLoading(false); }
+  }
 
   const total = duration || current?.duration || 0;
   const pct = total > 0 ? Math.min(100, (currentTime / total) * 100) : 0;
@@ -85,6 +98,7 @@ export function NowPlayingView() {
         <p className="mt-2 text-sm font-medium text-amber-400">
           Plex rating · {plexRating === null ? 'Not rated yet' : `${plexRating.toFixed(0)} / 10`}
         </p>
+        <button onClick={() => void openDetails()} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-ink-400 transition hover:text-amber-300"><Info className="h-3.5 w-3.5" /> Track details</button>
       </div>
 
       {/* Progress bar (read-only for guests) */}
@@ -139,6 +153,9 @@ export function NowPlayingView() {
       )}
 
       <AndroidAppDownload />
+      {(detailsLoading || details || detailsError) && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center" role="dialog" aria-modal="true"><div className="w-full max-w-md rounded-3xl border border-ink-700 bg-ink-900 p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[.2em] text-amber-400">From Plex</p><h3 className="mt-1 text-xl font-black text-white">Track details</h3></div><button onClick={() => { setDetails(null); setDetailsError(null); }} className="rounded-full p-2 text-ink-400 hover:bg-ink-800 hover:text-white" aria-label="Close details"><X className="h-5 w-5" /></button></div>{detailsLoading ? <div className="flex justify-center py-12"><Loader2 className="h-7 w-7 animate-spin text-amber-400" /></div> : detailsError ? <p className="py-8 text-sm text-red-300">{detailsError}</p> : details && <div className="mt-5 grid grid-cols-[88px_1fr] gap-4"><CoverArt coverArt={details.coverArt} size={200} className="h-22 w-22" rounded="rounded-2xl" /><div className="min-w-0"><p className="truncate font-bold text-white">{details.title}</p><p className="truncate text-sm text-ink-400">{details.artist}</p><p className="truncate text-xs text-ink-500">{details.album}</p></div><Detail label="Rating" value={details.rating === null ? 'Not rated' : `${details.rating} / 10`} /><Detail label="Plays" value={String(details.playCount)} /><Detail label="Skips" value={String(details.skipCount)} /><Detail label="Last played" value={details.lastPlayedAt ? new Date(details.lastPlayedAt).toLocaleDateString() : 'Never'} /><Detail label="Length" value={formatTime(details.duration)} /></div>}</div></div>}
     </div>
   );
 }
+
+function Detail({ label, value }: { label: string; value: string }) { return <><span className="text-sm text-ink-500">{label}</span><span className="text-sm font-semibold text-ink-200">{value}</span></>; }

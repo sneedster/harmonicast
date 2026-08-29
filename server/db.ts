@@ -198,4 +198,23 @@ export function initDb() {
   if (!npColNames.includes('playback_position')) {
     db.exec('ALTER TABLE now_playing ADD COLUMN playback_position REAL NOT NULL DEFAULT 0');
   }
+
+  // Older releases only checked for an existing queue entry in application
+  // code. Preserve the earliest queued copy during upgrade, then make the
+  // invariant atomic so concurrent requests can never create duplicates.
+  db.exec(`
+    DELETE FROM queue
+    WHERE id IN (
+      SELECT id FROM (
+        SELECT id,
+          ROW_NUMBER() OVER (
+            PARTITION BY song_id
+            ORDER BY position ASC, created_at ASC, id ASC
+          ) AS duplicate_rank
+        FROM queue
+      )
+      WHERE duplicate_rank > 1
+    )
+  `);
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_song_id ON queue(song_id)');
 }

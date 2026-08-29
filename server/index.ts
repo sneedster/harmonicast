@@ -27,10 +27,11 @@ import {
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
 import {
   beginPlexSetup, buildPlexAuthUrl, canAccessConfiguredPlexLibrary, clearPlexSetup, connectOwnedPlexServer,
-  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexRecentlyAddedTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack,
+  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexRecentlyAddedTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack, getPlexArtistDiscovery,
   getPlexSetup, getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listOwnedPlexServers, listPlexMusicLibraries,
   plexHeaders, ratePlexTrack, savePersistedPlexSource, scrobblePlexTrack, searchPlexTracks,
 } from './plex.js';
+import type { PlexSong } from './plex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -77,6 +78,22 @@ function plexJukeboxWeight(song) {
   const playWeight = 1 + Math.log(song.viewCount + 1) * 0.15;
   const skipWeight = 1 / (1 + song.skipCount * 0.1);
   return ratingWeight * recencyWeight * playWeight * skipWeight;
+}
+
+function plexSongIsOnCooldown(song: PlexSong, cooldownMinutes: number): boolean {
+  if (cooldownMinutes <= 0 || !song.lastViewedAt) return false;
+  const lastPlayedAt = Date.parse(song.lastViewedAt);
+  return Number.isFinite(lastPlayedAt) && lastPlayedAt > Date.now() - cooldownMinutes * 60_000;
+}
+
+function eligiblePlexQueueSongs(songs: PlexSong[], excludedSongIds: Iterable<string> = []): PlexSong[] {
+  const seen = new Set(excludedSongIds);
+  const cooldownMinutes = getCooldownMinutes();
+  return songs.filter((song) => {
+    if (seen.has(song.id) || plexSongIsOnCooldown(song, cooldownMinutes)) return false;
+    seen.add(song.id);
+    return true;
+  });
 }
 
 function choosePlexJukeboxTracks(songs, count) {
@@ -127,7 +144,9 @@ async function fillJukeboxQueueOnce() {
       // Plex is the canonical shared taste/history store. Its metadata is
       // already scoped to the Plex owner token used by this proxy.
       const randomSongs = await getPlexRandomTracks(plexSource, 100);
-      for (const song of choosePlexJukeboxTracks(randomSongs, target)) {
+      const existingSongIds = currentQueue.map((row) => row.song_id);
+      const eligibleSongs = eligiblePlexQueueSongs(randomSongs, existingSongIds);
+      for (const song of choosePlexJukeboxTracks(eligibleSongs, target)) {
         try {
           addToQueue({ song, userId: null, userEmail: 'Jukebox', isManual: false });
           added++;
@@ -257,6 +276,13 @@ app.get('/api/plex/tracks/:id', requireAuth, async (req, res) => {
     console.error('Plex track metadata error:', err);
     res.status(502).json({ error: 'Could not load Plex track metadata' });
   }
+});
+
+app.get('/api/plex/tracks/:id/discovery', requireAuth, async (req, res) => {
+  const source = getActivePlexSource();
+  if (!source) return res.status(404).json({ error: 'No Plex source configured' });
+  try { res.json(await getPlexArtistDiscovery(source, req.params.id)); }
+  catch (err) { console.error('Plex artist discovery failed:', err); res.status(502).json({ error: 'Could not load artist discovery' }); }
 });
 
 // ── Plex OAuth (PIN/forwarding flow) ─────────────────────────────────
@@ -659,7 +685,7 @@ app.post('/api/queue/similar', requireAuth, requireActivePlayer, async (req, res
     const songs = await getPlexRelatedTracks(source, np.song_id, 20);
     clearAutoQueue();
     let added = 0;
-    for (const song of songs) {
+    for (const song of eligiblePlexQueueSongs(songs, [np.song_id])) {
       try {
         addToQueue({ song, userId: null, userEmail: 'Similar tracks', isManual: false });
         added++;
@@ -712,8 +738,9 @@ app.put('/api/now-playing/position', requireAuth, requireActivePlayer, (req, res
 
 app.post('/api/now-playing', requireAuth, requireActivePlayer, (req, res) => {
   const { song, isPlaying, isAutoQueue } = req.body;
-  updateNowPlaying(song, isPlaying, isAutoQueue ?? false);
+  const removedFromQueue = updateNowPlaying(song, isPlaying, isAutoQueue ?? false);
   broadcastNowPlaying();
+  if (removedFromQueue) broadcastQueue();
   res.json({ ok: true });
 });
 

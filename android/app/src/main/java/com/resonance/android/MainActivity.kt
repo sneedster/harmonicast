@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -60,6 +61,10 @@ class ResonanceViewModel : ViewModel() {
     var loading by mutableStateOf(false); var error by mutableStateOf("")
     var notice by mutableStateOf(""); private set
     var queue by mutableStateOf<List<Song>>(emptyList()); var nowPlaying by mutableStateOf(NowPlaying())
+    var playbackPosition by mutableFloatStateOf(0f); private set
+    var artistDiscovery by mutableStateOf<ArtistDiscovery?>(null); private set
+    var artistDiscoveryLoading by mutableStateOf(false); private set
+    var artistDiscoveryError by mutableStateOf(""); private set
     var isHost by mutableStateOf(false); var isActivePlayer by mutableStateOf(false)
     var configured by mutableStateOf(true)
     var needsPlexSetup by mutableStateOf(false); private set
@@ -125,6 +130,7 @@ class ResonanceViewModel : ViewModel() {
                     val npJson = api.json("now-playing")
                     val np = JSONObject(npJson)
                     nowPlaying = NowPlaying(np.optJSONObject("song")?.let(::song), np.optBoolean("isPlaying"))
+                    playbackPosition = np.optDouble("playbackPosition", 0.0).toFloat().coerceAtLeast(0f)
                     ensureSocket()
                     if (isHost) loadPlexSource()
                 } else if (needsPlexSetup && isPlexSetupOwner) {
@@ -274,6 +280,24 @@ class ResonanceViewModel : ViewModel() {
     }
 
     fun nextSong() { controller?.seekToNext() }
+    fun seekTo(seconds: Float) { controller?.seekTo((seconds.coerceAtLeast(0f) * 1_000).toLong()) }
+
+    fun loadArtistDiscovery(song: Song) {
+        viewModelScope.launch {
+            artistDiscoveryLoading = true
+            artistDiscovery = null
+            artistDiscoveryError = ""
+            try {
+                val item = JSONObject(api.json("plex/tracks/${URLEncoder.encode(song.id, "UTF-8")}/discovery"))
+                fun strings(key: String) = item.optJSONArray(key)?.let { a -> List(a.length()) { a.optString(it) }.filter { it.isNotBlank() } } ?: emptyList()
+                artistDiscovery = ArtistDiscovery(item.optString("name", song.artist), item.optString("bio"), strings("genres"), strings("similarArtists"))
+            } catch (e: Exception) {
+                artistDiscoveryError = e.message ?: "Could not load artist discovery"
+            } finally {
+                artistDiscoveryLoading = false
+            }
+        }
+    }
 
     private fun action(path: String, method: String, body: JSONObject, done: () -> Unit = {}) {
         viewModelScope.launch {
@@ -453,6 +477,19 @@ class MainActivity : ComponentActivity() {
         val skipThreshold = throwDistance * 0.35f
         var swipeOffset by remember(song?.id) { mutableFloatStateOf(0f) }
         var throwingSongAway by remember(song?.id) { mutableStateOf(false) }
+        var detailsOpen by remember(song?.id) { mutableStateOf(false) }
+        var scrubPosition by remember(song?.id) { mutableFloatStateOf(vm.playbackPosition) }
+        var isScrubbing by remember(song?.id) { mutableStateOf(false) }
+        val duration = song?.duration?.toFloat()?.coerceAtLeast(0f) ?: 0f
+        LaunchedEffect(song?.id, vm.playbackPosition, isScrubbing) {
+            if (!isScrubbing) scrubPosition = vm.playbackPosition.coerceIn(0f, duration)
+        }
+        LaunchedEffect(song?.id, vm.nowPlaying.isPlaying, duration, isScrubbing) {
+            while (vm.nowPlaying.isPlaying && duration > 0f && !isScrubbing) {
+                delay(500)
+                scrubPosition = (scrubPosition + 0.5f).coerceAtMost(duration)
+            }
+        }
         val animatedSwipeOffset by animateFloatAsState(
             targetValue = if (throwingSongAway) -throwDistance else swipeOffset,
             animationSpec = if (throwingSongAway) {
@@ -471,8 +508,18 @@ class MainActivity : ComponentActivity() {
                 }
             },
         )
-        Column(
-            Modifier.fillMaxSize(),
+        if (detailsOpen && song != null) {
+            ArtistDiscoveryPage(vm, song) { detailsOpen = false }
+        } else Column(
+            Modifier.fillMaxSize().pointerInput(song?.id) {
+                var upward = 0f
+                detectVerticalDragGestures(onVerticalDrag = { change, amount ->
+                    if (amount < 0) { change.consume(); upward -= amount }
+                }, onDragEnd = {
+                    if (upward > 90f && song != null) { detailsOpen = true; vm.loadArtistDiscovery(song) }
+                    upward = 0f
+                })
+            },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -523,16 +570,29 @@ class MainActivity : ComponentActivity() {
             Text(song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (song.album.isNotBlank()) Text(song.album, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            song.rating?.let { rating ->
-                val filledStars = (rating / 2).coerceIn(0, 5)
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    repeat(5) { index ->
-                        Icon(
-                            if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder,
-                            if (index == 0) "Plex rating $rating out of 10" else null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(26.dp),
-                        )
+            val rating = song.rating ?: 0
+            val filledStars = (rating / 2).coerceIn(0, 5)
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                repeat(5) { index -> Icon(if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder, if (index == 0) "Plex rating $rating out of 10" else null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp)) }
+            }
+            if (duration > 0f) {
+                Column(Modifier.fillMaxWidth()) {
+                    Slider(
+                        value = scrubPosition.coerceIn(0f, duration),
+                        onValueChange = {
+                            isScrubbing = true
+                            scrubPosition = it
+                        },
+                        onValueChangeFinished = {
+                            vm.seekTo(scrubPosition)
+                            isScrubbing = false
+                        },
+                        valueRange = 0f..duration,
+                        enabled = vm.isActivePlayer,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(formatDuration(scrubPosition.toInt()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(formatDuration(duration.toInt()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -552,6 +612,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Play on this device") }
+
         } else {
             Spacer(Modifier.height(100.dp))
             Text("Nothing is playing")
@@ -562,6 +623,47 @@ class MainActivity : ComponentActivity() {
         }
         }
     }
+}
+
+@Composable private fun ArtistDiscoveryPage(vm: ResonanceViewModel, song: Song, close: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().pointerInput(song.id) {
+            var downward = 0f
+            detectVerticalDragGestures(onVerticalDrag = { change, amount -> if (amount > 0) { change.consume(); downward += amount } }, onDragEnd = { if (downward > 90f) close() })
+        },
+        verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Artist discovery", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            TextButton(onClick = close) { Text("Down") }
+        }
+        when {
+            vm.artistDiscoveryLoading -> CircularProgressIndicator()
+            vm.artistDiscoveryError.isNotBlank() -> Text(vm.artistDiscoveryError, color = MaterialTheme.colorScheme.error)
+            vm.artistDiscovery != null -> {
+                val info = vm.artistDiscovery!!
+                Text(info.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                if (info.genres.isNotEmpty()) DetailLine("Genres", info.genres.joinToString(" · "))
+                if (info.bio.isNotBlank()) Text(info.bio, style = MaterialTheme.typography.bodyLarge)
+                if (info.similarArtists.isNotEmpty()) {
+                    Text("Similar artists", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(info.similarArtists.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun DetailLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontWeight = FontWeight.Medium)
+    }
+}
+
+private fun formatDuration(totalSeconds: Int): String {
+    val seconds = totalSeconds.coerceAtLeast(0)
+    return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
 @Composable private fun Queue(vm: ResonanceViewModel) {

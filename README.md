@@ -105,11 +105,14 @@ Then build a signed, versioned APK. The result is written to the ignored
 `android/releases/` directory.
 
 ```bash
-VERSION_NAME=1.0.0 VERSION_CODE=1 ./android/build-release.sh
+VERSION_NAME=1.0.2 VERSION_CODE=3 ./android/build-release.sh
 ```
 
-To upgrade an installed copy, increase `VERSION_CODE` and keep the same
-keystore. Do not distribute an APK if you have lost the keystore.
+This runs the required server, web, Docker image, and Compose checks before
+signing. To upgrade an installed copy, increase both the point version and
+`VERSION_CODE`, then keep the same keystore. Do not distribute an APK if you
+have lost the keystore. `RESONANCE_SKIP_RELEASE_CHECKS=1` is reserved for
+local troubleshooting; do not use it for a published APK.
 
 ## Configuration
 
@@ -146,15 +149,38 @@ The Vite development server proxies `/api` and `/ws` to port 3001.
 Useful local checks:
 
 ```bash
-npm test
-npm run build
-npm run typecheck
+./scripts/release-check.sh
 ./android/build-debug.sh
 ```
 
 `npm test` runs the server suite in the same Node 20 Alpine runtime as the
 production image. It needs Docker but does not modify the checkout or require
 Plex credentials.
+
+### Release verification
+
+Run `./scripts/release-check.sh` for every Docker or web release. It is also
+run automatically by `./android/build-release.sh` before an APK is signed.
+The gate covers the Node 20 server tests, web type checking, linting,
+production build, production Docker image build, and Compose configuration.
+
+Before publishing, perform these short manual checks against the candidate
+image or APK:
+
+1. **Clean Docker install:** use a new Compose project name and empty data
+   volume, open the app, complete Plex sign-in, select an owned server and
+   Music library, then verify search and first playback.
+2. **Docker upgrade:** start from a copy of a real installation's data volume,
+   recreate it with the candidate image, confirm the existing Plex source and
+   queue remain available, and play a track.
+3. **Web:** sign in, claim playback, play/pause/skip, search by artist and
+   title, add Track Radio, vote, and confirm the shared queue updates.
+4. **Android and Android Auto:** install the new APK over the prior version,
+   reconnect it, repeat playback and voting, then verify the same controls and
+   shared queue in Android Auto or DHU.
+
+Do not publish a Docker image or GitHub APK release until the automated gate
+and the relevant manual checks have passed.
 
 ## API notes
 
