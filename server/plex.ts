@@ -398,10 +398,17 @@ export async function getPlexArtistDiscovery(source: PlexSource, trackId: string
   const track = await getConfiguredPlexTrack(source, trackId, fetcher);
   const artistKey = String(track.grandparentRatingKey ?? '');
   if (!artistKey) throw new Error('This track has no Plex artist');
-  const [artistContainer, relatedContainer] = await Promise.all([
-    plexServerJson(source, `/library/metadata/${artistKey}`, fetcher),
-    plexServerJson(source, `/library/metadata/${artistKey}/related?type=8`, fetcher).catch(() => ({})),
+  const within = <T>(promise: Promise<T>, milliseconds: number): Promise<T> => Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Plex discovery timed out')), milliseconds)),
   ]);
+  // The artist record is the useful part. Related-artist lookup is optional
+  // and can be disproportionately slow on some Plex libraries.
+  const artistContainer = await within(plexServerJson(source, `/library/metadata/${artistKey}`, fetcher), 5_000);
+  const relatedContainer = await within(
+    plexServerJson(source, `/library/metadata/${artistKey}/related?type=8`, fetcher),
+    2_000,
+  ).catch(() => ({}));
   const artist = metadataArray(artistContainer)[0] ?? {};
   return {
     name: typeof artist.title === 'string' ? artist.title : typeof track.grandparentTitle === 'string' ? track.grandparentTitle : 'Unknown artist',
