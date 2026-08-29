@@ -48,6 +48,7 @@ function VolumeControl() {
 export function PlayerBar() {
   const {
     isHost,
+    isHostUser,
     current,
     currentStats,
     isPlaying,
@@ -135,7 +136,7 @@ export function PlayerBar() {
 
             <div className="flex items-center gap-1.5 text-ink-500">
               <Volume2 className="h-4 w-4" />
-              <span className="text-xs">Playing on host</span>
+              <span className="text-xs">{isHostUser ? 'Playback is on another device' : 'Playing on host'}</span>
             </div>
 
             <button

@@ -6,6 +6,7 @@ import { formatTime, ratingColor, ratingLabel } from '@/lib/format';
 export function NowPlayingView() {
   const {
     isHost,
+    isHostUser,
     current,
     currentStats,
     isPlaying,
@@ -34,6 +35,8 @@ export function NowPlayingView() {
         <p className="text-xs text-ink-500">
           {isHost
             ? 'Search your Plex library, then choose Play now to begin.'
+            : isHostUser
+              ? 'Select Play here above to make this device active, then choose a track from Search.'
             : 'Waiting for the host to start music.'}
         </p>
       </div>

@@ -381,6 +381,7 @@ export default function App() {
       <PlayerProvider
         connection={connection}
         isHost={effectiveIsHost}
+        isHostUser={isHostUser}
         isActivePlayer={isActivePlayer}
         onWebSocketEvent={(type) => {
           if (type === 'player_session') void handlePlayerSessionEvent();

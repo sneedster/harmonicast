@@ -39,6 +39,7 @@ import {
 interface PlayerContextValue {
   connection: Connection;
   isHost: boolean;
+  isHostUser: boolean;
   isActivePlayer: boolean;
   current: Song | null;
   currentStats: SongStats | null;
@@ -73,12 +74,14 @@ const PlayerContext = createContext<PlayerContextValue | null>(null);
 export function PlayerProvider({
   connection,
   isHost,
+  isHostUser,
   isActivePlayer,
   onWebSocketEvent,
   children,
 }: {
   connection: Connection;
   isHost: boolean;
+  isHostUser: boolean;
   isActivePlayer: boolean;
   onWebSocketEvent?: (type: string) => void;
   children: ReactNode;
@@ -578,14 +581,14 @@ export function PlayerProvider({
 
   const value = useMemo<PlayerContextValue>(
     () => ({
-      connection, isHost, isActivePlayer, current, currentStats, queue, queueRows, history,
+      connection, isHost, isHostUser, isActivePlayer, current, currentStats, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, statsVersion, voteCounts, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
       thumbsUp, thumbsDown, toggleJukebox,
     }),
     [
-      connection, isHost, isActivePlayer, current, currentStats, queue, queueRows, history,
+      connection, isHost, isHostUser, isActivePlayer, current, currentStats, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, statsVersion, voteCounts, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
