@@ -28,6 +28,7 @@ import {
   voteOnCurrent,
   queueSimilarTracks,
   clearQueue as clearSharedQueue,
+  removeFromQueue as removeSharedQueueItem,
 } from '@/lib/jukeboxState';
 
 interface PlayerContextValue {
@@ -61,6 +62,7 @@ interface PlayerContextValue {
   thumbsDown: () => void;
   queueSimilar: () => void;
   clearQueue: () => void;
+  removeQueueItem: (song: Song) => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -541,6 +543,15 @@ export function PlayerProvider({
     }).catch(() => {});
   }, [isHost]);
 
+  const removeQueueItem = useCallback((song: Song) => {
+    if (!isHost) return;
+    void removeSharedQueueItem(song.id).then(() => {
+      setQueue((queued) => queued.filter((item) => item.id !== song.id));
+      queueRef.current = queueRef.current.filter((item) => item.id !== song.id);
+      setQueueRows((rows) => rows.filter((row) => row.id !== song.id));
+    }).catch(() => {});
+  }, [isHost]);
+
   /** Starts automatic playback from the selected source without requiring a manual search. */
   const startRandomPlayback = useCallback(() => {
     if (!isHost || currentRef.current) return;
@@ -568,14 +579,14 @@ export function PlayerProvider({
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
-      thumbsUp, thumbsDown, queueSimilar, clearQueue, startRandomPlayback,
+      thumbsUp, thumbsDown, queueSimilar, clearQueue, removeQueueItem, startRandomPlayback,
     }),
     [
       connection, isHost, isHostUser, isActivePlayer, current, plexRating, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
-      thumbsUp, thumbsDown, queueSimilar, clearQueue, startRandomPlayback,
+      thumbsUp, thumbsDown, queueSimilar, clearQueue, removeQueueItem, startRandomPlayback,
     ],
   );
 

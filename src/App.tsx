@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Disc3, Search, ListMusic, LogOut, Radio, User, Music2, Settings, MonitorSpeaker, Loader2 } from 'lucide-react';
+import { Disc3, Search, ListMusic, LogOut, Radio, User, Music2, Settings, MonitorSpeaker, Loader2, Maximize } from 'lucide-react';
 import type { Connection } from '@/types';
 import { connectionFromInfo } from '@/lib/connectionStore';
 import { PlayerProvider, usePlayer } from '@/hooks/usePlayer';
@@ -10,6 +10,7 @@ import { SearchView } from '@/components/SearchView';
 import { QueueView } from '@/components/QueueView';
 import { NowPlayingView } from '@/components/NowPlayingView';
 import { SettingsView } from '@/components/SettingsView';
+import { KioskView } from '@/components/KioskView';
 import { claimPlayer, getConnection, getPlayerStatus, getMe, signOut } from '@/lib/api';
 
 type Tab = 'nowplaying' | 'search' | 'queue' | 'settings';
@@ -80,6 +81,7 @@ function JukeboxApp({
 }) {
   const { connection, current, isPlaying, jukeboxMode, isHost } = usePlayer();
   const [tab, setTab] = useState<Tab>('nowplaying');
+  const isKiosk = window.location.pathname.replace(/\/+$/, '') === '/kiosk';
   const lastSongIdRef = useRef<string | null>(null);
   const switchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -98,6 +100,8 @@ function JukeboxApp({
       if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
     };
   }, [current?.id]);
+
+  if (isKiosk) return <KioskView onExit={() => { window.location.href = '/'; }} />;
 
   return (
     <div className="flex flex-col bg-ink-950" style={{ height: '100dvh' }}>
@@ -136,6 +140,13 @@ function JukeboxApp({
               <MonitorSpeaker className="h-3.5 w-3.5" /><span className="hidden sm:inline">Play here</span>
             </button>
           )}
+          <a
+            href={isHost ? '/kiosk?host=1' : '/kiosk'}
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-ink-400 transition hover:bg-ink-800 hover:text-white"
+            title="Open kiosk mode"
+          >
+            <Maximize className="h-4 w-4" /><span className="hidden sm:inline">Kiosk mode</span>
+          </a>
           <button
             onClick={onSignOut}
             className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-ink-400 transition hover:bg-ink-800 hover:text-white"

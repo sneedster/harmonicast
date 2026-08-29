@@ -8,6 +8,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -226,6 +231,7 @@ class ResonanceViewModel : ViewModel() {
     }
 
     fun add(song: Song) = action("queue", "POST", JSONObject().put("song", songJson(song))) { refresh() }
+    fun remove(song: Song) = action("queue/${URLEncoder.encode(song.id, "UTF-8")}", "DELETE", JSONObject()) { refresh() }
     fun vote(up: Boolean) = action("vote", "POST", JSONObject().put("vote", if (up) "up" else "down"))
     fun claim() = action("player/claim", "POST", JSONObject()) { refresh() }
     fun clearQueue() = action("queue", "DELETE", JSONObject()) { refresh() }
@@ -288,7 +294,12 @@ class ResonanceViewModel : ViewModel() {
     }
 
     private fun songs(a: JSONArray) = List(a.length()) { song(a.getJSONObject(it)) }
-    private fun song(o: JSONObject) = Song(o.optString("id"), o.optString("title"), o.optString("artist"), o.optString("album"), o.optInt("duration"), o.optString("coverArt"), o.optString("addedByEmail"), o.optBoolean("isManual", true))
+    private fun song(o: JSONObject) = Song(
+        o.optString("id"), o.optString("title"), o.optString("artist"), o.optString("album"),
+        o.optInt("duration"), o.optString("coverArt"),
+        if (o.has("rating") && !o.isNull("rating")) o.optInt("rating").coerceIn(0, 10) else null,
+        o.optString("addedByEmail"), o.optBoolean("isManual", true),
+    )
     private fun songJson(s: Song) = JSONObject().put("id", s.id).put("title", s.title).put("artist", s.artist).put("album", s.album).put("duration", s.duration).put("coverArt", s.coverArt)
 }
 
@@ -437,8 +448,29 @@ class MainActivity : ComponentActivity() {
     val song = vm.nowPlaying.song
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
         val artworkSize = minOf((maxWidth - 12.dp).coerceAtLeast(180.dp), maxHeight * 0.5f)
-        val skipThreshold = with(LocalDensity.current) { 96.dp.toPx() }
+        val density = LocalDensity.current
+        val throwDistance = with(density) { (maxWidth + artworkSize).toPx() }
+        val skipThreshold = throwDistance * 0.35f
         var swipeOffset by remember(song?.id) { mutableFloatStateOf(0f) }
+        var throwingSongAway by remember(song?.id) { mutableStateOf(false) }
+        val animatedSwipeOffset by animateFloatAsState(
+            targetValue = if (throwingSongAway) -throwDistance else swipeOffset,
+            animationSpec = if (throwingSongAway) {
+                tween(durationMillis = 220, easing = FastOutSlowInEasing)
+            } else {
+                spring()
+            },
+            label = "artwork throw",
+            finishedListener = {
+                if (throwingSongAway) {
+                    // Keep the old art off-screen until the next queue update
+                    // replaces it, rather than springing it back into view.
+                    swipeOffset = -throwDistance
+                    throwingSongAway = false
+                    vm.nextSong()
+                }
+            },
+        )
         Column(
             Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -453,12 +485,12 @@ class MainActivity : ComponentActivity() {
                             onHorizontalDrag = { change, amount ->
                                 if (vm.isActivePlayer && amount < 0f) {
                                     change.consume()
-                                    swipeOffset = (swipeOffset + amount).coerceAtLeast(-skipThreshold)
+                                    swipeOffset = (swipeOffset + amount).coerceAtLeast(-throwDistance * 0.8f)
                                 }
                             },
                             onDragEnd = {
-                                if (swipeOffset <= -skipThreshold) vm.nextSong()
-                                swipeOffset = 0f
+                                if (swipeOffset <= -skipThreshold) throwingSongAway = true
+                                else swipeOffset = 0f
                             },
                             onDragCancel = { swipeOffset = 0f },
                         )
@@ -469,9 +501,13 @@ class MainActivity : ComponentActivity() {
                     vm,
                     song,
                     artworkSize,
-                    Modifier.graphicsLayer { translationX = swipeOffset },
+                    Modifier.graphicsLayer {
+                        translationX = animatedSwipeOffset
+                        rotationZ = (animatedSwipeOffset / throwDistance * 14f).coerceAtLeast(-14f)
+                        alpha = (1f + animatedSwipeOffset / throwDistance * 0.55f).coerceIn(0.45f, 1f)
+                    },
                 )
-                if (vm.isActivePlayer && swipeOffset < -12f) {
+                if (vm.isActivePlayer && animatedSwipeOffset < -12f) {
                     Surface(
                         modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
@@ -487,7 +523,19 @@ class MainActivity : ComponentActivity() {
             Text(song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (song.album.isNotBlank()) Text(song.album, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (vm.isActivePlayer) Text("Swipe left on the artwork to skip", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            song.rating?.let { rating ->
+                val filledStars = (rating / 2).coerceIn(0, 5)
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    repeat(5) { index ->
+                        Icon(
+                            if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder,
+                            if (index == 0) "Plex rating $rating out of 10" else null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
+                }
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.ThumbDown, "Vote down") }
                 FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.size(64.dp)) {
@@ -567,7 +615,10 @@ class MainActivity : ComponentActivity() {
         headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = { Text("${song.artist}${if (song.addedByEmail.isNotBlank()) " · ${song.addedByEmail}" else ""}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         leadingContent = { Cover(vm, song, 48.dp) },
-        trailingContent = { if (add) IconButton(onClick = { vm.add(song) }) { Icon(Icons.Default.Add, "Add to queue") } }
+        trailingContent = {
+            if (add) IconButton(onClick = { vm.add(song) }) { Icon(Icons.Default.Add, "Add to queue") }
+            else if (vm.isHost) IconButton(onClick = { vm.remove(song) }) { Icon(Icons.Default.Delete, "Remove from queue") }
+        }
     )
     HorizontalDivider()
 }

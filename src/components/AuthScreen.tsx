@@ -9,6 +9,7 @@ export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const returnPath = window.location.pathname === '/kiosk' ? '/kiosk' : '/';
     // The session token arrives in the URL fragment, never the query string:
     // fragments are not sent to the server and so never reach access logs,
     // proxy logs, or Referer headers.
@@ -20,7 +21,7 @@ export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
 
     if (token && email) {
       localStorage.setItem('resonance_token', token);
-      window.history.replaceState({}, '', '/');
+      window.history.replaceState({}, '', returnPath);
       onAuth(email);
       return;
     }
@@ -33,7 +34,7 @@ export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
         invalid_state: 'This sign-in link has expired or is not valid. Please start again.',
       };
       setError(messages[authError] || 'Authentication failed.');
-      window.history.replaceState({}, '', '/');
+      window.history.replaceState({}, '', returnPath);
     }
 
     getAuthConfig()
@@ -73,7 +74,7 @@ export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
         {config?.plexOAuth ? (
           <div className="rounded-2xl border border-ink-800 bg-ink-900/80 p-6 shadow-xl shadow-black/30">
             <a
-              href={plexSignInUrl()}
+              href={plexSignInUrl(window.location.pathname === '/kiosk' ? '/kiosk' : undefined)}
               className="flex w-full items-center justify-center gap-3 rounded-lg bg-[#e5a00d] px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-[#f0b22e]"
             >
               <PlexIcon />

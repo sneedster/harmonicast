@@ -51,8 +51,9 @@ export async function getAuthConfig(): Promise<AuthConfig> {
   return request<AuthConfig>('/api/auth/config');
 }
 
-export function plexSignInUrl(): string {
-  return `${API_BASE}/api/auth/plex`;
+export function plexSignInUrl(returnTo?: '/kiosk'): string {
+  const query = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : '';
+  return `${API_BASE}/api/auth/plex${query}`;
 }
 
 export async function signOut(): Promise<void> {
@@ -93,6 +94,12 @@ export async function getConnection(): Promise<ConnectionInfo> {
 /** Search the selected music source. Plex-backed deployments use `/api/search`. */
 export async function searchLibrary(query: string): Promise<Song[]> {
   return request(`/api/search?q=${encodeURIComponent(query)}`);
+}
+
+/** A small rotating set for visual kiosk browsing; search covers the library. */
+export interface DiscoveryShelf { id: string; title: string; subtitle: string; songs: Song[]; }
+export async function discoverLibrary(): Promise<{ shelves: DiscoveryShelf[] }> {
+  return request('/api/discover');
 }
 
 export async function saveConnection(conn: {

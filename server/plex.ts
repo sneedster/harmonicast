@@ -302,6 +302,19 @@ export async function getPlexRandomTracks(
   });
 }
 
+/** Fetch the newest tracks without indexing the whole library. */
+export async function getPlexRecentlyAddedTracks(source: PlexSource, size = 12, fetcher: PlexFetch = fetch): Promise<PlexSong[]> {
+  const params = new URLSearchParams({ type: '10', sort: 'addedAt:desc', limit: String(Math.max(1, Math.min(size, 100))) });
+  const [machineIdentifier, container] = await Promise.all([
+    plexSourceMachineIdentifier(source, fetcher),
+    plexServerJson(source, `/library/sections/${source.libraryKey}/all?${params}`, fetcher),
+  ]);
+  return metadataArray(container).flatMap((metadata) => {
+    const song = mapPlexSong(metadata, machineIdentifier);
+    return song ? [song] : [];
+  });
+}
+
 /**
  * Build a Plex Track Radio queue from Sonic Analysis. This is the same
  * cross-artist similarity source used by Plexamp's “Play Track Radio”, rather

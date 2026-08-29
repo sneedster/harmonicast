@@ -191,6 +191,11 @@ export function clearAutoQueue() {
   db.prepare('DELETE FROM queue WHERE is_manual = 0').run();
 }
 
+export function removeFromQueue(songId) {
+  const result = db.prepare('DELETE FROM queue WHERE song_id = ?').run(songId);
+  return result.changes > 0;
+}
+
 // ── Now Playing ───────────────────────────────────────────────────────
 
 export function getNowPlaying() {

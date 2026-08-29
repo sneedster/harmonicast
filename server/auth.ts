@@ -131,7 +131,7 @@ export function updatePlexUserInfo(userId: number, plexId: string, name: string 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 interface PendingOAuthState {
   expiresAt: number;
-  mobileRedirect: string | null;
+  redirect: string | null;
 }
 
 const pendingOAuthStates = new Map<string, PendingOAuthState>();
@@ -143,10 +143,10 @@ function pruneOAuthStates(): void {
   }
 }
 
-export function createOAuthState(mobileRedirect: string | null = null): string {
+export function createOAuthState(redirect: string | null = null): string {
   pruneOAuthStates();
   const state = randomBytes(32).toString('hex');
-  pendingOAuthStates.set(state, { expiresAt: Date.now() + OAUTH_STATE_TTL_MS, mobileRedirect });
+  pendingOAuthStates.set(state, { expiresAt: Date.now() + OAUTH_STATE_TTL_MS, redirect });
   return state;
 }
 

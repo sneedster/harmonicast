@@ -16,7 +16,7 @@ import {
 import { ping, getRandomSongs, search, scrobble, getSettings, getConnection } from './subsonic.js';
 import {
   recordPlayEvent, fetchStatsFor, fetchTopRated, fetchMostPlayed, fetchRecentlyPlayed,
-  fetchQueue, addToQueue, dequeueNext, clearQueue, clearAutoQueue,
+  fetchQueue, addToQueue, dequeueNext, clearQueue, clearAutoQueue, removeFromQueue,
   getNowPlaying, updateNowPlaying, updatePlaybackPosition, voteOnCurrent, getVoteCounts, clearOldVotes,
   getCooldownMinutes, setCooldownMinutes, getMaxRequestsPerUser, setMaxRequestsPerUser,
   getJukeboxMode, setJukeboxMode,
@@ -27,7 +27,7 @@ import {
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
 import {
   beginPlexSetup, buildPlexAuthUrl, canAccessConfiguredPlexLibrary, clearPlexSetup, connectOwnedPlexServer,
-  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack,
+  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexRecentlyAddedTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack,
   getPlexSetup, getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listOwnedPlexServers, listPlexMusicLibraries,
   plexHeaders, ratePlexTrack, savePersistedPlexSource, scrobblePlexTrack, searchPlexTracks,
 } from './plex.js';
@@ -268,7 +268,10 @@ app.get('/api/auth/plex', async (req, res) => {
   const mobileRedirect = req.query.mobile_redirect === 'resonance://auth'
     ? 'resonance://auth'
     : null;
-  const state = createOAuthState(mobileRedirect);
+  // Keep web return paths deliberately narrow: this state value is later used
+  // in a redirect after Plex authentication, so arbitrary URLs are unsafe.
+  const webRedirect = req.query.return_to === '/kiosk' ? '/kiosk' : null;
+  const state = createOAuthState(mobileRedirect || webRedirect);
   try {
     const pin = await createPlexPin();
     const { publicUrl } = getPlexOAuthConfig();
@@ -326,7 +329,7 @@ app.get('/api/auth/plex/callback', async (req, res) => {
     else if (isFirstUser) assignHostIfUnset(user.id);
 
     const token = createSession(user.id, parseDeviceName(req.headers['user-agent']));
-    const target = pendingState.mobileRedirect || '/';
+    const target = pendingState.redirect || '/';
     if (target === 'resonance://auth') {
       return res.redirect(`${target}?auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
     }
@@ -640,6 +643,13 @@ app.delete('/api/queue/auto', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.delete('/api/queue/:songId', requireAuth, (req, res) => {
+  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can remove queue items' });
+  if (!removeFromQueue(req.params.songId)) return res.status(404).json({ error: 'Song is no longer in the queue' });
+  broadcastQueue();
+  res.json({ ok: true });
+});
+
 app.post('/api/queue/similar', requireAuth, requireActivePlayer, async (req, res) => {
   const np = getNowPlaying();
   const source = getActivePlexSource();
@@ -665,11 +675,24 @@ app.post('/api/queue/similar', requireAuth, requireActivePlayer, async (req, res
 
 // ── Now Playing ───────────────────────────────────────────────────────
 
-app.get('/api/now-playing', requireAuth, (req, res) => {
+app.get('/api/now-playing', requireAuth, async (req, res) => {
   const np = getNowPlaying();
   if (!np || !np.song_id) return res.json({ song: null, isPlaying: false, isAutoQueue: false, playbackPosition: 0 });
+
+  // Queue rows intentionally only retain the metadata needed for playback.
+  // Plex remains the canonical shared rating store, so hydrate that one field
+  // for the now-playing view without making Plex availability block playback.
+  let rating = null;
+  const plexSource = getActivePlexSource();
+  if (plexSource && np.song_id.startsWith('plex:')) {
+    try {
+      rating = (await getPlexTrack(plexSource, np.song_id)).userRating;
+    } catch (err) {
+      console.warn('Could not load now-playing Plex rating:', err.message);
+    }
+  }
   res.json({
-    song: { id: np.song_id, title: np.title, artist: np.artist, album: np.album, duration: np.duration, coverArt: np.cover_art },
+    song: { id: np.song_id, title: np.title, artist: np.artist, album: np.album, duration: np.duration, coverArt: np.cover_art, rating },
     isPlaying: !!np.is_playing,
     isAutoQueue: !!np.is_auto_queue,
     playbackPosition: np.playback_position || 0,
@@ -849,6 +872,45 @@ app.get('/api/search', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Search failed:', err);
     res.status(502).json({ error: 'Could not search the music library' });
+  }
+});
+
+// Kiosk discovery is intentionally a rotating, bounded selection rather than
+// a library dump. Search remains available for any specific track.
+app.get('/api/discover', requireAuth, async (req, res) => {
+  const plexSource = getActivePlexSource();
+  if (plexSource) {
+    try {
+      const [sample, recent] = await Promise.all([
+        getPlexRandomTracks(plexSource, 100),
+        getPlexRecentlyAddedTracks(plexSource, 12),
+      ]);
+      const fresh = [...sample].sort(() => Math.random() - 0.5);
+      const favorite = [...sample].sort((a, b) => (
+        ((b.userRating ?? 5) * 3 + Math.log1p(b.viewCount)) - ((a.userRating ?? 5) * 3 + Math.log1p(a.viewCount))
+      ));
+      const gems = [...sample].sort((a, b) => (
+        ((b.userRating ?? 5) * 3 - Math.log1p(b.viewCount)) - ((a.userRating ?? 5) * 3 - Math.log1p(a.viewCount))
+      ));
+      return res.json({ shelves: [
+        { id: 'favorites', title: 'Crowd favorites', subtitle: 'The room keeps coming back to these', songs: favorite.slice(0, 6) },
+        { id: 'gems', title: 'Underplayed gems', subtitle: 'Highly rated, less often heard', songs: gems.slice(0, 6) },
+        { id: 'recent', title: 'Recently added', subtitle: 'New arrivals in your library', songs: recent.slice(0, 6) },
+        { id: 'wildcards', title: 'Wild cards', subtitle: 'A little surprise never hurt', songs: fresh.slice(0, 6) },
+      ] });
+    } catch (err) {
+      console.error('Plex discovery failed:', err);
+      return res.status(502).json({ error: 'Could not load Plex picks' });
+    }
+  }
+  const conn = getConnection();
+  if (!conn) return res.status(400).json({ error: 'No music server configured' });
+  try {
+    const songs = await getRandomSongs(conn, 24);
+    return res.json({ shelves: [{ id: 'wildcards', title: 'Fresh picks', subtitle: 'Random selections from your library', songs }] });
+  } catch (err) {
+    console.error('Music discovery failed:', err);
+    return res.status(502).json({ error: 'Could not load music picks' });
   }
 });
 
