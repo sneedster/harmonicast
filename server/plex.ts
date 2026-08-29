@@ -306,10 +306,21 @@ export async function getPlexRelatedTracks(
     .slice(0, size);
   if (related.length > 0) return related;
 
-  const artist = typeof metadata.grandparentTitle === 'string' ? metadata.grandparentTitle : '';
-  if (!artist) return [];
-  return (await searchPlexTracks(source, artist, fetcher))
-    .filter((song) => song.id !== id)
+  const artistRatingKey = typeof metadata.grandparentRatingKey === 'string'
+    ? metadata.grandparentRatingKey
+    : '';
+  if (!artistRatingKey) return [];
+
+  const artistTracks = await plexServerJson(
+    source,
+    `/library/metadata/${artistRatingKey}/allLeaves?type=10&limit=${size + 1}`,
+    fetcher,
+  );
+  return metadataArray(artistTracks)
+    .flatMap((item) => {
+      const song = mapPlexSong(item, machineIdentifier);
+      return song && song.id !== id ? [song] : [];
+    })
     .slice(0, size);
 }
 

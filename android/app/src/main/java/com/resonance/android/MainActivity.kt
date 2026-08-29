@@ -384,6 +384,7 @@ class MainActivity : ComponentActivity() {
                 FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer) {
                     Icon(if (vm.nowPlaying.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or pause")
                 }
+                IconButton(onClick = { vm.vote(true) }) { Icon(Icons.Default.ThumbUp, "Vote up") }
                 IconButton(onClick = { vm.nextSong() }, enabled = vm.isActivePlayer) { Icon(Icons.Default.SkipNext, "Next") }
             }
             if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Play on this device") }
