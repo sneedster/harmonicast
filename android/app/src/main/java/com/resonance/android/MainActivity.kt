@@ -46,6 +46,7 @@ class ResonanceViewModel : ViewModel() {
     private var socketStopped = false
     var ready by mutableStateOf(false); private set
     var loading by mutableStateOf(false); var error by mutableStateOf("")
+    var notice by mutableStateOf(""); private set
     var queue by mutableStateOf<List<Song>>(emptyList()); var nowPlaying by mutableStateOf(NowPlaying())
     var isHost by mutableStateOf(false); var isActivePlayer by mutableStateOf(false)
     var configured by mutableStateOf(true)
@@ -222,11 +223,20 @@ class ResonanceViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val added = JSONObject(api.json("queue/similar", "POST", JSONObject())).optInt("added", 0)
-                error = if (added > 0) "Queued $added Track Radio songs" else "No Track Radio songs were found"
+                if (added > 0) showTemporaryNotice("Queued $added Track Radio songs")
+                else error = "No Track Radio songs were found"
                 refresh()
             } catch (e: Exception) {
                 error = e.message ?: "Could not queue Track Radio"
             }
+        }
+    }
+
+    private fun showTemporaryNotice(message: String) {
+        notice = message
+        viewModelScope.launch {
+            delay(3_500)
+            if (notice == message) notice = ""
         }
     }
 
@@ -368,9 +378,10 @@ class MainActivity : ComponentActivity() {
                 1 -> Queue(vm)
                 else -> Search(vm)
             }
-            if (vm.error.isNotBlank()) {
+            val message = vm.error.ifBlank { vm.notice }
+            if (message.isNotBlank()) {
                 Snackbar(modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp), action = {}) {
-                    Text(vm.error)
+                    Text(message)
                 }
             }
         }
