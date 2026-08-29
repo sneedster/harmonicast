@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -630,8 +633,20 @@ class MainActivity : ComponentActivity() {
 @Composable private fun ArtistDiscoveryPage(vm: ResonanceViewModel, song: Song, close: () -> Unit) {
     LazyColumn(
         Modifier.fillMaxSize().pointerInput(song.id) {
-            var downward = 0f
-            detectVerticalDragGestures(onVerticalDrag = { change, amount -> if (amount > 0) { change.consume(); downward += amount } }, onDragEnd = { if (downward > 90f) close() })
+            awaitPointerEventScope {
+                while (true) {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var downward = 0f
+                    var active = true
+                    while (active) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val change = event.changes.firstOrNull() ?: break
+                        downward += change.positionChange().y.coerceAtLeast(0f)
+                        if (downward > 90f) { close(); active = false }
+                        if (!change.pressed) active = false
+                    }
+                }
+            }
         },
     ) {
         item {
