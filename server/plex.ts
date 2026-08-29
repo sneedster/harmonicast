@@ -283,6 +283,36 @@ export async function getPlexRandomTracks(
   });
 }
 
+/**
+ * Prefer Plex's related-track endpoint when the server supplies results. Some
+ * libraries do not expose Sonic relatedness, so fall back to other tracks by
+ * the current artist rather than leaving the feature empty.
+ */
+export async function getPlexRelatedTracks(
+  source: PlexSource,
+  id: string,
+  size = 20,
+  fetcher: PlexFetch = fetch,
+): Promise<PlexSong[]> {
+  const metadata = await getConfiguredPlexTrack(source, id, fetcher);
+  const machineIdentifier = await plexSourceMachineIdentifier(source, fetcher);
+  const ratingKey = parseSourceId(id);
+  const container = await plexServerJson(source, `/library/metadata/${ratingKey}/related`, fetcher);
+  const related = metadataArray(container)
+    .flatMap((item) => {
+      const song = mapPlexSong(item, machineIdentifier);
+      return song && song.id !== id ? [song] : [];
+    })
+    .slice(0, size);
+  if (related.length > 0) return related;
+
+  const artist = typeof metadata.grandparentTitle === 'string' ? metadata.grandparentTitle : '';
+  if (!artist) return [];
+  return (await searchPlexTracks(source, artist, fetcher))
+    .filter((song) => song.id !== id)
+    .slice(0, size);
+}
+
 async function getConfiguredPlexTrack(
   source: PlexSource,
   id: string,

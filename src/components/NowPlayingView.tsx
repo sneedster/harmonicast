@@ -1,4 +1,4 @@
-import { ThumbsDown, ThumbsUp, Volume2, Loader2, Radio } from 'lucide-react';
+import { ThumbsDown, ThumbsUp, Volume2, Loader2, Radio, WandSparkles } from 'lucide-react';
 import { usePlayer } from '@/hooks/usePlayer';
 import { CoverArt } from '@/components/CoverArt';
 import { formatTime } from '@/lib/format';
@@ -14,6 +14,7 @@ export function NowPlayingView() {
     duration,
     thumbsUp,
     thumbsDown,
+    queueSimilar,
   } = usePlayer();
 
   const total = duration || current?.duration || 0;
@@ -125,6 +126,15 @@ export function NowPlayingView() {
           <ThumbsUp className="h-5 w-5" />
         </button>
       </div>
+
+      {isHost && (
+        <button
+          onClick={queueSimilar}
+          className="flex items-center gap-2 rounded-full border border-ink-700 px-4 py-2 text-xs font-medium text-ink-300 transition hover:border-amber-500/40 hover:bg-amber-500/10 hover:text-amber-300"
+        >
+          <WandSparkles className="h-4 w-4" /> Play similar tracks next
+        </button>
+      )}
     </div>
   );
 }

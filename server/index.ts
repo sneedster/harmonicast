@@ -27,7 +27,7 @@ import {
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
 import {
   beginPlexSetup, buildPlexAuthUrl, canAccessConfiguredPlexLibrary, clearPlexSetup, connectOwnedPlexServer,
-  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexServerInfo, getPlexTrack,
+  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack,
   getPlexSetup, getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listOwnedPlexServers, listPlexMusicLibraries,
   plexHeaders, ratePlexTrack, savePersistedPlexSource, scrobblePlexTrack, searchPlexTracks,
 } from './plex.js';
@@ -632,6 +632,29 @@ app.delete('/api/queue/auto', requireAuth, (req, res) => {
   clearAutoQueue();
   broadcastQueue();
   res.json({ ok: true });
+});
+
+app.post('/api/queue/similar', requireAuth, requireActivePlayer, async (req, res) => {
+  const np = getNowPlaying() as any;
+  const source = getActivePlexSource();
+  if (!source) return res.status(409).json({ error: 'Similar-track playback requires Plex' });
+  if (!np?.song_id) return res.status(400).json({ error: 'No song is currently playing' });
+  try {
+    const songs = await getPlexRelatedTracks(source, np.song_id, 20);
+    clearAutoQueue();
+    let added = 0;
+    for (const song of songs) {
+      try {
+        addToQueue({ song, userId: null, userEmail: 'Similar tracks', isManual: false });
+        added++;
+      } catch { /* skip duplicates and cooldown entries */ }
+    }
+    broadcastQueue();
+    res.json({ ok: true, added });
+  } catch (err) {
+    console.error('Similar tracks failed:', err);
+    res.status(502).json({ error: 'Could not load similar Plex tracks' });
+  }
 });
 
 // ── Now Playing ───────────────────────────────────────────────────────

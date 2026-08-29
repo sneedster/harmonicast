@@ -18,6 +18,7 @@ import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSession.ConnectionResult
+import androidx.media3.session.CommandButton
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
@@ -47,6 +48,8 @@ class ResonanceMediaService : MediaLibraryService() {
         private const val ROOT_ID = "resonance:root"
         private const val PLAY_RANDOM_ID = "resonance:play-random"
         private const val QUEUE_ID = "resonance:queue"
+        private const val COMMAND_PLAY_SIMILAR = "android.resonance.PLAY_SIMILAR"
+        private val PLAY_SIMILAR_COMMAND = SessionCommand(COMMAND_PLAY_SIMILAR, Bundle())
     }
 
     @OptIn(UnstableApi::class)
@@ -149,6 +152,7 @@ class ResonanceMediaService : MediaLibraryService() {
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_CHILDREN)
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_ITEM)
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_LIBRARY_ROOT)
+                    .add(PLAY_SIMILAR_COMMAND)
                     .build()
 
                 val availablePlayerCommands = ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
@@ -324,6 +328,27 @@ class ResonanceMediaService : MediaLibraryService() {
                 MediaSession.MediaItemsWithStartPosition(item?.let(::listOf) ?: emptyList(), 0, 0)
             }
 
+            override fun onCustomCommand(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo,
+                customCommand: SessionCommand,
+                args: Bundle,
+            ): ListenableFuture<SessionResult> {
+                if (customCommand.customAction != COMMAND_PLAY_SIMILAR) {
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+                }
+                return scope.future {
+                    try {
+                        val result = JSONObject(api.json("queue/similar", "POST", JSONObject()))
+                        val added = result.optInt("added", 0)
+                        SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putInt("added", added) })
+                    } catch (e: Exception) {
+                        Log.e("ResonanceMedia", "Failed to queue similar tracks", e)
+                        SessionResult(SessionResult.RESULT_ERROR_UNKNOWN)
+                    }
+                }
+            }
+
             override fun onSearch(
                 session: MediaLibrarySession,
                 browser: MediaSession.ControllerInfo,
@@ -384,6 +409,13 @@ class ResonanceMediaService : MediaLibraryService() {
             if (sessionActivityPendingIntent != null) {
                 setSessionActivity(sessionActivityPendingIntent)
             }
+            setCustomLayout(listOf(
+                CommandButton.Builder(CommandButton.ICON_RADIO)
+                    .setSessionCommand(PLAY_SIMILAR_COMMAND)
+                    .setDisplayName("Play similar tracks")
+                    .setSlots(CommandButton.SLOT_OVERFLOW)
+                    .build(),
+            ))
         }.build()
 
         Log.d("ResonanceMedia", "Session built successfully")

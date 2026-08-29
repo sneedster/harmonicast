@@ -97,6 +97,11 @@ export async function dequeueNext(): Promise<{ song: Song | null; isManual: bool
   return request<{ song: Song | null; isManual: boolean }>('/api/queue/dequeue', { method: 'POST' });
 }
 
+export async function queueSimilarTracks(): Promise<number> {
+  const result = await request<{ added: number }>('/api/queue/similar', { method: 'POST' });
+  return result.added;
+}
+
 // Plex is the shared rating authority, so every successful tap adjusts its
 // owner-account rating and deliberately has no per-user attribution.
 export async function voteOnCurrent(vote: 'up' | 'down'): Promise<number | null> {
