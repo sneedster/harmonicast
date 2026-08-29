@@ -27,9 +27,9 @@ import {
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
 import {
   beginPlexSetup, buildPlexAuthUrl, canAccessConfiguredPlexLibrary, clearPlexSetup, connectOwnedPlexServer,
-  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexServerInfo,
+  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexServerInfo, getPlexTrack,
   getPlexSetup, getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listOwnedPlexServers, listPlexMusicLibraries,
-  plexHeaders, savePersistedPlexSource, searchPlexTracks,
+  plexHeaders, ratePlexTrack, savePersistedPlexSource, scrobblePlexTrack, searchPlexTracks,
 } from './plex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -66,6 +66,34 @@ function requireActivePlayer(req, res, next) {
 
 let jukeboxFillInProgress = false;
 
+function plexJukeboxWeight(song) {
+  const rating = song.userRating ?? 5;
+  const ratingWeight = Math.pow(Math.max(0.1, rating), 1.6);
+  const hoursSincePlayed = song.lastViewedAt
+    ? Math.max(0, (Date.now() - new Date(song.lastViewedAt).getTime()) / 3_600_000)
+    : Infinity;
+  const recencyWeight = Math.min(1, hoursSincePlayed / 6);
+  const playWeight = 1 + Math.log(song.viewCount + 1) * 0.15;
+  const skipWeight = 1 / (1 + song.skipCount * 0.1);
+  return ratingWeight * recencyWeight * playWeight * skipWeight;
+}
+
+function choosePlexJukeboxTracks(songs, count) {
+  const pool = [...songs];
+  const selected = [];
+  while (pool.length && selected.length < count) {
+    const total = pool.reduce((sum, song) => sum + plexJukeboxWeight(song), 0);
+    let pick = Math.random() * total;
+    let index = pool.length - 1;
+    for (let i = 0; i < pool.length; i++) {
+      pick -= plexJukeboxWeight(pool[i]);
+      if (pick <= 0) { index = i; break; }
+    }
+    selected.push(pool.splice(index, 1)[0]);
+  }
+  return selected;
+}
+
 async function fillJukeboxQueue() {
   if (jukeboxFillInProgress) return;
   jukeboxFillInProgress = true;
@@ -94,9 +122,20 @@ async function fillJukeboxQueueOnce() {
     const target = 5 - currentQueue.length;
     let added = 0;
 
-    // 1. Try picking from top-rated songs (weighted feel)
-    const topRated = fetchTopRated(50, 5.0); // Any song with at least default rating
-    if (topRated.length > 0) {
+    if (plexSource) {
+      // Plex is the canonical shared taste/history store. Its metadata is
+      // already scoped to the Plex owner token used by this proxy.
+      const randomSongs = await getPlexRandomTracks(plexSource, 100);
+      for (const song of choosePlexJukeboxTracks(randomSongs, target)) {
+        try {
+          addToQueue({ song, userId: null, userEmail: 'Jukebox', isManual: false });
+          added++;
+        } catch { /* skip duplicates/cooldown */ }
+      }
+    } else {
+      // Legacy Subsonic fallback retains the pre-Plex local-stat behaviour.
+      const topRated = fetchTopRated(50, 5.0);
+      if (topRated.length > 0) {
       console.log(`Jukebox auto-fill: found ${topRated.length} rated songs to pick from`);
       // Shuffle them locally
       const shuffled = topRated.sort(() => Math.random() - 0.5);
@@ -111,21 +150,18 @@ async function fillJukeboxQueueOnce() {
           added++;
         } catch { /* skip duplicates/cooldown */ }
       }
-    }
+      }
 
-    // 2. Fall back to random songs from the configured music source if we
-    // still need more. Plex and Subsonic share the normalized Song shape.
-    if (added < target) {
-      const randomSongs = plexSource
-        ? await getPlexRandomTracks(plexSource, 20)
-        : await getRandomSongs(conn!, 20);
-      console.log(`Jukebox auto-fill: music source returned ${randomSongs.length} random songs`);
-      for (const song of randomSongs) {
-        if (added >= target) break;
-        try {
-          addToQueue({ song, userId: null, userEmail: 'Jukebox', isManual: false });
-          added++;
-        } catch { /* skip duplicates/cooldown */ }
+      if (added < target) {
+        const randomSongs = await getRandomSongs(conn!, 20);
+        console.log(`Jukebox auto-fill: music source returned ${randomSongs.length} random songs`);
+        for (const song of randomSongs) {
+          if (added >= target) break;
+          try {
+            addToQueue({ song, userId: null, userEmail: 'Jukebox', isManual: false });
+            added++;
+          } catch { /* skip duplicates/cooldown */ }
+        }
       }
     }
 
@@ -609,12 +645,22 @@ app.post('/api/now-playing', requireAuth, requireActivePlayer, (req, res) => {
 
 // ── Votes ─────────────────────────────────────────────────────────────
 
-app.post('/api/vote', requireAuth, (req, res) => {
+app.post('/api/vote', requireAuth, async (req, res) => {
   const { vote } = req.body || {};
   try {
-    // The rating change is applied here, guarded by one-vote-per-user.
+    if (vote !== 'up' && vote !== 'down') throw new Error('Invalid vote');
+    const plexSource = getActivePlexSource();
+    if (plexSource) {
+      const np = getNowPlaying() as any;
+      if (!np?.song_id) throw new Error('No song is currently playing');
+      const track = await getPlexTrack(plexSource, np.song_id);
+      const rating = await ratePlexTrack(plexSource, np.song_id, (track.userRating ?? 5) + (vote === 'up' ? 1 : -1));
+      if (vote === 'down' && np.is_auto_queue) broadcastForceSkip();
+      return res.json({ ok: true, rating });
+    }
+
+    // Legacy Subsonic fallback only.
     const stats = voteOnCurrent(req.user.id, vote);
-    broadcastVotes();
     if (vote === 'down') {
       const np = getNowPlaying() as any;
       if (np?.is_auto_queue) broadcastForceSkip();
@@ -644,6 +690,9 @@ app.post('/api/votes/clear/:songId', requireAuth, requireActivePlayer, (req, res
 const PLAY_EVENTS = new Set(['complete', 'skip']);
 
 app.post('/api/stats/play-event', requireAuth, requireActivePlayer, (req, res) => {
+  // Plex-backed deployments keep playback history and counts in Plex. This
+  // endpoint remains only for the legacy Subsonic migration path.
+  if (getActivePlexSource()) return res.json({ ok: true });
   const { song_id, title, artist, album, duration, cover_art, event, progress } = req.body || {};
 
   if (typeof song_id !== 'string' || !song_id.trim()) {
@@ -774,12 +823,17 @@ app.get('/api/random-songs', requireAuth, async (req, res) => {
 });
 
 app.post('/api/scrobble', requireAuth, requireActivePlayer, async (req, res) => {
-  // Resonance keeps its own play history. Native Plex scrobbling is deferred
-  // until it is validated against the configured server and user token model.
-  if (getActivePlexSource()) return res.json({ ok: true });
+  const { id, submission } = req.body || {};
+  if (typeof id !== 'string' || !id) return res.status(400).json({ error: 'A track id is required' });
+  const plexSource = getActivePlexSource();
+  if (plexSource) {
+    // The initial playback notification is not a completion. Plex's scrobble
+    // endpoint is called only after a track reaches its end.
+    if (submission) await scrobblePlexTrack(plexSource, id);
+    return res.json({ ok: true });
+  }
   const conn = getConnection();
   if (!conn) return res.status(400).json({ error: 'No music server configured' });
-  const { id, submission } = req.body;
   await scrobble(conn, id, submission);
   res.json({ ok: true });
 });

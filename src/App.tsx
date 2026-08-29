@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Disc3, Search, ListMusic, BarChart3, LogOut, Radio, User, Music2, Settings, MonitorSpeaker, Loader2 } from 'lucide-react';
+import { Disc3, Search, ListMusic, LogOut, Radio, User, Music2, Settings, MonitorSpeaker, Loader2 } from 'lucide-react';
 import type { Connection } from '@/types';
 import { connectionFromInfo } from '@/lib/connectionStore';
 import { PlayerProvider, usePlayer } from '@/hooks/usePlayer';
@@ -8,12 +8,11 @@ import { AuthScreen } from '@/components/AuthScreen';
 import { PlayerBar } from '@/components/PlayerBar';
 import { SearchView } from '@/components/SearchView';
 import { QueueView } from '@/components/QueueView';
-import { StatsView } from '@/components/StatsView';
 import { NowPlayingView } from '@/components/NowPlayingView';
 import { SettingsView } from '@/components/SettingsView';
 import { claimPlayer, getConnection, getPlayerStatus, getMe, signOut, listSessions, type SessionDevice } from '@/lib/api';
 
-type Tab = 'nowplaying' | 'search' | 'queue' | 'stats' | 'settings';
+type Tab = 'nowplaying' | 'search' | 'queue' | 'settings';
 
 const AUTO_SWITCH_DELAY = 8000;
 
@@ -151,7 +150,6 @@ function JukeboxApp({
         <TabButton active={tab === 'nowplaying'} onClick={() => setTab('nowplaying')} icon={<Music2 className="h-4 w-4" />} label="Now Playing" />
         <TabButton active={tab === 'search'} onClick={() => setTab('search')} icon={<Search className="h-4 w-4" />} label="Search" />
         <TabButton active={tab === 'queue'} onClick={() => setTab('queue')} icon={<ListMusic className="h-4 w-4" />} label="Queue" />
-        <TabButton active={tab === 'stats'} onClick={() => setTab('stats')} icon={<BarChart3 className="h-4 w-4" />} label="Stats" />
         {isHostUser && (
           <TabButton active={tab === 'settings'} onClick={() => setTab('settings')} icon={<Settings className="h-4 w-4" />} label="Settings" />
         )}
@@ -162,7 +160,6 @@ function JukeboxApp({
           {tab === 'nowplaying' && <NowPlayingView />}
           {tab === 'search' && <SearchView />}
           {tab === 'queue' && <QueueView />}
-          {tab === 'stats' && <StatsView />}
           {tab === 'settings' && <SettingsView isHostUser={isHostUser} />}
         </div>
       </main>

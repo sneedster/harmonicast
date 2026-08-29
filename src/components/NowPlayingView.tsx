@@ -1,25 +1,22 @@
 import { ThumbsDown, ThumbsUp, Volume2, Loader2, Radio } from 'lucide-react';
 import { usePlayer } from '@/hooks/usePlayer';
 import { CoverArt } from '@/components/CoverArt';
-import { formatTime, ratingColor, ratingLabel } from '@/lib/format';
+import { formatTime } from '@/lib/format';
 
 export function NowPlayingView() {
   const {
     isHost,
     isHostUser,
     current,
-    currentStats,
     isPlaying,
     currentTime,
     duration,
-    voteCounts,
     thumbsUp,
     thumbsDown,
   } = usePlayer();
 
   const total = duration || current?.duration || 0;
   const pct = total > 0 ? Math.min(100, (currentTime / total) * 100) : 0;
-  const rating = currentStats?.rating ?? 5;
 
   if (!current) {
     return (
@@ -81,12 +78,6 @@ export function NowPlayingView() {
         {current.album && (
           <p className="mt-0.5 text-xs text-ink-500">{current.album}</p>
         )}
-        {currentStats && (
-          <p className={`mt-2 text-sm font-medium ${ratingColor(rating)}`}>
-            {ratingLabel(rating)} · {rating.toFixed(1)}
-            <span className="text-ink-500"> / 10</span>
-          </p>
-        )}
       </div>
 
       {/* Progress bar (read-only for guests) */}
@@ -113,9 +104,6 @@ export function NowPlayingView() {
           className="flex items-center gap-2 rounded-full border border-ink-700 px-5 py-3 text-ink-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400"
         >
           <ThumbsDown className="h-5 w-5" />
-          {voteCounts.down > 0 && (
-            <span className="text-sm tabular-nums">{voteCounts.down}</span>
-          )}
         </button>
 
         {!isHost && (
@@ -131,9 +119,6 @@ export function NowPlayingView() {
           className="flex items-center gap-2 rounded-full border border-ink-700 px-5 py-3 text-ink-400 transition hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-400"
         >
           <ThumbsUp className="h-5 w-5" />
-          {voteCounts.up > 0 && (
-            <span className="text-sm tabular-nums">{voteCounts.up}</span>
-          )}
         </button>
       </div>
     </div>

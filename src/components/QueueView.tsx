@@ -68,8 +68,8 @@ export function QueueView() {
             Recently played
           </h3>
           <p className="text-xs text-ink-500">
-            History appears here as tracks play. Check the Stats tab for the
-            full log.
+            History appears here as tracks play. Plex stores the shared ratings
+            and listening history used by Jukebox.
           </p>
         </div>
       )}

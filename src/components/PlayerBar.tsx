@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { usePlayer } from '@/hooks/usePlayer';
 import { CoverArt } from '@/components/CoverArt';
-import { formatTime, ratingColor, ratingLabel } from '@/lib/format';
+import { formatTime } from '@/lib/format';
 
 function VolumeControl() {
   const { volume, setVolume } = usePlayer();
@@ -50,14 +50,12 @@ export function PlayerBar() {
     isHost,
     isHostUser,
     current,
-    currentStats,
     isPlaying,
     currentTime,
     duration,
     jukeboxMode,
     loadingNext,
     streamError,
-    voteCounts,
     togglePlay,
     startRandomPlayback,
     next,
@@ -69,7 +67,6 @@ export function PlayerBar() {
 
   const total = duration || current?.duration || 0;
   const pct = total > 0 ? Math.min(100, (currentTime / total) * 100) : 0;
-  const rating = currentStats?.rating ?? 5;
 
   // ── Guest view: now-playing info + voting, no transport controls ──────
   if (!isHost) {
@@ -83,12 +80,6 @@ export function PlayerBar() {
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-white">{current.title}</p>
                   <p className="truncate text-xs text-ink-400">{current.artist}</p>
-                  {currentStats && (
-                    <p className={`mt-0.5 text-[11px] font-medium ${ratingColor(rating)}`}>
-                      {ratingLabel(rating)} · {rating.toFixed(1)}
-                      <span className="text-ink-500"> / 10</span>
-                    </p>
-                  )}
                 </div>
               </>
             ) : (
@@ -130,9 +121,6 @@ export function PlayerBar() {
               className="flex items-center gap-1.5 rounded-full px-3 py-2 text-ink-400 transition hover:bg-ink-800 hover:text-red-400 disabled:opacity-40"
             >
               <ThumbsDown className="h-4 w-4" />
-              {voteCounts.down > 0 && (
-                <span className="text-xs tabular-nums text-ink-500">{voteCounts.down}</span>
-              )}
             </button>
 
             <div className="flex items-center gap-1.5 text-ink-500">
@@ -147,9 +135,6 @@ export function PlayerBar() {
               className="flex items-center gap-1.5 rounded-full px-3 py-2 text-ink-400 transition hover:bg-ink-800 hover:text-emerald-400 disabled:opacity-40"
             >
               <ThumbsUp className="h-4 w-4" />
-              {voteCounts.up > 0 && (
-                <span className="text-xs tabular-nums text-ink-500">{voteCounts.up}</span>
-              )}
             </button>
           </div>
 
@@ -175,12 +160,6 @@ export function PlayerBar() {
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-white">{current.title}</p>
                 <p className="truncate text-xs text-ink-400">{current.artist}</p>
-                {currentStats && (
-                  <p className={`mt-0.5 text-[11px] font-medium ${ratingColor(rating)}`}>
-                    {ratingLabel(rating)} · {rating.toFixed(1)}
-                    <span className="text-ink-500"> / 10</span>
-                  </p>
-                )}
               </div>
             </>
           ) : (
@@ -211,9 +190,6 @@ export function PlayerBar() {
               className="flex items-center gap-1.5 rounded-full p-2 text-ink-400 transition hover:bg-ink-800 hover:text-red-400 disabled:opacity-40"
             >
               <ThumbsDown className="h-4 w-4" />
-              {voteCounts.down > 0 && (
-                <span className="text-xs tabular-nums text-ink-500">{voteCounts.down}</span>
-              )}
             </button>
 
             <button
@@ -243,9 +219,6 @@ export function PlayerBar() {
               className="flex items-center gap-1.5 rounded-full p-2 text-ink-400 transition hover:bg-ink-800 hover:text-emerald-400 disabled:opacity-40"
             >
               <ThumbsUp className="h-4 w-4" />
-              {voteCounts.up > 0 && (
-                <span className="text-xs tabular-nums text-ink-500">{voteCounts.up}</span>
-              )}
             </button>
           </div>
 

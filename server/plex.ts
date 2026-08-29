@@ -59,6 +59,12 @@ export interface PlexSong {
   album: string;
   duration: number;
   coverArt: string;
+  // These are shared Plex-account fields. Resonance intentionally does not
+  // maintain a second per-user stats model.
+  userRating: number | null;
+  viewCount: number;
+  skipCount: number;
+  lastViewedAt: string | null;
 }
 
 export interface PlexFetch {
@@ -230,6 +236,12 @@ function mapPlexSong(metadata: Record<string, unknown>, machineIdentifier: strin
     // Plex reports milliseconds; Resonance has always exposed seconds.
     duration: Math.max(0, Math.round(Number(metadata.duration ?? 0) / 1000)),
     coverArt: sourceId(machineIdentifier, ratingKey),
+    userRating: Number.isFinite(Number(metadata.userRating)) ? Number(metadata.userRating) : null,
+    viewCount: Math.max(0, Number(metadata.viewCount) || 0),
+    skipCount: Math.max(0, Number(metadata.skipCount) || 0),
+    lastViewedAt: Number.isFinite(Number(metadata.lastViewedAt))
+      ? new Date(Number(metadata.lastViewedAt) * 1000).toISOString()
+      : null,
   };
 }
 
@@ -315,6 +327,49 @@ export async function getPlexTrackArtworkUrl(source: PlexSource, id: string, fet
   const metadata = await getConfiguredPlexTrack(source, id, fetcher);
   const thumb = typeof metadata.thumb === 'string' && metadata.thumb.startsWith('/') ? metadata.thumb : null;
   return thumb ? serverUrl(source, thumb) : null;
+}
+
+/** Read current shared Plex metadata for a configured track. */
+export async function getPlexTrack(source: PlexSource, id: string, fetcher: PlexFetch = fetch): Promise<PlexSong> {
+  const metadata = await getConfiguredPlexTrack(source, id, fetcher);
+  const server = await getPlexServerInfo(source, fetcher);
+  const song = mapPlexSong(metadata, server.machineIdentifier);
+  if (!song) throw new Error('Plex metadata is not a music track');
+  return song;
+}
+
+async function plexServerAction(
+  connection: PlexConnection,
+  path: string,
+  fetcher: PlexFetch = fetch,
+): Promise<void> {
+  const response = await fetcher(serverUrl(connection, path), {
+    method: 'PUT',
+    headers: plexHeaders(undefined, connection.token),
+  });
+  if (!response.ok) throw new Error(`Plex server action failed (${response.status})`);
+}
+
+/** Update the selected Plex account's shared 0–10 rating for one track. */
+export async function ratePlexTrack(source: PlexSource, id: string, rating: number, fetcher: PlexFetch = fetch): Promise<number> {
+  await getConfiguredPlexTrack(source, id, fetcher);
+  const ratingKey = parseSourceId(id);
+  const nextRating = Math.max(0, Math.min(10, Math.round(rating)));
+  const params = new URLSearchParams({
+    identifier: 'com.plexapp.plugins.library',
+    key: ratingKey,
+    rating: String(nextRating),
+  });
+  await plexServerAction(source, `/:/rate?${params}`, fetcher);
+  return nextRating;
+}
+
+/** Mark a completed track as played for the shared Plex account. */
+export async function scrobblePlexTrack(source: PlexSource, id: string, fetcher: PlexFetch = fetch): Promise<void> {
+  await getConfiguredPlexTrack(source, id, fetcher);
+  const ratingKey = parseSourceId(id);
+  const params = new URLSearchParams({ identifier: 'com.plexapp.plugins.library', key: ratingKey });
+  await plexServerAction(source, `/:/scrobble?${params}`, fetcher);
 }
 
 /** Verify an authenticated Plex Media Server connection. */
