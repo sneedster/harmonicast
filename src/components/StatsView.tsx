@@ -6,12 +6,10 @@ import {
   fetchRecentlyPlayed,
   fetchTopRated,
 } from '@/lib/stats';
-import { usePlayer } from '@/hooks/usePlayer';
 import { CoverArt } from '@/components/CoverArt';
 import { formatTime, ratingColor, ratingLabel } from '@/lib/format';
 
 export function StatsView() {
-  const { statsVersion } = usePlayer();
   const [topRated, setTopRated] = useState<SongStats[]>([]);
   const [mostPlayed, setMostPlayed] = useState<SongStats[]>([]);
   const [recent, setRecent] = useState<PlayHistoryRow[]>([]);
@@ -33,7 +31,7 @@ export function StatsView() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [statsVersion]);
+  }, []);
 
   if (loading) {
     return (

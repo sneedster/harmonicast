@@ -242,6 +242,12 @@ app.get('/api/plex/tracks/:id', requireAuth, async (req, res) => {
   try {
     const track = await getPlexTrack(source, req.params.id);
     res.json({
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      duration: track.duration,
+      coverArt: track.coverArt,
       rating: track.userRating,
       playCount: track.viewCount,
       skipCount: track.skipCount,

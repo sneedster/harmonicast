@@ -291,12 +291,16 @@ class ResonanceMediaService : MediaLibraryService() {
                     } else emptyMap()
                     mediaItems.map { item ->
                         val metadata = item.mediaMetadata
-                        val song = queuedSongs[item.mediaId] ?: Song(
-                            item.mediaId,
-                            metadata.title?.toString().orEmpty().ifBlank { item.mediaId },
-                            metadata.artist?.toString().orEmpty(),
-                            metadata.albumTitle?.toString().orEmpty(),
-                        )
+                        val title = metadata.title?.toString()
+                        val needsResolution = title.isNullOrBlank() || title == item.mediaId
+                        val song = queuedSongs[item.mediaId]
+                            ?: (if (needsResolution) fetchPlexSong(item.mediaId) else null)
+                            ?: Song(
+                                item.mediaId,
+                                title.orEmpty().ifBlank { item.mediaId },
+                                metadata.artist?.toString().orEmpty(),
+                                metadata.albumTitle?.toString().orEmpty(),
+                            )
                         createMediaItem(song)
                     }.toMutableList()
                 }
@@ -482,6 +486,18 @@ class ResonanceMediaService : MediaLibraryService() {
                 ))
             }
         }
+    }
+
+    private suspend fun fetchPlexSong(id: String): Song? = try {
+        val item = JSONObject(api.json("plex/tracks/${java.net.URLEncoder.encode(id, "UTF-8")}"))
+        val title = item.optString("title")
+        if (title.isBlank()) null else Song(
+            item.optString("id", id), title, item.optString("artist"), item.optString("album"),
+            item.optInt("duration"), item.optString("coverArt"),
+        )
+    } catch (e: Exception) {
+        Log.w("ResonanceMedia", "Could not resolve Plex metadata for $id", e)
+        null
     }
 
     private fun synchronizePlayerTimeline(queue: List<Song>) {
