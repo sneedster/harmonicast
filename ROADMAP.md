@@ -11,13 +11,11 @@
 - Isolated Node 20 regression tests for first-run Plex source selection,
   Track Radio, queue fairness, active-player ownership, and the Plex metadata
   Android Auto consumes.
+- Local signed Android release workflow, with a verified 1.0.0 release APK.
 
 ## Release hardening
 
 - Make lint and the automated test suite required release checks.
-- Generate and securely back up the local Android signing identity, then
-  produce a versioned/signed release APK rather than distributing only debug
-  builds.
 - Run a documented clean-install and upgrade verification pass against Docker,
   web, Android, and Android Auto.
 
