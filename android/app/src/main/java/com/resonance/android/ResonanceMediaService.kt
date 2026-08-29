@@ -44,9 +44,9 @@ class ResonanceMediaService : MediaLibraryService() {
     private var positionSaveJob: kotlinx.coroutines.Job? = null
 
     companion object {
-        private const val COMMAND_JUKEBOX_TOGGLE = "android.resonance.JUKEBOX_TOGGLE"
-        private const val COMMAND_JUKEBOX_STATUS = "android.resonance.JUKEBOX_STATUS"
-        private val JUKEBOX_TOGGLE_COMMAND = SessionCommand(COMMAND_JUKEBOX_TOGGLE, Bundle())
+        private const val ROOT_ID = "resonance:root"
+        private const val PLAY_RANDOM_ID = "resonance:play-random"
+        private const val QUEUE_ID = "resonance:queue"
     }
 
     @OptIn(UnstableApi::class)
@@ -149,7 +149,6 @@ class ResonanceMediaService : MediaLibraryService() {
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_CHILDREN)
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_ITEM)
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_LIBRARY_ROOT)
-                    .add(JUKEBOX_TOGGLE_COMMAND)
                     .build()
 
                 val availablePlayerCommands = ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
@@ -176,7 +175,7 @@ class ResonanceMediaService : MediaLibraryService() {
                 params: LibraryParams?
             ): ListenableFuture<LibraryResult<MediaItem>> {
                 val root = MediaItem.Builder()
-                    .setMediaId("ROOT")
+                    .setMediaId(ROOT_ID)
                     .setMediaMetadata(
                         MediaMetadata.Builder()
                             .setIsBrowsable(true)
@@ -198,8 +197,22 @@ class ResonanceMediaService : MediaLibraryService() {
                 pageSize: Int,
                 params: LibraryParams?
             ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-                if (parentId == "ROOT") {
-                    Log.d("ResonanceMedia", "onGetChildren for ROOT")
+                if (parentId == ROOT_ID) {
+                    val items = listOf(
+                        MediaItem.Builder().setMediaId(PLAY_RANDOM_ID).setMediaMetadata(
+                            MediaMetadata.Builder().setTitle("Play random music").setDisplayTitle("Play random music")
+                                .setSubtitle("Start the shared Resonance queue").setIsPlayable(true).setIsBrowsable(false)
+                                .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).build()
+                        ).build(),
+                        MediaItem.Builder().setMediaId(QUEUE_ID).setMediaMetadata(
+                            MediaMetadata.Builder().setTitle("Request queue").setDisplayTitle("Request queue")
+                                .setSubtitle("Tracks added by listeners").setIsPlayable(false).setIsBrowsable(true)
+                                .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST).build()
+                        ).build(),
+                    )
+                    return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))
+                }
+                if (parentId == QUEUE_ID) {
                     return scope.future {
                         try {
                             val queueJson = api.json("queue")
@@ -226,10 +239,10 @@ class ResonanceMediaService : MediaLibraryService() {
                 browser: MediaSession.ControllerInfo,
                 mediaId: String
             ): ListenableFuture<LibraryResult<MediaItem>> {
-                if (mediaId == "ROOT") {
+                if (mediaId == ROOT_ID) {
                     return Futures.immediateFuture(LibraryResult.ofItem(
                         MediaItem.Builder()
-                            .setMediaId("ROOT")
+                            .setMediaId(ROOT_ID)
                             .setMediaMetadata(
                                 MediaMetadata.Builder()
                                     .setIsBrowsable(true)
@@ -287,6 +300,30 @@ class ResonanceMediaService : MediaLibraryService() {
                 }.toMutableList())
             }
 
+            override fun onSetMediaItems(
+                mediaSession: MediaSession,
+                controller: MediaSession.ControllerInfo,
+                mediaItems: MutableList<MediaItem>,
+                startIndex: Int,
+                startPositionMs: Long,
+            ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+                if (mediaItems.size == 1 && mediaItems[0].mediaId == PLAY_RANDOM_ID) {
+                    return scope.future {
+                        val item = dequeueRandomItem()
+                        MediaSession.MediaItemsWithStartPosition(item?.let(::listOf) ?: emptyList(), 0, 0)
+                    }
+                }
+                return super.onSetMediaItems(mediaSession, controller, mediaItems, startIndex, startPositionMs)
+            }
+
+            override fun onPlaybackResumption(
+                mediaSession: MediaSession,
+                controller: MediaSession.ControllerInfo,
+            ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
+                val item = dequeueRandomItem()
+                MediaSession.MediaItemsWithStartPosition(item?.let(::listOf) ?: emptyList(), 0, 0)
+            }
+
             override fun onSearch(
                 session: MediaLibrarySession,
                 browser: MediaSession.ControllerInfo,
@@ -336,46 +373,6 @@ class ResonanceMediaService : MediaLibraryService() {
                 }
             }
 
-            override fun onCustomCommand(
-                session: MediaSession,
-                controller: MediaSession.ControllerInfo,
-                customCommand: SessionCommand,
-                args: Bundle
-            ): ListenableFuture<SessionResult> {
-                if (customCommand.customAction == COMMAND_JUKEBOX_TOGGLE) {
-                    Log.d("ResonanceMedia", "Jukebox toggle command received")
-                    return scope.future {
-                        try {
-                            val settingsJson = api.json("settings")
-                            val currentMode = JSONObject(settingsJson).optBoolean("jukeboxMode", false)
-                            val response = api.json(
-                                "jukebox", "POST",
-                                JSONObject().put("enabled", !currentMode)
-                            )
-                            val newMode = JSONObject(response).optBoolean("jukeboxMode", !currentMode)
-                            Log.d("ResonanceMedia", "Jukebox mode toggled to: $newMode")
-                            val extras = Bundle().apply { putBoolean("jukeboxMode", newMode) }
-                            SessionResult(SessionResult.RESULT_SUCCESS, extras)
-                        } catch (e: Exception) {
-                            Log.e("ResonanceMedia", "Jukebox toggle failed", e)
-                            SessionResult(SessionResult.RESULT_ERROR_UNKNOWN)
-                        }
-                    }
-                }
-                if (customCommand.customAction == COMMAND_JUKEBOX_STATUS) {
-                    return scope.future {
-                        try {
-                            val settingsJson = api.json("settings")
-                            val mode = JSONObject(settingsJson).optBoolean("jukeboxMode", false)
-                            val extras = Bundle().apply { putBoolean("jukeboxMode", mode) }
-                            SessionResult(SessionResult.RESULT_SUCCESS, extras)
-                        } catch (e: Exception) {
-                            SessionResult(SessionResult.RESULT_ERROR_UNKNOWN)
-                        }
-                    }
-                }
-                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
-            }
         }
 
         val sessionActivityIntent = packageManager.getLaunchIntentForPackage(packageName)
@@ -537,6 +534,21 @@ class ResonanceMediaService : MediaLibraryService() {
                 Log.e("ResonanceMedia", "advance failed", e)
             }
         }
+    }
+
+    /** Enables the shared auto queue and returns its next playable track. */
+    private suspend fun dequeueRandomItem(): MediaItem? = try {
+        api.json("jukebox", "POST", JSONObject().put("enabled", true))
+        val response = JSONObject(api.json("queue/dequeue", "POST", JSONObject()))
+        val next = response.optJSONObject("song") ?: return null
+        currentIsAuto.set(!response.optBoolean("isManual", true))
+        createMediaItem(Song(
+            next.optString("id"), next.optString("title"), next.optString("artist"),
+            next.optString("album"), next.optInt("duration"), next.optString("coverArt"),
+        ))
+    } catch (e: Exception) {
+        Log.e("ResonanceMedia", "Failed to start random playback", e)
+        null
     }
 
     private fun coverArtUri(coverArt: String): Uri? {
