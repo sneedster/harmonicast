@@ -141,11 +141,11 @@ function JukeboxApp({
             </button>
           )}
           <a
-            href="/kiosk"
-            className="flex h-8 w-8 items-center justify-center rounded-full text-ink-400 transition hover:bg-ink-800 hover:text-white"
+            href={isHost ? '/kiosk?host=1' : '/kiosk'}
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-ink-400 transition hover:bg-ink-800 hover:text-white"
             title="Open kiosk mode"
           >
-            <Maximize className="h-4 w-4" />
+            <Maximize className="h-4 w-4" /><span className="hidden sm:inline">Kiosk mode</span>
           </a>
           <button
             onClick={onSignOut}

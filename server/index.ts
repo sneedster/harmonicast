@@ -27,7 +27,7 @@ import {
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
 import {
   beginPlexSetup, buildPlexAuthUrl, canAccessConfiguredPlexLibrary, clearPlexSetup, connectOwnedPlexServer,
-  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack,
+  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexRecentlyAddedTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack,
   getPlexSetup, getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listOwnedPlexServers, listPlexMusicLibraries,
   plexHeaders, ratePlexTrack, savePersistedPlexSource, scrobblePlexTrack, searchPlexTracks,
 } from './plex.js';
@@ -268,7 +268,10 @@ app.get('/api/auth/plex', async (req, res) => {
   const mobileRedirect = req.query.mobile_redirect === 'resonance://auth'
     ? 'resonance://auth'
     : null;
-  const state = createOAuthState(mobileRedirect);
+  // Keep web return paths deliberately narrow: this state value is later used
+  // in a redirect after Plex authentication, so arbitrary URLs are unsafe.
+  const webRedirect = req.query.return_to === '/kiosk' ? '/kiosk' : null;
+  const state = createOAuthState(mobileRedirect || webRedirect);
   try {
     const pin = await createPlexPin();
     const { publicUrl } = getPlexOAuthConfig();
@@ -326,7 +329,7 @@ app.get('/api/auth/plex/callback', async (req, res) => {
     else if (isFirstUser) assignHostIfUnset(user.id);
 
     const token = createSession(user.id, parseDeviceName(req.headers['user-agent']));
-    const target = pendingState.mobileRedirect || '/';
+    const target = pendingState.redirect || '/';
     if (target === 'resonance://auth') {
       return res.redirect(`${target}?auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
     }
@@ -878,7 +881,23 @@ app.get('/api/discover', requireAuth, async (req, res) => {
   const plexSource = getActivePlexSource();
   if (plexSource) {
     try {
-      return res.json(await getPlexRandomTracks(plexSource, 30));
+      const [sample, recent] = await Promise.all([
+        getPlexRandomTracks(plexSource, 100),
+        getPlexRecentlyAddedTracks(plexSource, 12),
+      ]);
+      const fresh = [...sample].sort(() => Math.random() - 0.5);
+      const favorite = [...sample].sort((a, b) => (
+        ((b.userRating ?? 5) * 3 + Math.log1p(b.viewCount)) - ((a.userRating ?? 5) * 3 + Math.log1p(a.viewCount))
+      ));
+      const gems = [...sample].sort((a, b) => (
+        ((b.userRating ?? 5) * 3 - Math.log1p(b.viewCount)) - ((a.userRating ?? 5) * 3 - Math.log1p(a.viewCount))
+      ));
+      return res.json({ shelves: [
+        { id: 'favorites', title: 'Crowd favorites', subtitle: 'The room keeps coming back to these', songs: favorite.slice(0, 6) },
+        { id: 'gems', title: 'Underplayed gems', subtitle: 'Highly rated, less often heard', songs: gems.slice(0, 6) },
+        { id: 'recent', title: 'Recently added', subtitle: 'New arrivals in your library', songs: recent.slice(0, 6) },
+        { id: 'wildcards', title: 'Wild cards', subtitle: 'A little surprise never hurt', songs: fresh.slice(0, 6) },
+      ] });
     } catch (err) {
       console.error('Plex discovery failed:', err);
       return res.status(502).json({ error: 'Could not load Plex picks' });
@@ -887,7 +906,8 @@ app.get('/api/discover', requireAuth, async (req, res) => {
   const conn = getConnection();
   if (!conn) return res.status(400).json({ error: 'No music server configured' });
   try {
-    return res.json(await getRandomSongs(conn, 30));
+    const songs = await getRandomSongs(conn, 24);
+    return res.json({ shelves: [{ id: 'wildcards', title: 'Fresh picks', subtitle: 'Random selections from your library', songs }] });
   } catch (err) {
     console.error('Music discovery failed:', err);
     return res.status(502).json({ error: 'Could not load music picks' });
