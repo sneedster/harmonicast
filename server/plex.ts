@@ -40,6 +40,12 @@ export interface PlexSource extends PlexConnection {
   libraryKey: string;
 }
 
+export interface PersistedPlexSource extends PlexSource {
+  machineIdentifier: string;
+  serverName: string;
+  libraryName: string;
+}
+
 export interface PlexSong {
   id: string;
   title: string;
@@ -112,6 +118,41 @@ export function getPlexSourceFromEnv(): PlexSource | null {
   const libraryKey = process.env.PLEX_LIBRARY_KEY?.trim();
   if (!connection || !libraryKey || !/^\d+$/.test(libraryKey)) return null;
   return { ...connection, libraryKey };
+}
+
+/** Returns a completed first-run source selection from local app data. */
+export function getPersistedPlexSource(): PersistedPlexSource | null {
+  const row = db.prepare(`
+    SELECT plex_server_url, plex_server_machine_id, plex_server_name,
+           plex_library_key, plex_library_name, plex_owner_token
+    FROM settings WHERE id = 1
+  `).get() as Record<string, unknown> | undefined;
+  const baseUrl = typeof row?.plex_server_url === 'string' ? row.plex_server_url : '';
+  const token = typeof row?.plex_owner_token === 'string' ? row.plex_owner_token : '';
+  const libraryKey = typeof row?.plex_library_key === 'string' ? row.plex_library_key : '';
+  const machineIdentifier = typeof row?.plex_server_machine_id === 'string' ? row.plex_server_machine_id : '';
+  const serverName = typeof row?.plex_server_name === 'string' ? row.plex_server_name : '';
+  const libraryName = typeof row?.plex_library_name === 'string' ? row.plex_library_name : '';
+  if (!baseUrl || !token || !libraryKey || !machineIdentifier || !serverName || !libraryName) return null;
+  return { baseUrl: plexServerBaseUrl(baseUrl), token, libraryKey, machineIdentifier, serverName, libraryName };
+}
+
+/** Environment variables remain a short-lived upgrade fallback. */
+export function getActivePlexSource(): PlexSource | null {
+  return getPersistedPlexSource() ?? getPlexSourceFromEnv();
+}
+
+export function savePersistedPlexSource(source: PersistedPlexSource): void {
+  db.prepare(`
+    UPDATE settings SET
+      plex_server_url = ?, plex_server_machine_id = ?, plex_server_name = ?,
+      plex_library_key = ?, plex_library_name = ?, plex_owner_token = ?,
+      updated_at = datetime('now')
+    WHERE id = 1
+  `).run(
+    plexServerBaseUrl(source.baseUrl), source.machineIdentifier, source.serverName,
+    source.libraryKey, source.libraryName, source.token,
+  );
 }
 
 function serverUrl(connection: PlexConnection, path: string): string {
