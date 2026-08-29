@@ -1,6 +1,5 @@
 # Submission metadata for the F-Droid main repository. Copy this file to
-# fdroiddata/metadata/ after creating and pushing the first F-Droid release tag.
-# Replace the Build commit with that tag's immutable full commit hash.
+# fdroiddata/metadata/ after creating and pushing the F-Droid release tag.
 Categories:
   - Multimedia
 License: AGPL-3.0-or-later
@@ -13,10 +12,9 @@ AntiFeatures:
   NonFreeNet:
     en-US: Requires a Plex account and service to access a Music library.
 Builds:
-  - versionName: 1.0.16
-    versionCode: 17
-    # Set to the full commit SHA of the v1.0.16 F-Droid release.
-    commit: REPLACE_WITH_RELEASE_COMMIT
+  - versionName: 1.0.17
+    versionCode: 18
+    commit: d38e060fcfe29ba289a9dd7471116aaec6e9008c
     subdir: android
     gradle:
       - yes
