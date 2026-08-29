@@ -15,6 +15,7 @@ const {
   getPersistedPlexSource,
   getPlexRelatedTracks,
   getPlexArtistDiscovery,
+  searchPlexTracks,
   getPlexSetup,
   getPlexTrack,
   savePersistedPlexSource,
@@ -123,6 +124,30 @@ test('Plex track metadata provides Android Auto-safe title, artist, album, and a
     skipCount: 3,
     lastViewedAt: '2023-11-14T22:13:20.000Z',
   });
+});
+
+test('Plex search expands matching album results into playable tracks', async () => {
+  const requestedUrls: string[] = [];
+  const fetcher: PlexFetch = async (input) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    const pathname = new URL(url).pathname;
+    if (pathname === '/') return response({ MediaContainer: { machineIdentifier: 'server-1', friendlyName: 'Test Plex' } });
+    if (pathname === '/library/sections/5/search') {
+      const type = new URL(url).searchParams.get('type');
+      return response({ MediaContainer: { Metadata: type === '9' ? [{ type: 'album', ratingKey: '301', title: 'Album Match' }] : [] } });
+    }
+    if (pathname === '/library/metadata/301/allLeaves') return response({ MediaContainer: { Metadata: [{
+      type: 'track', ratingKey: '101', title: 'Album Track', grandparentTitle: 'Artist', parentTitle: 'Album Match', duration: 180_000,
+    }] } });
+    return new Response('missing', { status: 404 });
+  };
+
+  const songs = await searchPlexTracks(source, 'Album Match', fetcher);
+  assert.deepEqual(songs.map((song) => song.title), ['Album Track']);
+  const albumSearch = requestedUrls.map((url) => new URL(url)).find((url) => url.pathname === '/library/sections/5/search' && url.searchParams.get('type') === '9');
+  assert.ok(albumSearch);
+  assert.ok(requestedUrls.some((url) => new URL(url).pathname === '/library/metadata/301/allLeaves'));
 });
 
 test('artist discovery includes album context without failing when related artists are unavailable', async () => {

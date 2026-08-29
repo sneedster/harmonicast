@@ -249,7 +249,7 @@ async function plexSourceMachineIdentifier(source: PlexSource, fetcher: PlexFetc
   return (await getPlexServerInfo(source, fetcher)).machineIdentifier;
 }
 
-/** Search the configured Plex Music library by track title and artist name. */
+/** Search the configured Plex Music library by track, artist, and album name. */
 export async function searchPlexTracks(
   source: PlexSource,
   query: string,
@@ -259,17 +259,19 @@ export async function searchPlexTracks(
   if (!search) return [];
   const trackParams = new URLSearchParams({ query: search, type: '10', limit: '40' });
   const artistParams = new URLSearchParams({ query: search, type: '8', limit: '8' });
-  const [machineIdentifier, trackContainer, artistContainer] = await Promise.all([
+  const albumParams = new URLSearchParams({ query: search, type: '9', limit: '8' });
+  const [machineIdentifier, trackContainer, artistContainer, albumContainer] = await Promise.all([
     plexSourceMachineIdentifier(source, fetcher),
     plexServerJson(source, `/library/sections/${source.libraryKey}/search?${trackParams}`, fetcher),
     plexServerJson(source, `/library/sections/${source.libraryKey}/search?${artistParams}`, fetcher),
+    plexServerJson(source, `/library/sections/${source.libraryKey}/search?${albumParams}`, fetcher),
   ]);
-  const artistRatingKeys = metadataArray(artistContainer)
-    .filter((metadata) => metadata.type === 'artist' || metadata.type === 8)
+  const collectionRatingKeys = [...metadataArray(artistContainer), ...metadataArray(albumContainer)]
+    .filter((metadata) => metadata.type === 'artist' || metadata.type === 8 || metadata.type === 'album' || metadata.type === 9)
     .map((metadata) => String(metadata.ratingKey ?? ''))
     .filter(Boolean);
-  const artistTrackContainers = await Promise.all(
-    artistRatingKeys.map((ratingKey) => plexServerJson(
+  const collectionTrackContainers = await Promise.all(
+    collectionRatingKeys.map((ratingKey) => plexServerJson(
       source,
       `/library/metadata/${ratingKey}/allLeaves?type=10&limit=40`,
       fetcher,
@@ -277,7 +279,7 @@ export async function searchPlexTracks(
   );
   const songs = [
     ...metadataArray(trackContainer),
-    ...artistTrackContainers.flatMap(metadataArray),
+    ...collectionTrackContainers.flatMap(metadataArray),
   ].flatMap((metadata) => {
     const song = mapPlexSong(metadata, machineIdentifier);
     return song ? [song] : [];
