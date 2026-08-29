@@ -119,6 +119,17 @@ export async function deleteConnection(): Promise<void> {
   await request('/api/connection', { method: 'DELETE' });
 }
 
+export interface PlexSourceInfo {
+  configured: boolean;
+  server?: { machineIdentifier: string; name: string; version: string | null };
+  libraries?: { key: string; title: string; uuid: string | null }[];
+  selectedLibraryKey?: string | null;
+}
+
+export async function getPlexSource(): Promise<PlexSourceInfo> {
+  return request<PlexSourceInfo>('/api/plex/source');
+}
+
 // ── Active playback device ────────────────────────────────────────────
 
 export async function claimPlayer(token?: string): Promise<void> {

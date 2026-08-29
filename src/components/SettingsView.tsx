@@ -1,10 +1,10 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { Settings, Clock, Users, Loader2, Check, UserPlus, Trash2, Mail, MonitorSpeaker, Pencil } from 'lucide-react';
+import { Settings, Clock, Users, Loader2, Check, UserPlus, Trash2, Mail, MonitorSpeaker, Pencil, Server } from 'lucide-react';
 import { usePlayer } from '@/hooks/usePlayer';
 import {
   updateSettings, listInvites, addInvite, removeInvite,
   claimPlayer, listSessions, setDeviceName,
-  type Invite, type SessionDevice,
+  getPlexSource, type Invite, type PlexSourceInfo, type SessionDevice,
 } from '@/lib/api';
 
 export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
@@ -23,6 +23,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   const [editingName, setEditingName] = useState(false);
   const [deviceName, setDeviceName] = useState('');
   const [savingName, setSavingName] = useState(false);
+  const [plexSource, setPlexSource] = useState<PlexSourceInfo | null>(null);
 
   useEffect(() => { setCooldown(cooldownMinutes); }, [cooldownMinutes]);
   useEffect(() => { setMaxReq(maxRequestsPerUser); }, [maxRequestsPerUser]);
@@ -36,6 +37,10 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
       listSessions().then(setSessions).catch(() => {});
     }
   }, [isHostUser, isActivePlayer]);
+
+  useEffect(() => {
+    if (isHostUser) getPlexSource().then(setPlexSource).catch(() => {});
+  }, [isHostUser]);
 
   const activeDevice = sessions.find(s => s.isActivePlayer);
 
@@ -209,6 +214,27 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
         </div>
       </div>
 
+      {isHostUser && plexSource?.configured && (
+        <div>
+          <div className="mb-6 flex items-center gap-2">
+            <Server className="h-5 w-5 text-amber-400" />
+            <h2 className="text-lg font-semibold text-white">Plex Music Source</h2>
+          </div>
+          <div className="rounded-2xl border border-ink-800 bg-ink-900/80 p-6">
+            <p className="text-sm font-medium text-white">{plexSource.server?.name || 'Plex server'}</p>
+            {plexSource.libraries?.map((library) => (
+              <div key={library.key} className="mt-3 flex items-center justify-between rounded-lg border border-ink-800 bg-ink-850/50 px-4 py-2.5">
+                <span className="text-sm text-ink-200">{library.title}</span>
+                <span className={library.key === plexSource.selectedLibraryKey ? 'text-xs font-medium text-emerald-400' : 'text-xs text-ink-500'}>
+                  {library.key === plexSource.selectedLibraryKey ? 'Active' : 'Available'}
+                </span>
+              </div>
+            ))}
+            <p className="mt-4 text-xs text-ink-500">The Plex server token remains in the deployment environment and is not shown here.</p>
+          </div>
+        </div>
+      )}
+
       {/* Jukebox settings — only editable when this device is the active player */}
       <div>
         <div className="mb-6 flex items-center gap-2">
@@ -295,7 +321,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
 
         <div className="rounded-2xl border border-ink-800 bg-ink-900/80 p-6">
           <p className="mb-4 text-xs text-ink-500 leading-relaxed">
-            Only people whose Google email is on this list can sign in.
+            Only people whose Plex account email is on this list can sign in.
             Add someone by entering their email below.
           </p>
 

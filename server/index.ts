@@ -195,7 +195,12 @@ app.get('/api/plex/source', requireAuth, async (req, res) => {
   try {
     const server = await getPlexServerInfo(connection);
     const libraries = await listPlexMusicLibraries(connection);
-    res.json({ configured: true, server, libraries });
+    res.json({
+      configured: true,
+      server,
+      libraries,
+      selectedLibraryKey: process.env.PLEX_LIBRARY_KEY?.trim() || null,
+    });
   } catch (err) {
     // The underlying error may mention a private LAN address; retain it only
     // in server logs, not in a response visible to browsers.
