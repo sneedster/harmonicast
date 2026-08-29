@@ -25,9 +25,12 @@
 
 ## Future enhancements
 
-- Optional on-demand Plex metadata views such as lyrics, artist biography, and
-  album details. Fetch them only when requested; do not bulk-index them.
+- Completed: on-demand Plex artist discovery (biography, genres, and similar
+  artists) in Android and the web player. Metadata is fetched only when opened.
+- Optional on-demand Plex metadata views such as lyrics and album details.
+  Fetch them only when requested; do not bulk-index them.
 - Better queue controls where Android Auto exposes supported controls.
 - Playback-device visibility in Plex, if it can be implemented without
   weakening the current proxy/player model.
-- Refine weighted selection from real shared Plex play history and ratings.
+- Completed: weighted auto-queue selection using Plex ratings, play history,
+  skips, and recency cooldowns.

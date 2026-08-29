@@ -142,6 +142,18 @@ export async function getPlexTrackDetails(id: string): Promise<PlexTrackDetails>
   return request(`/api/plex/tracks/${encodeURIComponent(id)}`);
 }
 
+export interface PlexArtistDiscovery {
+  name: string;
+  bio: string;
+  genres: string[];
+  similarArtists: string[];
+}
+
+/** Fetch artist-facing Plex metadata only when the listener opens discovery. */
+export async function getPlexArtistDiscovery(id: string): Promise<PlexArtistDiscovery> {
+  return request(`/api/plex/tracks/${encodeURIComponent(id)}/discovery`);
+}
+
 export async function getServerVersion(): Promise<string> {
   const result = await request<{ version: string }>('/api/version');
   return result.version;
