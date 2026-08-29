@@ -1,4 +1,4 @@
-package com.resonance.android
+package io.github.sneedster.resonance
 
 import android.os.Bundle
 import android.text.InputType

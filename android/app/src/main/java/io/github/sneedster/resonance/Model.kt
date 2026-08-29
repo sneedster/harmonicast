@@ -1,4 +1,4 @@
-package com.resonance.android
+package io.github.sneedster.resonance
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

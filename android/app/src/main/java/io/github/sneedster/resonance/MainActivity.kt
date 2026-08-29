@@ -1,4 +1,4 @@
-package com.resonance.android
+package io.github.sneedster.resonance
 
 import android.content.ComponentName
 import android.content.Context

@@ -1,4 +1,4 @@
-package com.resonance.android
+package io.github.sneedster.resonance
 
 import android.app.PendingIntent
 import android.content.Context
