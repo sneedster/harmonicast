@@ -57,7 +57,7 @@ need a Plex client secret or Google Cloud configuration.
 2. Optionally set `PLEX_CLIENT_IDENTIFIER` to a stable opaque identifier. If
    omitted, Resonance generates one and persists it in its SQLite data volume.
 3. Set `ADMIN_EMAIL` to the email on the Plex account that should become the
-   owner. After signing in, the owner can invite more people from Settings.
+   owner. Plex library sharing controls guest access after setup.
 
 Plex library integration is in progress. This initial conversion slice changes
 identity only; the configured music source remains Subsonic-compatible until
@@ -113,9 +113,9 @@ For LAN HTTP servers, cleartext traffic is deliberately enabled for this app. Us
 
 ## How Host / Guest Works
 
-- **Admin-controlled access**: set `ADMIN_EMAIL` to designate the host. Only the admin can create the first account. After signing in, the host invites others by adding their Plex account email in the Settings page.
+- **Admin-controlled access**: set `ADMIN_EMAIL` to designate the host. Only that account can create the first account.
 - The host's browser plays audio through its speakers. Only one device is the active player at a time — if a second host device connects, it can take over playback or watch as a guest.
-- Other users sign in with Plex and join as **guests** — they can search, queue, and vote, but audio plays on the host device only.
+- Other Plex users can sign in only when Plex shares the selected Music library with them. They join as **guests** and can search, queue, and vote, but audio plays on the host device only.
 - For road trips: open the web app on your Android Auto head unit as the host, and passengers connect from their phones.
 
 ## Configuration
@@ -131,7 +131,7 @@ For LAN HTTP servers, cleartext traffic is deliberately enabled for this app. Us
 | `PLEX_SERVER_URL` | _(none)_ | Plex Media Server URL for source discovery; `/web` URLs are accepted. |
 | `PLEX_SERVER_TOKEN` | _(none)_ | Plex token for the configured server. Keep it only in the deployment environment; it is never exposed by Resonance. |
 | `PLEX_LIBRARY_KEY` | _(none)_ | Selected Plex Music library key returned by `GET /api/plex/source`. Activates the Plex source adapter. |
-| `ADMIN_EMAIL` | _(none)_ | The email address of the admin/owner. This user is always the host and is the only one who can create the first account. After the admin has signed in, they can invite more people from the Settings page. |
+| `ADMIN_EMAIL` | _(none)_ | The email address of the admin/owner. This user is the only account that can create the first Resonance account. Plex library sharing controls guest access. |
 | `MUSIC_SERVER_URL` | _(none)_ | Pre-configure your Navidrome/Subsonic server address so you don't have to type it every time. Example: `http://192.168.1.50:4533` |
 | `MUSIC_SERVER_USER` | _(none)_ | Username for the music server |
 | `MUSIC_SERVER_PASSWORD` | _(none)_ | Password for the music server |
@@ -143,7 +143,7 @@ When `MUSIC_SERVER_URL`, `MUSIC_SERVER_USER`, and `MUSIC_SERVER_PASSWORD` are al
 
 - **Song Cooldown** — minutes before a song can be re-queued (0 = disabled).
 - **Max Requests Per User** — how many songs one person can have in the queue at once.
-- **Manage Invites** — add or remove Plex account email addresses that are allowed to sign in.
+- **Plex Music Source** — view the configured server and selected Music library. Manage guest access in Plex sharing.
 
 ## API Reference
 
@@ -165,8 +165,9 @@ Starts the Plex OAuth/PIN forwarding flow. Plex returns the browser to
 The Android app uses `?mobile_redirect=resonance://auth`; this is the only accepted mobile return URL and the resulting token is placed in the URL fragment.
 
 #### `GET /api/auth/plex/callback`
-Plex sign-in callback. It validates the Plex account, checks the invite list,
-creates a Resonance session, and redirects with `#auth_token=<token>&auth_email=<email>`.
+Plex sign-in callback. It validates the Plex account and its access to the
+configured Music library, creates a Resonance session, and redirects with
+`#auth_token=<token>&auth_email=<email>`.
 
 #### `POST /api/auth/signout`
 Sign out (invalidates the current token). Requires auth.
@@ -176,29 +177,6 @@ Get the current authenticated user. Requires auth.
 ```json
 // Response 200
 { "user": { "id": 1, "email": "user@example.com", "name": "User Name" } }
-```
-
-### Invites
-
-#### `GET /api/invites`
-List all invited emails. Host only.
-```json
-// Response 200
-[{ "email": "friend@example.com", "created_at": "2026-01-01 00:00:00" }]
-```
-
-#### `POST /api/invites`
-Add an email to the invite list. Host only.
-```json
-// Request
-{ "email": "friend@example.com" }
-```
-
-#### `DELETE /api/invites`
-Remove an email from the invite list. Host only.
-```json
-// Request
-{ "email": "friend@example.com" }
 ```
 
 ### Connection

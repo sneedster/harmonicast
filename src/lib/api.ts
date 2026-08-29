@@ -42,16 +42,11 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
 export interface AuthUser { id: number; email: string; name?: string | null; }
 
 export interface AuthConfig {
-  googleOAuth: boolean;
   plexOAuth: boolean;
 }
 
 export async function getAuthConfig(): Promise<AuthConfig> {
   return request<AuthConfig>('/api/auth/config');
-}
-
-export function googleSignInUrl(): string {
-  return `${API_BASE}/api/auth/google`;
 }
 
 export function plexSignInUrl(): string {
@@ -72,22 +67,6 @@ export async function getMe(): Promise<AuthUser | null> {
   } catch {
     return null;
   }
-}
-
-// ── Invites ─────────────────────────────────────────────────────────────
-
-export interface Invite { email: string; created_at: string; }
-
-export async function listInvites(): Promise<Invite[]> {
-  return request<Invite[]>('/api/invites');
-}
-
-export async function addInvite(email: string): Promise<void> {
-  await request('/api/invites', { method: 'POST', body: JSON.stringify({ email }) });
-}
-
-export async function removeInvite(email: string): Promise<void> {
-  await request('/api/invites', { method: 'DELETE', body: JSON.stringify({ email }) });
 }
 
 // ── Connection ────────────────────────────────────────────────────────

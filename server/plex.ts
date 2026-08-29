@@ -289,6 +289,25 @@ export async function listPlexMusicLibraries(
   });
 }
 
+/**
+ * Plex sharing is the access-control source of truth. A user is admitted only
+ * when their own Plex token can enumerate the configured Music library.
+ */
+export async function canAccessConfiguredPlexLibrary(
+  userToken: string,
+  fetcher: PlexFetch = fetch,
+): Promise<boolean> {
+  const source = getPlexSourceFromEnv();
+  if (!source || !userToken) return false;
+  try {
+    const userConnection: PlexConnection = { baseUrl: source.baseUrl, token: userToken };
+    const libraries = await listPlexMusicLibraries(userConnection, fetcher);
+    return libraries.some((library) => library.key === source.libraryKey);
+  } catch {
+    return false;
+  }
+}
+
 function asPlexPin(payload: unknown): PlexPin {
   const pin = payload as Record<string, unknown>;
   const id = Number(pin.id);

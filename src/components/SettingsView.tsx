@@ -1,10 +1,9 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { Settings, Clock, Users, Loader2, Check, UserPlus, Trash2, Mail, MonitorSpeaker, Pencil, Server } from 'lucide-react';
+import { Settings, Clock, Users, Loader2, Check, MonitorSpeaker, Pencil, Server } from 'lucide-react';
 import { usePlayer } from '@/hooks/usePlayer';
 import {
-  updateSettings, listInvites, addInvite, removeInvite,
-  claimPlayer, listSessions, setDeviceName,
-  getPlexSource, type Invite, type PlexSourceInfo, type SessionDevice,
+  updateSettings, claimPlayer, listSessions, setDeviceName,
+  getPlexSource, type PlexSourceInfo, type SessionDevice,
 } from '@/lib/api';
 
 export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
@@ -12,11 +11,6 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   const [cooldown, setCooldown] = useState(cooldownMinutes);
   const [maxReq, setMaxReq] = useState(maxRequestsPerUser);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-
-  const [invites, setInvites] = useState<Invite[]>([]);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteStatus, setInviteStatus] = useState<'idle' | 'adding' | 'error'>('idle');
-  const [inviteError, setInviteError] = useState<string | null>(null);
 
   const [sessions, setSessions] = useState<SessionDevice[]>([]);
   const [switching, setSwitching] = useState(false);
@@ -27,10 +21,6 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
 
   useEffect(() => { setCooldown(cooldownMinutes); }, [cooldownMinutes]);
   useEffect(() => { setMaxReq(maxRequestsPerUser); }, [maxRequestsPerUser]);
-
-  useEffect(() => {
-    listInvites().then(setInvites).catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (isHostUser) {
@@ -79,30 +69,6 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
     } catch {
       setStatus('idle');
     }
-  }
-
-  async function handleAddInvite(e: FormEvent) {
-    e.preventDefault();
-    if (!inviteEmail.trim()) return;
-    setInviteStatus('adding');
-    setInviteError(null);
-    try {
-      await addInvite(inviteEmail.trim());
-      setInviteEmail('');
-      setInviteStatus('idle');
-      const updated = await listInvites();
-      setInvites(updated);
-    } catch (err) {
-      setInviteError(err instanceof Error ? err.message : 'Could not add invite.');
-      setInviteStatus('error');
-    }
-  }
-
-  async function handleRemoveInvite(email: string) {
-    try {
-      await removeInvite(email);
-      setInvites((prev) => prev.filter((i) => i.email !== email));
-    } catch {}
   }
 
   return (
@@ -313,74 +279,6 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
         </form>
       </div>
 
-      <div>
-        <div className="mb-6 flex items-center gap-2">
-          <UserPlus className="h-5 w-5 text-amber-400" />
-          <h2 className="text-lg font-semibold text-white">Manage Invites</h2>
-        </div>
-
-        <div className="rounded-2xl border border-ink-800 bg-ink-900/80 p-6">
-          <p className="mb-4 text-xs text-ink-500 leading-relaxed">
-            Only people whose Plex account email is on this list can sign in.
-            Add someone by entering their email below.
-          </p>
-
-          <form onSubmit={handleAddInvite} className="mb-6">
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-500" />
-                <input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="friend@example.com"
-                  className="w-full rounded-lg border border-ink-700 bg-ink-850 py-2.5 pl-10 pr-3.5 text-sm text-white placeholder:text-ink-500 outline-none transition focus:border-amber-500/60 focus:ring-2 focus:ring-amber-500/20"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={inviteStatus === 'adding' || !inviteEmail.trim()}
-                className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-ink-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {inviteStatus === 'adding' ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <>
-                    <UserPlus className="h-4 w-4" /> Invite
-                  </>
-                )}
-              </button>
-            </div>
-            {inviteError && (
-              <p className="mt-2 text-sm text-red-400">{inviteError}</p>
-            )}
-          </form>
-
-          {invites.length === 0 ? (
-            <p className="py-4 text-center text-sm text-ink-500">
-              No invites yet. Add someone above to let them sign in.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {invites.map((invite) => (
-                <li
-                  key={invite.email}
-                  className="flex items-center justify-between rounded-lg border border-ink-800 bg-ink-850/50 px-4 py-2.5"
-                >
-                  <span className="text-sm text-ink-200">{invite.email}</span>
-                  <button
-                    onClick={() => handleRemoveInvite(invite.email)}
-                    className="rounded-md p-1.5 text-ink-500 transition hover:bg-red-500/10 hover:text-red-400"
-                    title="Remove invite"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

@@ -27,7 +27,7 @@ export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
     if (authError) {
       const messages: Record<string, string> = {
         not_admin: 'Only the admin email configured in docker-compose.yml can create the first account.',
-        not_invited: 'Your email is not on the invite list. Ask the host to add you.',
+        not_shared: 'Your Plex account does not have access to this jukebox’s Music library.',
         oauth_failed: 'Plex sign-in failed. Please try again.',
         invalid_state: 'This sign-in link has expired or is not valid. Please start again.',
       };
@@ -79,8 +79,8 @@ export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
               Sign in with Plex
             </a>
             <p className="mt-4 text-center text-xs text-ink-500 leading-relaxed">
-              This is an invite-only jukebox. If your Plex account email is not on the
-              invite list, ask the host to add you.
+              Access is controlled by Plex. Ask the owner to share the Music library
+              with your Plex account, then sign in again.
             </p>
           </div>
         ) : (

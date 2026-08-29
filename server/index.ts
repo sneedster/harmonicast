@@ -6,12 +6,11 @@ import { readFileSync } from 'node:fs';
 import { initDb } from './db.js';
 import {
   authMiddleware, requireAuth, createSession, deleteSession,
-  getUserByEmail, getUserByGoogleId, createUserFromGoogle, updateGoogleUserInfo,
+  getUserByEmail,
   getUserByPlexId, createUserFromPlex, updatePlexUserInfo,
-  isEmailAllowed, addAllowedEmail, removeAllowedEmail, listAllowedEmails,
-  isGoogleOAuthConfigured, buildGoogleAuthUrl, exchangeGoogleCode, userCount,
+  userCount,
   getPlexOAuthConfig, isPlexOAuthConfigured,
-  createOAuthState, consumeOAuthState, deleteSessionsForEmail, purgeExpiredSessions,
+  createOAuthState, consumeOAuthState, purgeExpiredSessions,
   parseDeviceName, listActiveSessions, setSessionDeviceName, getSessionDeviceName,
 } from './auth.js';
 import { ping, getRandomSongs, search, scrobble, getSettings, getConnection } from './subsonic.js';
@@ -27,7 +26,7 @@ import {
 } from './store.js';
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
 import {
-  buildPlexAuthUrl, createPlexPin, getPlexAccount, getPlexConnectionFromEnv,
+  buildPlexAuthUrl, canAccessConfiguredPlexLibrary, createPlexPin, getPlexAccount, getPlexConnectionFromEnv,
   getPlexPin, getPlexRandomTracks, getPlexServerInfo, getPlexSourceFromEnv,
   getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listPlexMusicLibraries, plexHeaders, searchPlexTracks,
 } from './plex.js';
@@ -177,7 +176,6 @@ app.get('/api/auth/config', (req, res) => {
   const adminEmail = process.env.ADMIN_EMAIL?.trim() || null;
   const hasUsers = userCount() > 0;
   res.json({
-    googleOAuth: isGoogleOAuthConfigured(),
     plexOAuth: isPlexOAuthConfigured(),
     plexSourceConfigured: !!getPlexConnectionFromEnv(),
     adminEmail,
@@ -248,12 +246,13 @@ app.get('/api/auth/plex/callback', async (req, res) => {
     const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
     const isFirstUser = userCount() === 0;
 
-    if (isFirstUser) {
-      if (adminEmail && account.email !== adminEmail) {
-        return res.redirect('/?auth_error=not_admin');
-      }
-    } else if (!isEmailAllowed(account.email)) {
-      return res.redirect('/?auth_error=not_invited');
+    if (isFirstUser && adminEmail && account.email !== adminEmail) {
+      return res.redirect('/?auth_error=not_admin');
+    }
+    // Once a source is selected, Plex library sharing—not a Resonance email
+    // allowlist—decides whether a guest may sign in.
+    if (!isFirstUser && !(await canAccessConfiguredPlexLibrary(claimedPin.authToken))) {
+      return res.redirect('/?auth_error=not_shared');
     }
 
     let user = getUserByPlexId(account.id);
@@ -264,7 +263,6 @@ app.get('/api/auth/plex/callback', async (req, res) => {
       } else {
         const userId = createUserFromPlex(account.id, account.email, account.name);
         user = { id: userId, email: account.email };
-        if (isFirstUser) addAllowedEmail(account.email, userId);
       }
     }
 
@@ -286,93 +284,6 @@ app.get('/api/auth/plex/callback', async (req, res) => {
   }
 });
 
-// ── Google OAuth ─────────────────────────────────────────────────────
-
-app.get('/api/auth/google', (req, res) => {
-  if (!isGoogleOAuthConfigured()) {
-    return res.status(400).json({ error: 'Google OAuth is not configured. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and PUBLIC_URL environment variables.' });
-  }
-  // Native clients may request the fixed app deep link. Keeping this allowlist
-  // narrow avoids turning the OAuth endpoint into an open redirector.
-  const mobileRedirect = req.query.mobile_redirect === 'resonance://auth'
-    ? 'resonance://auth'
-    : null;
-  res.redirect(buildGoogleAuthUrl(createOAuthState(mobileRedirect)));
-});
-
-app.get('/api/auth/google/callback', async (req, res) => {
-  const { code, error, state } = req.query;
-  if (error) {
-    return res.redirect(`/?auth_error=${encodeURIComponent(String(error))}`);
-  }
-  // Reject callbacks that did not originate from a sign-in we started.
-  const pendingState = consumeOAuthState(state);
-  if (!pendingState) {
-    return res.redirect('/?auth_error=invalid_state');
-  }
-  if (!code || typeof code !== 'string') {
-    return res.redirect('/?auth_error=missing_code');
-  }
-
-  try {
-    const userInfo = await exchangeGoogleCode(code);
-    if (!userInfo || !userInfo.email_verified) {
-      return res.redirect('/?auth_error=unverified_email');
-    }
-
-    const email = userInfo.email.toLowerCase();
-    const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-    const isFirstUser = userCount() === 0;
-
-    // If ADMIN_EMAIL is set, only the admin can create the first account.
-    // After that, the admin (or other invited users) can invite more people.
-    if (isFirstUser) {
-      if (adminEmail && email !== adminEmail) {
-        return res.redirect('/?auth_error=not_admin');
-      }
-    } else if (!isEmailAllowed(email)) {
-      return res.redirect('/?auth_error=not_invited');
-    }
-
-    let user = getUserByGoogleId(userInfo.sub);
-    if (!user) {
-      user = getUserByEmail(email);
-      if (user) {
-        updateGoogleUserInfo(user.id, userInfo.sub, userInfo.name || null);
-      } else {
-        const userId = createUserFromGoogle(userInfo.sub, email, userInfo.name || null);
-        user = { id: userId, email };
-        if (isFirstUser) {
-          addAllowedEmail(email, userId);
-        }
-      }
-    }
-
-    // If ADMIN_EMAIL is set and matches this user, always ensure they are host
-    if (adminEmail && email === adminEmail) {
-      const becameHost = assignHostFromAdminEmail();
-      console.log(`Admin login: email=${email}, adminEmail=${adminEmail}, becameHost=${becameHost}, userId=${user.id}`);
-    } else if (isFirstUser) {
-      // Fallback: first user becomes host if no ADMIN_EMAIL configured
-      assignHostIfUnset(user.id);
-    }
-
-    const deviceName = parseDeviceName(req.headers['user-agent']);
-    const token = createSession(user.id, deviceName);
-    // For mobile redirects, use query parameters because Chrome Custom Tabs strip fragments
-    // from deep links. For web, continue using fragments.
-    const target = pendingState.mobileRedirect || '/';
-    if (target === 'resonance://auth') {
-      res.redirect(`${target}?auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
-    } else {
-      res.redirect(`${target}#auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
-    }
-  } catch (err) {
-    console.error('OAuth callback error:', err);
-    res.redirect('/?auth_error=oauth_failed');
-  }
-});
-
 app.post('/api/auth/signout', requireAuth, (req, res) => {
   deleteSession(req.token);
   res.json({ ok: true });
@@ -380,36 +291,6 @@ app.post('/api/auth/signout', requireAuth, (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name } });
-});
-
-// ── Invites (host only) ────────────────────────────────────────────────
-
-app.get('/api/invites', requireAuth, (req, res) => {
-  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can manage invites' });
-  res.json(listAllowedEmails());
-});
-
-app.post('/api/invites', requireAuth, (req, res) => {
-  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can manage invites' });
-  const { email } = req.body;
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({ error: 'A valid email address is required' });
-  }
-  addAllowedEmail(email, req.user.id);
-  res.json({ ok: true });
-});
-
-app.delete('/api/invites', requireAuth, (req, res) => {
-  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can manage invites' });
-  const { email } = req.body;
-  if (!email || typeof email !== 'string') {
-    return res.status(400).json({ error: 'Email is required' });
-  }
-  removeAllowedEmail(email);
-  // Revoking an invite must also end that person's active sessions, otherwise
-  // they keep full access until the server happens to restart.
-  deleteSessionsForEmail(email);
-  res.json({ ok: true });
 });
 
 // ── Connection ────────────────────────────────────────────────────────

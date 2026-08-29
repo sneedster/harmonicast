@@ -371,7 +371,6 @@ export function assignHostFromAdminEmail() {
   if (current.host_user_id === user.id) return false;
 
   db.prepare("UPDATE settings SET host_user_id = ?, updated_at = datetime('now') WHERE id = 1").run(user.id);
-  db.prepare('INSERT OR IGNORE INTO allowed_emails (email, added_by) VALUES (?, ?)').run(adminEmail, user.id);
   console.log(`Admin user set from ADMIN_EMAIL: ${adminEmail} (user id ${user.id})`);
   return true;
 }
