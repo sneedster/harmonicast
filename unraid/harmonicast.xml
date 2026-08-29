@@ -11,7 +11,7 @@
   <Overview>Self-hosted collaborative Plex music jukebox with shared playback, requests, Track Radio, web, Android, Android Auto, and kiosk mode. On first launch, sign in with the Plex account that owns the server and choose its Music library.</Overview>
   <Category>MediaApp:Music</Category>
   <WebUI>http://[IP]:[PORT:3001]</WebUI>
-  <Icon>https://raw.githubusercontent.com/sneedster/harmonicast/main/public/resonance-icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/sneedster/harmonicast/main/public/harmonicast-icon.png</Icon>
   <ExtraParams>--security-opt no-new-privileges:true</ExtraParams>
   <Config Name="Web UI port" Target="3001" Default="3001" Mode="tcp" Description="Harmonicast web application" Type="Port" Display="always" Required="true" Mask="false">3001</Config>
   <Config Name="Application data" Target="/app/data" Default="/mnt/user/appdata/harmonicast" Mode="rw" Description="Persistent SQLite database" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/harmonicast</Config>
