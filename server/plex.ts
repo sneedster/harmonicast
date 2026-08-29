@@ -36,6 +36,19 @@ export interface PlexMusicLibrary {
   uuid: string | null;
 }
 
+export interface PlexSource extends PlexConnection {
+  libraryKey: string;
+}
+
+export interface PlexSong {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  coverArt: string;
+}
+
 export interface PlexFetch {
   (input: string | URL, init?: RequestInit): Promise<Response>;
 }
@@ -93,6 +106,14 @@ export function getPlexConnectionFromEnv(): PlexConnection | null {
   return { baseUrl: plexServerBaseUrl(baseUrl), token };
 }
 
+/** A Plex source is active only once an explicit Music library has been chosen. */
+export function getPlexSourceFromEnv(): PlexSource | null {
+  const connection = getPlexConnectionFromEnv();
+  const libraryKey = process.env.PLEX_LIBRARY_KEY?.trim();
+  if (!connection || !libraryKey || !/^\d+$/.test(libraryKey)) return null;
+  return { ...connection, libraryKey };
+}
+
 function serverUrl(connection: PlexConnection, path: string): string {
   if (!path.startsWith('/')) throw new Error('Plex API path must be root-relative');
   return `${connection.baseUrl}${path}`;
@@ -111,6 +132,125 @@ async function plexServerJson(
   const container = body.MediaContainer;
   if (!container || typeof container !== 'object') throw new Error('Plex server returned an invalid JSON response');
   return container as Record<string, unknown>;
+}
+
+function sourceId(machineIdentifier: string, ratingKey: string): string {
+  return `plex:${encodeURIComponent(machineIdentifier)}:${ratingKey}`;
+}
+
+function parseSourceId(id: string): string {
+  const match = /^plex:([^:]+):(\d+)$/.exec(id);
+  if (!match) throw new Error('Invalid Plex track id');
+  // Resolve the configured server identity on every privileged media request;
+  // an id from another Plex server must never be accepted accidentally.
+  return match[2];
+}
+
+function metadataArray(container: Record<string, unknown>): Record<string, unknown>[] {
+  return Array.isArray(container.Metadata)
+    ? container.Metadata.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    : [];
+}
+
+function mapPlexSong(metadata: Record<string, unknown>, machineIdentifier: string): PlexSong | null {
+  if (metadata.type !== 'track' && metadata.type !== 10) return null;
+  const ratingKey = String(metadata.ratingKey ?? '');
+  const title = typeof metadata.title === 'string' ? metadata.title : '';
+  if (!ratingKey || !title) return null;
+  return {
+    id: sourceId(machineIdentifier, ratingKey),
+    title,
+    artist: typeof metadata.grandparentTitle === 'string' ? metadata.grandparentTitle
+      : typeof metadata.originalTitle === 'string' ? metadata.originalTitle : 'Unknown artist',
+    album: typeof metadata.parentTitle === 'string' ? metadata.parentTitle : '',
+    // Plex reports milliseconds; Resonance has always exposed seconds.
+    duration: Math.max(0, Math.round(Number(metadata.duration ?? 0) / 1000)),
+    coverArt: sourceId(machineIdentifier, ratingKey),
+  };
+}
+
+async function plexSourceMachineIdentifier(source: PlexSource, fetcher: PlexFetch): Promise<string> {
+  return (await getPlexServerInfo(source, fetcher)).machineIdentifier;
+}
+
+/** Search only the configured Plex Music library. */
+export async function searchPlexTracks(
+  source: PlexSource,
+  query: string,
+  fetcher: PlexFetch = fetch,
+): Promise<PlexSong[]> {
+  const params = new URLSearchParams({ query: query.trim(), type: '10', limit: '40' });
+  const [machineIdentifier, container] = await Promise.all([
+    plexSourceMachineIdentifier(source, fetcher),
+    plexServerJson(source, `/library/sections/${source.libraryKey}/search?${params}`, fetcher),
+  ]);
+  return metadataArray(container).flatMap((metadata) => {
+    const song = mapPlexSong(metadata, machineIdentifier);
+    return song ? [song] : [];
+  });
+}
+
+/** Fetch a bounded random page of tracks from the configured Music library. */
+export async function getPlexRandomTracks(
+  source: PlexSource,
+  size = 100,
+  fetcher: PlexFetch = fetch,
+): Promise<PlexSong[]> {
+  const params = new URLSearchParams({ type: '10', sort: 'random', limit: String(Math.max(1, Math.min(size, 100))) });
+  const [machineIdentifier, container] = await Promise.all([
+    plexSourceMachineIdentifier(source, fetcher),
+    plexServerJson(source, `/library/sections/${source.libraryKey}/all?${params}`, fetcher),
+  ]);
+  return metadataArray(container).flatMap((metadata) => {
+    const song = mapPlexSong(metadata, machineIdentifier);
+    return song ? [song] : [];
+  });
+}
+
+async function getConfiguredPlexTrack(
+  source: PlexSource,
+  id: string,
+  fetcher: PlexFetch = fetch,
+): Promise<Record<string, unknown>> {
+  const ratingKey = parseSourceId(id);
+  const [machineIdentifier, container] = await Promise.all([
+    plexSourceMachineIdentifier(source, fetcher),
+    plexServerJson(source, `/library/metadata/${ratingKey}`, fetcher),
+  ]);
+  if (!id.startsWith(`plex:${encodeURIComponent(machineIdentifier)}:`)) {
+    throw new Error('Plex track does not belong to the configured server');
+  }
+  const metadata = metadataArray(container)[0];
+  if (!metadata || String(metadata.librarySectionID ?? '') !== source.libraryKey) {
+    throw new Error('Plex track does not belong to the configured Music library');
+  }
+  return metadata;
+}
+
+function firstPartKey(metadata: Record<string, unknown>): string | null {
+  const media = Array.isArray(metadata.Media) ? metadata.Media : [];
+  for (const item of media) {
+    if (!item || typeof item !== 'object') continue;
+    const rawParts = (item as Record<string, unknown>).Part;
+    const parts = Array.isArray(rawParts)
+      ? rawParts.filter((candidate): candidate is Record<string, unknown> => !!candidate && typeof candidate === 'object')
+      : [];
+    const part = parts.find((candidate) => typeof candidate.key === 'string');
+    if (typeof part?.key === 'string' && part.key.startsWith('/')) return part.key;
+  }
+  return null;
+}
+
+export async function getPlexTrackStreamUrl(source: PlexSource, id: string, fetcher: PlexFetch = fetch): Promise<string> {
+  const partKey = firstPartKey(await getConfiguredPlexTrack(source, id, fetcher));
+  if (!partKey) throw new Error('Plex track has no playable media part');
+  return serverUrl(source, partKey);
+}
+
+export async function getPlexTrackArtworkUrl(source: PlexSource, id: string, fetcher: PlexFetch = fetch): Promise<string | null> {
+  const metadata = await getConfiguredPlexTrack(source, id, fetcher);
+  const thumb = typeof metadata.thumb === 'string' && metadata.thumb.startsWith('/') ? metadata.thumb : null;
+  return thumb ? serverUrl(source, thumb) : null;
 }
 
 /** Verify an authenticated Plex Media Server connection. */

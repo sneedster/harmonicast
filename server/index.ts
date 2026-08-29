@@ -28,7 +28,8 @@ import {
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
 import {
   buildPlexAuthUrl, createPlexPin, getPlexAccount, getPlexConnectionFromEnv,
-  getPlexPin, getPlexServerInfo, listPlexMusicLibraries,
+  getPlexPin, getPlexRandomTracks, getPlexServerInfo, getPlexSourceFromEnv,
+  getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listPlexMusicLibraries, plexHeaders, searchPlexTracks,
 } from './plex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -91,8 +92,9 @@ async function fillJukeboxQueueOnce() {
   console.log(`Jukebox auto-fill check: queue size is ${currentQueue.length}`);
   if (currentQueue.length >= 5) return;
 
-  const conn = getConnection();
-  if (!conn) {
+  const plexSource = getPlexSourceFromEnv();
+  const conn = plexSource ? null : getConnection();
+  if (!plexSource && !conn) {
     console.log('Jukebox auto-fill: no connection configured');
     return;
   }
@@ -120,11 +122,13 @@ async function fillJukeboxQueueOnce() {
       }
     }
 
-    // 2. Fall back to random songs from Subsonic if we still need more
+    // 2. Fall back to random songs from the configured music source if we
+    // still need more. Plex and Subsonic share the normalized Song shape.
     if (added < target) {
-      console.log(`Jukebox auto-fill: fetching random songs from Subsonic (need ${target - added} more)`);
-      const randomSongs = await getRandomSongs(conn, 20);
-      console.log(`Jukebox auto-fill: Subsonic returned ${randomSongs.length} random songs`);
+      const randomSongs = plexSource
+        ? await getPlexRandomTracks(plexSource, 20)
+        : await getRandomSongs(conn!, 20);
+      console.log(`Jukebox auto-fill: music source returned ${randomSongs.length} random songs`);
       for (const song of randomSongs) {
         if (added >= target) break;
         try {
@@ -408,12 +412,23 @@ app.delete('/api/invites', requireAuth, (req, res) => {
 app.get('/api/connection', requireAuth, (req, res) => {
   autoConfigureFromEnv();
   assignHostFromAdminEmail();
+  const plexSource = getPlexSourceFromEnv();
   const s = getSettings();
-  if (!s || !s.base_url) return res.json({ configured: false });
-
-  const hostUserId = s.host_user_id;
+  const hostUserId = s?.host_user_id;
   const activeSession = getActivePlayerSession();
   const activeDeviceName = activeSession ? getSessionDeviceName(activeSession) : null;
+  if (plexSource) {
+    return res.json({
+      configured: true,
+      baseUrl: plexSource.baseUrl,
+      serverName: 'Plex Music',
+      isHost: hostUserId === req.user.id,
+      isActivePlayer: req.token === activeSession,
+      hasActivePlayer: !!activeSession,
+      activePlayerDeviceName: activeDeviceName,
+    });
+  }
+  if (!s || !s.base_url) return res.json({ configured: false });
   res.json({
     configured: true,
     baseUrl: s.base_url,
@@ -432,6 +447,9 @@ app.post('/api/connection', requireAuth, async (req, res) => {
   const currentHostId = getHostUserId();
   if (currentHostId !== null && currentHostId !== req.user.id) {
     return res.status(403).json({ error: 'Only the host can change the music server connection' });
+  }
+  if (getPlexSourceFromEnv()) {
+    return res.status(409).json({ error: 'Plex is configured through deployment environment variables' });
   }
 
   const { baseUrl, username, password, serverName } = req.body;
@@ -769,6 +787,15 @@ app.post('/api/jukebox', requireAuth, requireActivePlayer, async (req, res) => {
 });
 
 app.get('/api/search', requireAuth, async (req, res) => {
+  const plexSource = getPlexSourceFromEnv();
+  if (plexSource) {
+    try {
+      return res.json(await searchPlexTracks(plexSource, String(req.query.q || '')));
+    } catch (err) {
+      console.error('Plex search failed:', err);
+      return res.status(502).json({ error: 'Could not search the Plex music library' });
+    }
+  }
   const conn = getConnection();
   if (!conn) return res.status(400).json({ error: 'No music server configured' });
   try {
@@ -781,6 +808,15 @@ app.get('/api/search', requireAuth, async (req, res) => {
 });
 
 app.get('/api/random-songs', requireAuth, async (req, res) => {
+  const plexSource = getPlexSourceFromEnv();
+  if (plexSource) {
+    try {
+      return res.json(await getPlexRandomTracks(plexSource, Number(req.query.size) || 100));
+    } catch (err) {
+      console.error('Plex random songs failed:', err);
+      return res.status(502).json({ error: 'Could not load tracks from the Plex music library' });
+    }
+  }
   const conn = getConnection();
   if (!conn) return res.status(400).json({ error: 'No music server configured' });
   try {
@@ -793,6 +829,9 @@ app.get('/api/random-songs', requireAuth, async (req, res) => {
 });
 
 app.post('/api/scrobble', requireAuth, requireActivePlayer, async (req, res) => {
+  // Resonance keeps its own play history. Native Plex scrobbling is deferred
+  // until it is validated against the configured server and user token model.
+  if (getPlexSourceFromEnv()) return res.json({ ok: true });
   const conn = getConnection();
   if (!conn) return res.status(400).json({ error: 'No music server configured' });
   const { id, submission } = req.body;
@@ -803,6 +842,28 @@ app.post('/api/scrobble', requireAuth, requireActivePlayer, async (req, res) => 
 // ── Stream & cover art passthrough ────────────────────────────────────
 
 app.get('/api/stream/:id', requireAuth, requireActivePlayer, async (req, res) => {
+  const plexSource = getPlexSourceFromEnv();
+  if (plexSource) {
+    try {
+      const url = await getPlexTrackStreamUrl(plexSource, req.params.id);
+      const headers: Record<string, string> = plexHeaders(undefined, plexSource.token);
+      if (typeof req.headers.range === 'string') headers.Range = req.headers.range;
+      const upstream = await fetch(url, { headers });
+      if (!upstream.ok) return res.status(502).json({ error: 'Plex rejected the stream request' });
+      for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+        const value = upstream.headers.get(header);
+        if (value) res.setHeader(header, value);
+      }
+      res.status(upstream.status);
+      if (!upstream.body) return res.end();
+      const { Readable } = await import('node:stream');
+      Readable.fromWeb(upstream.body as never).pipe(res);
+      return;
+    } catch (err) {
+      console.error('Plex stream failed:', err);
+      return res.status(502).json({ error: 'Could not stream from the Plex music library' });
+    }
+  }
   const conn = getConnection();
   if (!conn) return res.status(400).json({ error: 'No music server configured' });
   const { streamUrl } = await import('./subsonic.js');
@@ -828,6 +889,21 @@ app.get('/api/stream/:id', requireAuth, requireActivePlayer, async (req, res) =>
 });
 
 app.get('/api/cover-art/:id', requireAuth, async (req, res) => {
+  const plexSource = getPlexSourceFromEnv();
+  if (plexSource) {
+    try {
+      const url = await getPlexTrackArtworkUrl(plexSource, req.params.id);
+      if (!url) return res.status(404).json({ error: 'No cover art' });
+      const upstream = await fetch(url, { headers: plexHeaders(undefined, plexSource.token) });
+      if (!upstream.ok) return res.status(502).json({ error: 'Plex rejected the artwork request' });
+      res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.send(Buffer.from(await upstream.arrayBuffer()));
+    } catch (err) {
+      console.error('Plex cover art failed:', err);
+      return res.status(502).json({ error: 'Could not fetch Plex artwork' });
+    }
+  }
   const conn = getConnection();
   if (!conn) return res.status(400).json({ error: 'No music server configured' });
   const { coverArtUrl } = await import('./subsonic.js');
