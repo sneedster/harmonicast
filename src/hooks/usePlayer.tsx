@@ -11,21 +11,16 @@ import {
 import type { Connection, Song, SongStats } from '@/types';
 import {
   coverArtUrl as buildCoverArtUrl,
-  getRandomSongs,
   scrobble,
   streamUrl,
 } from '@/lib/subsonic';
 import {
   fetchStatsFor,
-  fetchTopRated,
   recordPlayEvent,
-  statsToSong,
 } from '@/lib/stats';
-import { buildCandidates, pickWeighted } from '@/lib/weighting';
 import { connectWebSocket, savePlaybackPosition, setJukeboxModeApi } from '@/lib/api';
 import {
   addToQueue,
-  addToQueueAuto,
   clearAutoQueue,
   clearOldVotes,
   dequeueNext,
@@ -40,9 +35,6 @@ import {
   voteOnCurrent,
   type VoteCounts,
 } from '@/lib/jukeboxState';
-
-const QUEUE_TARGET = 4;
-const RECENT_EXCLUDE = 15;
 
 interface PlayerContextValue {
   connection: Connection;
@@ -103,7 +95,7 @@ export function PlayerProvider({
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(1);
   const [jukeboxMode, setJukeboxMode] = useState(false);
-  const [loadingNext, setLoadingNext] = useState(false);
+  const loadingNext = false;
   const [streamError, setStreamError] = useState<string | null>(null);
   const [statsVersion, setStatsVersion] = useState(0);
   const [voteCounts, setVoteCounts] = useState<VoteCounts>({ up: 0, down: 0 });
@@ -113,9 +105,7 @@ export function PlayerProvider({
   const connRef = useRef(connection);
   const currentRef = useRef<Song | null>(null);
   const queueRef = useRef<Song[]>([]);
-  const historyRef = useRef<Song[]>([]);
   const jukeboxRef = useRef(false);
-  const fillingRef = useRef(false);
   const isHostRef = useRef(isHost);
   const endedHandlerRef = useRef<() => void>(() => {});
   const pendingSeekRef = useRef(0);
@@ -127,7 +117,6 @@ export function PlayerProvider({
   useEffect(() => { currentRef.current = current; }, [current]);
   useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
   useEffect(() => { queueRef.current = queue; }, [queue]);
-  useEffect(() => { historyRef.current = history; }, [history]);
   useEffect(() => { jukeboxRef.current = jukeboxMode; }, [jukeboxMode]);
   useEffect(() => { isHostRef.current = isHost; }, [isHost]);
 
@@ -179,62 +168,6 @@ export function PlayerProvider({
     setHistory((h) => [song, ...h].slice(0, 100));
   }, []);
 
-  const fetchCandidatePool = useCallback(async () => {
-    const conn = connRef.current;
-    const [random, top] = await Promise.all([
-      getRandomSongs(conn, 150).catch(() => [] as Song[]),
-      fetchTopRated(60).catch(() => []),
-    ]);
-    const pool: Song[] = [...top.map(statsToSong), ...random];
-    const ids = Array.from(new Set(pool.map((s) => s.id))).filter(Boolean);
-    const statsMap = await fetchStatsFor(ids);
-    return buildCandidates(pool, statsMap);
-  }, []);
-
-  const excludeSet = useCallback((extra: string[] = []) => {
-    const ids = new Set<string>();
-    if (currentRef.current) ids.add(currentRef.current.id);
-    queueRef.current.forEach((s) => ids.add(s.id));
-    historyRef.current.slice(0, RECENT_EXCLUDE).forEach((s) => ids.add(s.id));
-    extra.forEach((id) => ids.add(id));
-    return ids;
-  }, []);
-
-  const fillQueue = useCallback(async () => {
-    if (!jukeboxRef.current || fillingRef.current) return;
-    const need = QUEUE_TARGET - queueRef.current.length;
-    if (need <= 0) return;
-    fillingRef.current = true;
-    setLoadingNext(true);
-    try {
-      const candidates = await fetchCandidatePool();
-      const exclude = excludeSet();
-      for (let i = 0; i < need; i += 1) {
-        const choice = pickWeighted(candidates, exclude);
-        if (!choice) break;
-        await addToQueueAuto(choice.song);
-        exclude.add(choice.song.id);
-      }
-      const updated = await fetchQueueSongs();
-      setQueue(updated);
-      queueRef.current = updated;
-    } finally {
-      fillingRef.current = false;
-      setLoadingNext(false);
-    }
-  }, [excludeSet, fetchCandidatePool]);
-
-  const pickOneNow = useCallback(async (): Promise<Song | null> => {
-    setLoadingNext(true);
-    try {
-      const candidates = await fetchCandidatePool();
-      const choice = pickWeighted(candidates, excludeSet());
-      return choice ? choice.song : null;
-    } finally {
-      setLoadingNext(false);
-    }
-  }, [excludeSet, fetchCandidatePool]);
-
   const dequeueOrPick = useCallback(async (): Promise<{ song: Song | null; isAutoQueue: boolean }> => {
     const result = await dequeueNext();
     if (result.song) {
@@ -243,13 +176,8 @@ export function PlayerProvider({
       queueRef.current = updated;
       return { song: result.song, isAutoQueue: !result.isManual };
     }
-    if (jukeboxRef.current) {
-      const song = await pickOneNow();
-      void fillQueue();
-      return { song, isAutoQueue: true };
-    }
     return { song: null, isAutoQueue: false };
-  }, [fillQueue, pickOneNow]);
+  }, []);
 
   const advance = useCallback(
     async (reason: 'ended' | 'skip') => {
@@ -619,29 +547,34 @@ export function PlayerProvider({
     const nextOn = !jukeboxRef.current;
     setJukeboxMode(nextOn);
     jukeboxRef.current = nextOn;
-    void setJukeboxModeApi(nextOn).catch(() => {
-      setJukeboxMode(!nextOn);
-      jukeboxRef.current = !nextOn;
-    });
     if (nextOn) {
-      if (!currentRef.current) {
-        void (async () => {
-          const song = await pickOneNow();
-          if (song) startPlaying(song, true);
-          void fillQueue();
-        })();
-      } else {
-        void fillQueue();
-      }
+      void (async () => {
+        try {
+          await setJukeboxModeApi(true);
+          if (!currentRef.current) {
+            const result = await dequeueNext();
+            if (result.song) startPlaying(result.song, !result.isManual);
+          }
+        } catch {
+          setJukeboxMode(false);
+          jukeboxRef.current = false;
+        }
+      })();
     } else {
       void (async () => {
-        await clearAutoQueue();
-        const updated = await fetchQueueSongs();
-        setQueue(updated);
-        queueRef.current = updated;
+        try {
+          await setJukeboxModeApi(false);
+          await clearAutoQueue();
+          const updated = await fetchQueueSongs();
+          setQueue(updated);
+          queueRef.current = updated;
+        } catch {
+          setJukeboxMode(true);
+          jukeboxRef.current = true;
+        }
       })();
     }
-  }, [fillQueue, isHost, pickOneNow, startPlaying]);
+  }, [isHost, startPlaying]);
 
   const value = useMemo<PlayerContextValue>(
     () => ({

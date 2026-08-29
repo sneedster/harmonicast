@@ -15,7 +15,7 @@ import {
 import { ping, getRandomSongs, search, scrobble, getSettings, getConnection } from './subsonic.js';
 import {
   recordPlayEvent, fetchStatsFor, fetchTopRated, fetchMostPlayed, fetchRecentlyPlayed,
-  fetchQueue, fetchQueueSongs, addToQueue, dequeueNext, clearQueue, clearAutoQueue,
+  fetchQueue, addToQueue, dequeueNext, clearQueue, clearAutoQueue,
   getNowPlaying, updateNowPlaying, updatePlaybackPosition, voteOnCurrent, getVoteCounts, clearOldVotes,
   getCooldownMinutes, setCooldownMinutes, getMaxRequestsPerUser, setMaxRequestsPerUser,
   getJukeboxMode, setJukeboxMode,
@@ -54,9 +54,31 @@ app.use((req, _res, next) => {
   next();
 });
 
+function requireActivePlayer(req, res, next) {
+  if (!isHost(req.user.id)) {
+    return res.status(403).json({ error: 'Only the host can control playback' });
+  }
+  if (!req.token || !isActivePlayerSession(req.token)) {
+    return res.status(409).json({ error: 'This device is not the active player' });
+  }
+  next();
+}
+
 // ── Jukebox Auto-fill ────────────────────────────────────────────────
 
+let jukeboxFillInProgress = false;
+
 async function fillJukeboxQueue() {
+  if (jukeboxFillInProgress) return;
+  jukeboxFillInProgress = true;
+  try {
+    await fillJukeboxQueueOnce();
+  } finally {
+    jukeboxFillInProgress = false;
+  }
+}
+
+async function fillJukeboxQueueOnce() {
   if (!getJukeboxMode()) return;
 
   const currentQueue = fetchQueue();
@@ -427,8 +449,7 @@ app.post('/api/queue', requireAuth, (req, res) => {
   }
 });
 
-app.post('/api/queue/auto', requireAuth, (req, res) => {
-  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can add auto songs' });
+app.post('/api/queue/auto', requireAuth, requireActivePlayer, (req, res) => {
   const song = req.body.song || req.body;
   try {
     addToQueue({ song, userId: req.user.id, userEmail: req.user.email, isManual: false });
@@ -439,11 +460,10 @@ app.post('/api/queue/auto', requireAuth, (req, res) => {
   }
 });
 
-app.post('/api/queue/dequeue', requireAuth, (req, res) => {
-  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can dequeue' });
+app.post('/api/queue/dequeue', requireAuth, requireActivePlayer, async (req, res) => {
   const head = dequeueNext();
   broadcastQueue();
-  fillJukeboxQueue(); // Auto-fill if jukebox mode is ON
+  await fillJukeboxQueue();
   if (head) {
     res.json({
       song: { id: head.song_id, title: head.title, artist: head.artist, album: head.album, duration: head.duration, coverArt: head.cover_art },
@@ -483,8 +503,7 @@ app.get('/api/now-playing', requireAuth, (req, res) => {
 
 // Active player saves its playback position periodically so a device
 // switch can resume from the same spot (hot-swap).
-app.put('/api/now-playing/position', requireAuth, (req, res) => {
-  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can update playback position' });
+app.put('/api/now-playing/position', requireAuth, requireActivePlayer, (req, res) => {
   const { position } = req.body || {};
   const n = Number(position);
   if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: 'Invalid position' });
@@ -493,8 +512,7 @@ app.put('/api/now-playing/position', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/now-playing', requireAuth, (req, res) => {
-  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can update now playing' });
+app.post('/api/now-playing', requireAuth, requireActivePlayer, (req, res) => {
   const { song, isPlaying, isAutoQueue } = req.body;
   updateNowPlaying(song, isPlaying, isAutoQueue ?? false);
   broadcastNowPlaying();
@@ -523,8 +541,7 @@ app.get('/api/votes/:songId', requireAuth, (req, res) => {
   res.json(getVoteCounts(req.params.songId));
 });
 
-app.post('/api/votes/clear/:songId', requireAuth, (req, res) => {
-  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can clear votes' });
+app.post('/api/votes/clear/:songId', requireAuth, requireActivePlayer, (req, res) => {
   clearOldVotes(req.params.songId);
   broadcastVotes();
   res.json({ ok: true });
@@ -538,7 +555,7 @@ app.post('/api/votes/clear/:songId', requireAuth, (req, res) => {
 // request to pin a rating at its maximum or drive it to zero.
 const PLAY_EVENTS = new Set(['complete', 'skip']);
 
-app.post('/api/stats/play-event', requireAuth, (req, res) => {
+app.post('/api/stats/play-event', requireAuth, requireActivePlayer, (req, res) => {
   const { song_id, title, artist, album, duration, cover_art, event, progress } = req.body || {};
 
   if (typeof song_id !== 'string' || !song_id.trim()) {
@@ -616,13 +633,13 @@ app.put('/api/settings', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/jukebox', requireAuth, (req, res) => {
-  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can toggle jukebox mode' });
+app.post('/api/jukebox', requireAuth, requireActivePlayer, async (req, res) => {
   const { enabled } = req.body || {};
-  const next = !!enabled;
+  if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
+  const next = enabled;
   setJukeboxMode(next);
   broadcastJukebox();
-  if (next) fillJukeboxQueue();
+  if (next) await fillJukeboxQueue();
   res.json({ ok: true, jukeboxMode: next });
 });
 
@@ -650,7 +667,7 @@ app.get('/api/random-songs', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/scrobble', requireAuth, async (req, res) => {
+app.post('/api/scrobble', requireAuth, requireActivePlayer, async (req, res) => {
   const conn = getConnection();
   if (!conn) return res.status(400).json({ error: 'No music server configured' });
   const { id, submission } = req.body;
@@ -660,16 +677,26 @@ app.post('/api/scrobble', requireAuth, async (req, res) => {
 
 // ── Stream & cover art passthrough ────────────────────────────────────
 
-app.get('/api/stream/:id', requireAuth, async (req, res) => {
+app.get('/api/stream/:id', requireAuth, requireActivePlayer, async (req, res) => {
   const conn = getConnection();
   if (!conn) return res.status(400).json({ error: 'No music server configured' });
   const { streamUrl } = await import('./subsonic.js');
   const url = streamUrl(conn, req.params.id);
   try {
-    const upstream = await fetch(url);
-    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'audio/mpeg');
-    const buf = Buffer.from(await upstream.arrayBuffer());
-    res.send(buf);
+    const headers: Record<string, string> = {};
+    if (typeof req.headers.range === 'string') headers.Range = req.headers.range;
+    const upstream = await fetch(url, { headers });
+    if (!upstream.ok) {
+      return res.status(502).json({ error: 'Music server rejected the stream request' });
+    }
+    for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+      const value = upstream.headers.get(header);
+      if (value) res.setHeader(header, value);
+    }
+    res.status(upstream.status);
+    if (!upstream.body) return res.end();
+    const { Readable } = await import('node:stream');
+    Readable.fromWeb(upstream.body as never).pipe(res);
   } catch {
     res.status(502).json({ error: 'Could not stream from music server' });
   }
