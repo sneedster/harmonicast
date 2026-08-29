@@ -653,7 +653,7 @@ app.post('/api/queue/similar', requireAuth, requireActivePlayer, async (req, res
     res.json({ ok: true, added });
   } catch (err) {
     console.error('Similar tracks failed:', err);
-    res.status(502).json({ error: 'Could not load similar Plex tracks' });
+    res.status(502).json({ error: 'Could not load Plex Track Radio' });
   }
 });
 

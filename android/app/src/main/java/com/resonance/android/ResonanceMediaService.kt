@@ -325,12 +325,12 @@ class ResonanceMediaService : MediaLibraryService() {
                 if (customCommand.customAction != COMMAND_PLAY_SIMILAR) {
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
                 }
-                Log.d("ResonanceMedia", "Android Auto requested similar-track queue")
+                Log.d("ResonanceMedia", "Android Auto requested Track Radio queue")
                 return scope.future {
                     try {
                         val result = JSONObject(api.json("queue/similar", "POST", JSONObject()))
                         val added = result.optInt("added", 0)
-                        Log.d("ResonanceMedia", "Queued $added similar tracks from Android Auto")
+                        Log.d("ResonanceMedia", "Queued $added Track Radio songs from Android Auto")
                         SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putInt("added", added) })
                     } catch (e: Exception) {
                         Log.e("ResonanceMedia", "Failed to queue similar tracks", e)
@@ -402,7 +402,7 @@ class ResonanceMediaService : MediaLibraryService() {
             setCustomLayout(listOf(
                 CommandButton.Builder(CommandButton.ICON_RADIO)
                     .setSessionCommand(PLAY_SIMILAR_COMMAND)
-                    .setDisplayName("Play similar tracks")
+                    .setDisplayName("Queue Track Radio")
                     .setSlots(CommandButton.SLOT_OVERFLOW)
                     .build(),
             ))

@@ -303,9 +303,9 @@ export async function getPlexRandomTracks(
 }
 
 /**
- * Prefer Plex's related-track endpoint when the server supplies results. Some
- * libraries do not expose Sonic relatedness, so fall back to other tracks by
- * the current artist rather than leaving the feature empty.
+ * Build a Plex Track Radio queue from Sonic Analysis. This is the same
+ * cross-artist similarity source used by Plexamp's “Play Track Radio”, rather
+ * than a title/artist metadata match or an artist's own catalog.
  */
 export async function getPlexRelatedTracks(
   source: PlexSource,
@@ -313,29 +313,11 @@ export async function getPlexRelatedTracks(
   size = 20,
   fetcher: PlexFetch = fetch,
 ): Promise<PlexSong[]> {
-  const metadata = await getConfiguredPlexTrack(source, id, fetcher);
   const machineIdentifier = await plexSourceMachineIdentifier(source, fetcher);
   const ratingKey = parseSourceId(id);
-  const container = await plexServerJson(source, `/library/metadata/${ratingKey}/related`, fetcher);
-  const related = metadataArray(container)
-    .flatMap((item) => {
-      const song = mapPlexSong(item, machineIdentifier);
-      return song && song.id !== id ? [song] : [];
-    })
-    .slice(0, size);
-  if (related.length > 0) return related;
-
-  const artistRatingKey = typeof metadata.grandparentRatingKey === 'string'
-    ? metadata.grandparentRatingKey
-    : '';
-  if (!artistRatingKey) return [];
-
-  const artistTracks = await plexServerJson(
-    source,
-    `/library/metadata/${artistRatingKey}/allLeaves?type=10&limit=${size + 1}`,
-    fetcher,
-  );
-  return metadataArray(artistTracks)
+  const params = new URLSearchParams({ limit: String(size), maxDistance: '0.25' });
+  const container = await plexServerJson(source, `/library/metadata/${ratingKey}/nearest?${params}`, fetcher);
+  return metadataArray(container)
     .flatMap((item) => {
       const song = mapPlexSong(item, machineIdentifier);
       return song && song.id !== id ? [song] : [];

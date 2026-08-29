@@ -222,10 +222,10 @@ class ResonanceViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val added = JSONObject(api.json("queue/similar", "POST", JSONObject())).optInt("added", 0)
-                error = if (added > 0) "Queued $added similar tracks next" else "No similar tracks were found"
+                error = if (added > 0) "Queued $added Track Radio songs" else "No Track Radio songs were found"
                 refresh()
             } catch (e: Exception) {
-                error = e.message ?: "Could not queue similar tracks"
+                error = e.message ?: "Could not queue Track Radio"
             }
         }
     }
@@ -430,7 +430,7 @@ class MainActivity : ComponentActivity() {
                 OutlinedButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer) {
                     Icon(Icons.Default.AutoAwesome, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Queue similar tracks next")
+                    Text("Queue Track Radio")
                 }
             }
             if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Play on this device") }

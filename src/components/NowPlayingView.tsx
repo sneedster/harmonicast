@@ -132,7 +132,7 @@ export function NowPlayingView() {
           onClick={queueSimilar}
           className="flex items-center gap-2 rounded-full border border-ink-700 px-4 py-2 text-xs font-medium text-ink-300 transition hover:border-amber-500/40 hover:bg-amber-500/10 hover:text-amber-300"
         >
-          <WandSparkles className="h-4 w-4" /> Play similar tracks next
+          <WandSparkles className="h-4 w-4" /> Queue Track Radio
         </button>
       )}
     </div>
