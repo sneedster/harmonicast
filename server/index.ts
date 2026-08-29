@@ -20,7 +20,7 @@ import {
   getNowPlaying, updateNowPlaying, updatePlaybackPosition, voteOnCurrent, getVoteCounts, clearOldVotes,
   getCooldownMinutes, setCooldownMinutes, getMaxRequestsPerUser, setMaxRequestsPerUser,
   getJukeboxMode, setJukeboxMode,
-  saveConnection, clearConnection, isHost, getHostUserId, assignHostIfUnset,
+  saveConnection, clearConnection, isHost, getHostUserId, autoConfigureFromEnv, assignHostIfUnset,
   cleanupStaleState,
   getActivePlayerSession, setActivePlayerSession, isActivePlayerSession,
 } from './store.js';
