@@ -63,6 +63,13 @@ Plex library integration is in progress. This initial conversion slice changes
 identity only; the configured music source remains Subsonic-compatible until
 the Plex library adapter is complete.
 
+### Plex source discovery (development)
+
+The next migration slice discovers Music libraries through a Plex server token.
+Set `PLEX_SERVER_URL` and `PLEX_SERVER_TOKEN` in the deployment environment;
+the owner can then call `GET /api/plex/source` to verify the server and list
+Music libraries. The token is never returned by the API or stored in SQLite.
+
 ### Using Docker on Unraid
 
 1. Import [`unraid/resonance.xml`](unraid/resonance.xml) as a custom template, or create a container with:
@@ -119,6 +126,8 @@ For LAN HTTP servers, cleartext traffic is deliberately enabled for this app. Us
 | `DATA_DIR` | `../data` | Directory for the SQLite database file |
 | `PUBLIC_URL` | _(none)_ | The exact public URL where users access Resonance (no trailing slash). Required for Plex's sign-in return URL. Example: `http://localhost:3001` |
 | `PLEX_CLIENT_IDENTIFIER` | generated | Optional stable Plex client identifier. If omitted, generated once and persisted in SQLite. |
+| `PLEX_SERVER_URL` | _(none)_ | Plex Media Server URL for source discovery; `/web` URLs are accepted. |
+| `PLEX_SERVER_TOKEN` | _(none)_ | Plex token for the configured server. Keep it only in the deployment environment; it is never exposed by Resonance. |
 | `ADMIN_EMAIL` | _(none)_ | The email address of the admin/owner. This user is always the host and is the only one who can create the first account. After the admin has signed in, they can invite more people from the Settings page. |
 | `MUSIC_SERVER_URL` | _(none)_ | Pre-configure your Navidrome/Subsonic server address so you don't have to type it every time. Example: `http://192.168.1.50:4533` |
 | `MUSIC_SERVER_USER` | _(none)_ | Username for the music server |

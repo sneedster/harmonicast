@@ -26,7 +26,10 @@ import {
   getActivePlayerSession, setActivePlayerSession, isActivePlayerSession,
 } from './store.js';
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
-import { buildPlexAuthUrl, createPlexPin, getPlexAccount, getPlexPin } from './plex.js';
+import {
+  buildPlexAuthUrl, createPlexPin, getPlexAccount, getPlexConnectionFromEnv,
+  getPlexPin, getPlexServerInfo, listPlexMusicLibraries,
+} from './plex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -172,10 +175,29 @@ app.get('/api/auth/config', (req, res) => {
   res.json({
     googleOAuth: isGoogleOAuthConfigured(),
     plexOAuth: isPlexOAuthConfigured(),
+    plexSourceConfigured: !!getPlexConnectionFromEnv(),
     adminEmail,
     needsAdmin: !adminEmail && !hasUsers,
     hasUsers,
   });
+});
+
+// ── Plex source discovery (owner only) ───────────────────────────────
+
+app.get('/api/plex/source', requireAuth, async (req, res) => {
+  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can inspect the Plex source' });
+  const connection = getPlexConnectionFromEnv();
+  if (!connection) return res.json({ configured: false });
+  try {
+    const server = await getPlexServerInfo(connection);
+    const libraries = await listPlexMusicLibraries(connection);
+    res.json({ configured: true, server, libraries });
+  } catch (err) {
+    // The underlying error may mention a private LAN address; retain it only
+    // in server logs, not in a response visible to browsers.
+    console.error('Plex source discovery error:', err);
+    res.status(502).json({ error: 'Could not reach the configured Plex server' });
+  }
 });
 
 // ── Plex OAuth (PIN/forwarding flow) ─────────────────────────────────

@@ -19,6 +19,23 @@ export interface PlexAccount {
   name: string | null;
 }
 
+export interface PlexConnection {
+  baseUrl: string;
+  token: string;
+}
+
+export interface PlexServerInfo {
+  machineIdentifier: string;
+  name: string;
+  version: string | null;
+}
+
+export interface PlexMusicLibrary {
+  key: string;
+  title: string;
+  uuid: string | null;
+}
+
 export interface PlexFetch {
   (input: string | URL, init?: RequestInit): Promise<Response>;
 }
@@ -53,6 +70,83 @@ export function plexHeaders(clientIdentifier = getPlexClientIdentifier(), token?
   };
   if (token) headers['X-Plex-Token'] = token;
   return headers;
+}
+
+function plexServerBaseUrl(raw: string): string {
+  const url = new URL(raw.trim());
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('Plex server URL must use HTTP or HTTPS');
+  }
+  // Plex's web app commonly lives at /web while the server API is rooted at
+  // the server base. Preserve any reverse-proxy prefix other than /web.
+  url.pathname = url.pathname.replace(/\/web\/?$/, '') || '/';
+  url.search = '';
+  url.hash = '';
+  return url.toString().replace(/\/$/, '');
+}
+
+/** Returns the configured Plex source without ever returning its token to an API client. */
+export function getPlexConnectionFromEnv(): PlexConnection | null {
+  const baseUrl = process.env.PLEX_SERVER_URL?.trim();
+  const token = process.env.PLEX_SERVER_TOKEN?.trim();
+  if (!baseUrl || !token) return null;
+  return { baseUrl: plexServerBaseUrl(baseUrl), token };
+}
+
+function serverUrl(connection: PlexConnection, path: string): string {
+  if (!path.startsWith('/')) throw new Error('Plex API path must be root-relative');
+  return `${connection.baseUrl}${path}`;
+}
+
+async function plexServerJson(
+  connection: PlexConnection,
+  path: string,
+  fetcher: PlexFetch = fetch,
+): Promise<Record<string, unknown>> {
+  const response = await fetcher(serverUrl(connection, path), {
+    headers: plexHeaders(undefined, connection.token),
+  });
+  if (!response.ok) throw new Error(`Plex server request failed (${response.status})`);
+  const body = await response.json() as Record<string, unknown>;
+  const container = body.MediaContainer;
+  if (!container || typeof container !== 'object') throw new Error('Plex server returned an invalid JSON response');
+  return container as Record<string, unknown>;
+}
+
+/** Verify an authenticated Plex Media Server connection. */
+export async function getPlexServerInfo(
+  connection: PlexConnection,
+  fetcher: PlexFetch = fetch,
+): Promise<PlexServerInfo> {
+  const container = await plexServerJson(connection, '/', fetcher);
+  const machineIdentifier = typeof container.machineIdentifier === 'string' ? container.machineIdentifier : '';
+  const name = typeof container.friendlyName === 'string' ? container.friendlyName : '';
+  if (!machineIdentifier || !name) throw new Error('Plex server response is missing identity information');
+  return {
+    machineIdentifier,
+    name,
+    version: typeof container.version === 'string' ? container.version : null,
+  };
+}
+
+/** List only Music libraries; callers select one before music APIs are enabled. */
+export async function listPlexMusicLibraries(
+  connection: PlexConnection,
+  fetcher: PlexFetch = fetch,
+): Promise<PlexMusicLibrary[]> {
+  const container = await plexServerJson(connection, '/library/sections', fetcher);
+  const directories = Array.isArray(container.Directory) ? container.Directory : [];
+  return directories.flatMap((library): PlexMusicLibrary[] => {
+    if (!library || typeof library !== 'object') return [];
+    const item = library as Record<string, unknown>;
+    // Plex represents music libraries as type=artist (or type=8 in older
+    // responses). Do not assume a library called "Music" is musical content.
+    if (item.type !== 'artist' && item.type !== 8) return [];
+    const key = String(item.key ?? '');
+    const title = typeof item.title === 'string' ? item.title : '';
+    if (!key || !title) return [];
+    return [{ key, title, uuid: typeof item.uuid === 'string' ? item.uuid : null }];
+  });
 }
 
 function asPlexPin(payload: unknown): PlexPin {
