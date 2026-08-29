@@ -626,28 +626,31 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun ArtistDiscoveryPage(vm: ResonanceViewModel, song: Song, close: () -> Unit) {
-    Column(
+    LazyColumn(
         Modifier.fillMaxSize().pointerInput(song.id) {
             var downward = 0f
             detectVerticalDragGestures(onVerticalDrag = { change, amount -> if (amount > 0) { change.consume(); downward += amount } }, onDragEnd = { if (downward > 90f) close() })
         },
-        verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Artist discovery", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            TextButton(onClick = close) { Text("Down") }
-        }
-        when {
-            vm.artistDiscoveryLoading -> CircularProgressIndicator()
-            vm.artistDiscoveryError.isNotBlank() -> Text(vm.artistDiscoveryError, color = MaterialTheme.colorScheme.error)
-            vm.artistDiscovery != null -> {
-                val info = vm.artistDiscovery!!
-                Text(info.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                if (info.genres.isNotEmpty()) DetailLine("Genres", info.genres.joinToString(" · "))
-                if (info.bio.isNotBlank()) Text(info.bio, style = MaterialTheme.typography.bodyLarge)
-                if (info.similarArtists.isNotEmpty()) {
-                    Text("Similar artists", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(info.similarArtists.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
+        item {
+            Column(Modifier.padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Artist discovery", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = close) { Text("Down") }
+                }
+                when {
+                    vm.artistDiscoveryLoading -> CircularProgressIndicator()
+                    vm.artistDiscoveryError.isNotBlank() -> Text(vm.artistDiscoveryError, color = MaterialTheme.colorScheme.error)
+                    vm.artistDiscovery != null -> {
+                        val info = vm.artistDiscovery!!
+                        Text(info.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        if (info.genres.isNotEmpty()) DetailLine("Genres", info.genres.joinToString(" · "))
+                        if (info.bio.isNotBlank()) Text(info.bio, style = MaterialTheme.typography.bodyLarge)
+                        if (info.similarArtists.isNotEmpty()) {
+                            Text("Similar artists", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(info.similarArtists.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
                 }
             }
         }
