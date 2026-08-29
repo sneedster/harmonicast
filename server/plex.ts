@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
 
 const PLEX_API_BASE_URL = 'https://plex.tv';
-const PLEX_PRODUCT = 'Resonance';
+const PLEX_PRODUCT = 'Harmonicast';
 const PLEX_VERSION = '0.1.0';
-const PLEX_PLATFORM = 'Resonance Server';
+const PLEX_PLATFORM = 'Harmonicast Server';
 
 export interface PlexPin {
   id: number;

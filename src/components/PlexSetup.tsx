@@ -58,7 +58,7 @@ export function PlexSetup({ onComplete }: { onComplete: () => Promise<void> | vo
         </div>
         <h1 className="text-xl font-semibold text-white">Choose your Plex music</h1>
         <p className="mt-2 text-sm leading-relaxed text-ink-400">
-          Resonance found the Plex servers you own. Pick the server and Music library this installation should use.
+          Harmonicast found the Plex servers you own. Pick the server and Music library this installation should use.
         </p>
         {error && <p className="mt-5 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
         <label className="mt-6 block text-sm font-medium text-ink-200">Plex server</label>

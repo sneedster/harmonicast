@@ -31,7 +31,7 @@ export function AndroidAppDownload({ compact = false }: { compact?: boolean }) {
       {showQr && (
         <div className="mx-auto mt-4 inline-flex flex-col items-center gap-3 rounded-2xl border border-ink-700 bg-white p-4 shadow-xl shadow-black/30">
           <QRCodeSVG value={ANDROID_APP_DOWNLOAD_URL} size={176} level="M" includeMargin />
-          <span className="max-w-44 text-center text-xs font-medium text-ink-800">Scan to download Resonance for Android</span>
+          <span className="max-w-44 text-center text-xs font-medium text-ink-800">Scan to download Harmonicast for Android</span>
         </div>
       )}
     </div>

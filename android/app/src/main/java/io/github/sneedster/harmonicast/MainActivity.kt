@@ -1,4 +1,4 @@
-package io.github.sneedster.resonance
+package io.github.sneedster.harmonicast
 
 import android.content.ComponentName
 import android.content.Context
@@ -106,7 +106,7 @@ class ResonanceViewModel : ViewModel() {
     fun serverUrl() = savedBaseUrl
     fun mediaToken() = if (::api.isInitialized) api.token else ""
     fun setServer(url: String) { api.setBase(url); savedBaseUrl = api.base; error = "" }
-    fun authUrl(): String = "${api.base}/api/auth/plex?mobile_redirect=resonance%3A%2F%2Fauth"
+    fun authUrl(): String = "${api.base}/api/auth/plex?mobile_redirect=harmonicast%3A%2F%2Fauth"
     
     fun receiveAuth(uri: Uri) {
         android.util.Log.d("ResonanceAuth", "receiveAuth called with: $uri")
@@ -384,7 +384,7 @@ class MainActivity : ComponentActivity() {
     val context = LocalContext.current
     Box(Modifier.fillMaxSize().padding(28.dp), Alignment.Center) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("Resonance", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+            Text("Harmonicast", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
             Text("Connect to your self-hosted jukebox.")
             OutlinedTextField(server, { server = it }, label = { Text("Server URL") }, placeholder = { Text("https://resonance.example.com") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Button(onClick = { vm.setServer(server); CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(vm.authUrl())) }, enabled = server.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
@@ -409,7 +409,7 @@ class MainActivity : ComponentActivity() {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Resonance")
+                        Text("Harmonicast")
                         if (vm.plexSourceLabel.isNotBlank()) {
                             Text(vm.plexSourceLabel, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }

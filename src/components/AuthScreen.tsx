@@ -58,7 +58,7 @@ export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/15 ring-1 ring-amber-500/30 mb-4">
             <Disc3 className="h-7 w-7 text-amber-400" />
           </div>
-          <h1 className="text-2xl font-semibold text-white tracking-tight">Resonance</h1>
+          <h1 className="text-2xl font-semibold text-white tracking-tight">Harmonicast</h1>
           <p className="mt-2 text-sm text-ink-400 leading-relaxed">
             Sign in to join the jukebox — search, queue, and rate songs together.
           </p>

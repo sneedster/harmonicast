@@ -291,9 +291,12 @@ app.get('/api/auth/plex', async (req, res) => {
   if (!isPlexOAuthConfigured()) {
     return res.status(400).json({ error: 'Plex sign-in needs PUBLIC_URL to be configured.' });
   }
-  const mobileRedirect = req.query.mobile_redirect === 'resonance://auth'
-    ? 'resonance://auth'
-    : null;
+  const requestedMobileRedirect = req.query.mobile_redirect;
+  const mobileRedirect = requestedMobileRedirect === 'harmonicast://auth'
+    ? 'harmonicast://auth'
+    : requestedMobileRedirect === 'resonance://auth'
+      ? 'resonance://auth'
+      : null;
   // Keep web return paths deliberately narrow: this state value is later used
   // in a redirect after Plex authentication, so arbitrary URLs are unsafe.
   const webRedirect = req.query.return_to === '/kiosk' ? '/kiosk' : null;
@@ -356,7 +359,7 @@ app.get('/api/auth/plex/callback', async (req, res) => {
 
     const token = createSession(user.id, parseDeviceName(req.headers['user-agent']));
     const target = pendingState.redirect || '/';
-    if (target === 'resonance://auth') {
+    if (target === 'resonance://auth' || target === 'harmonicast://auth') {
       return res.redirect(`${target}?auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
     }
     return res.redirect(`${target}#auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);

@@ -198,7 +198,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
                 <span className="text-xs font-medium text-emerald-400">Selected Music library</span>
               </div>
             ))}
-            <p className="mt-4 text-xs leading-relaxed text-ink-500">Plex controls guest access: share this Music library in Plex, then guests can sign in to Resonance. The owner token stays in local Resonance data and is never shown to clients.</p>
+            <p className="mt-4 text-xs leading-relaxed text-ink-500">Plex controls guest access: share this Music library in Plex, then guests can sign in to Harmonicast. The owner token stays in local Harmonicast data and is never shown to clients.</p>
           </div>
         </div>
       )}
@@ -209,7 +209,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
           <h2 className="text-lg font-semibold text-white">Android App</h2>
         </div>
         <div className="rounded-2xl border border-ink-800 bg-ink-900/80 p-6">
-          <p className="text-sm leading-relaxed text-ink-400">Install Resonance on an Android phone to play music directly or use Android Auto.</p>
+          <p className="text-sm leading-relaxed text-ink-400">Install Harmonicast on an Android phone to play music directly or use Android Auto.</p>
           <div className="mt-4"><AndroidAppDownload compact /></div>
           <p className="mt-3 text-xs leading-relaxed text-ink-500">Android may ask you to allow installs from the browser that downloaded the APK.</p>
         </div>
@@ -294,7 +294,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
       </div>
 
       {serverVersion && (
-        <p className="pb-2 text-center text-xs text-ink-600">Resonance server v{serverVersion}</p>
+        <p className="pb-2 text-center text-xs text-ink-600">Harmonicast server v{serverVersion}</p>
       )}
 
     </div>

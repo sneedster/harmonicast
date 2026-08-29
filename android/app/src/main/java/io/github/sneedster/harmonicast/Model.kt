@@ -1,4 +1,4 @@
-package io.github.sneedster.resonance
+package io.github.sneedster.harmonicast
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

@@ -43,7 +43,7 @@ function DeviceModal({
         </div>
         <h2 className="mb-2 text-lg font-semibold text-white">Another device is playing</h2>
         <p className="mb-7 text-sm leading-relaxed text-ink-400">
-          Resonance is currently playing audio on another device. Do you want to take over playback on this device, or watch along as a guest?
+          Harmonicast is currently playing audio on another device. Do you want to take over playback on this device, or watch along as a guest?
         </p>
         <div className="flex flex-col gap-3">
           <button
@@ -114,7 +114,7 @@ function JukeboxApp({
             <Disc3 className={`h-5 w-5 text-amber-400 ${isPlaying ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
           </div>
           <div>
-            <h1 className="text-base font-semibold leading-none text-white">Resonance</h1>
+            <h1 className="text-base font-semibold leading-none text-white">Harmonicast</h1>
             <p className="mt-0.5 text-[11px] text-ink-500">
               {connection.serverName || new URL(connection.baseUrl).hostname}
             </p>

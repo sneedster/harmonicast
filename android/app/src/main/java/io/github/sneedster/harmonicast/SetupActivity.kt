@@ -1,4 +1,4 @@
-package io.github.sneedster.resonance
+package io.github.sneedster.harmonicast
 
 import android.os.Bundle
 import android.text.InputType
@@ -26,7 +26,7 @@ class SetupActivity : AppCompatActivity() {
         }
 
         val title = TextView(this).apply {
-            text = "Resonance Setup"
+            text = "Harmonicast Setup"
             textSize = 24f
             setPadding(0, 0, 0, 32)
         }

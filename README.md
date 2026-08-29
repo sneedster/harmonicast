@@ -1,11 +1,11 @@
-# Resonance
+# Harmonicast
 
-Resonance is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`).
+Harmonicast is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`).
 
-Resonance is a self-hosted, shared music player for a Plex Music library. One
+Harmonicast is a self-hosted, shared music player for a Plex Music library. One
 browser or Android device is the active player; anyone granted access to the
 selected Plex library can sign in, search, queue music, and vote. The active
-player streams through Resonance, so the queue and playback state are shared
+player streams through Harmonicast, so the queue and playback state are shared
 between the web client, Android app, and Android Auto.
 
 ## What it does
@@ -24,16 +24,16 @@ between the web client, Android app, and Android Auto.
 - Web player, native Android player, and Android Auto search, queue, voting,
   Next, Track Radio, and supported queue controls.
 
-Resonance is experimental software. Keep it on a trusted network or put it
+Harmonicast is experimental software. Keep it on a trusted network or put it
 behind HTTPS and appropriate access controls before exposing it publicly.
 
-Resonance is an independent project and is not affiliated with, endorsed by,
+Harmonicast is an independent project and is not affiliated with, endorsed by,
 or sponsored by Plex. "Plex" is used only to identify the compatible service.
 
 ## Architecture
 
 ```
-Browser / Android / Android Auto ── HTTPS + WebSocket ── Resonance ── Plex Media Server
+Browser / Android / Android Auto ── HTTPS + WebSocket ── Harmonicast ── Plex Media Server
                                                          └── SQLite volume
 ```
 
@@ -55,7 +55,7 @@ to web or Android clients.
    docker compose up -d
    ```
 
-5. Open Resonance and sign in with Plex. On a new installation, choose an
+5. Open Harmonicast and sign in with Plex. On a new installation, choose an
    owned Plex Media Server and one Music library.
 
 The named `resonance-data` volume holds the SQLite database. Do not remove it
@@ -76,24 +76,24 @@ remains in `/app/data`.
 
 ## Plex setup and access
 
-The first Plex account to finish setup is the Resonance owner. It must own the
+The first Plex account to finish setup is the Harmonicast owner. It must own the
 Plex server being selected. Other people sign in with their own Plex accounts;
 they can join only if Plex itself has shared the selected Music library with
-them. Resonance treats identity as authentication and access control—the queue,
+them. Harmonicast treats identity as authentication and access control—the queue,
 ratings, and playback history are shared.
 
-`PUBLIC_URL` is required because Plex must return the browser to Resonance after
+`PUBLIC_URL` is required because Plex must return the browser to Harmonicast after
 sign-in. HTTPS is strongly recommended outside a trusted LAN.
 
 ## Android and Android Auto
 
-The Android client is in [`android/`](android/). Enter your Resonance URL, sign
+The Android client is in [`android/`](android/). Enter your Harmonicast URL, sign
 in through Plex, and select **Play here** to make that phone the active player.
 
 Android Auto supports search, browsing the shared Request queue, Up next,
 play/pause, Next, **Queue Track Radio**, and **Clear upcoming queue**. Track
 Radio shows a ready indicator while its tracks remain in the shared queue. Its
-Up next list is synchronized from the shared Resonance queue. The checked-in build helper
+Up next list is synchronized from the shared Harmonicast queue. The checked-in build helper
 uses the compatible local Java/SDK setup:
 
 ```bash
@@ -105,8 +105,8 @@ servers; use HTTPS for any server reachable outside that network.
 
 ## Privacy
 
-Resonance is self-hosted and includes no analytics, advertising SDKs, or
-crash-reporting service. The app sends data only to the Resonance server URL
+Harmonicast is self-hosted and includes no analytics, advertising SDKs, or
+crash-reporting service. The app sends data only to the Harmonicast server URL
 configured by the user. That server communicates with Plex to authenticate
 users and access the configured Music library. See the full
 [Privacy Policy](PRIVACY.md), including the data stored by the server operator.
@@ -203,7 +203,7 @@ and the relevant manual checks have passed.
 
 ## API notes
 
-All REST routes are under `/api` and require a Resonance Bearer token unless
+All REST routes are under `/api` and require a Harmonicast Bearer token unless
 they start the Plex sign-in flow. The app clients are the supported API
 consumers. Key integration routes are:
 
@@ -224,5 +224,5 @@ player, vote, and playback-position changes.
 
 ## License
 
-Resonance is licensed under the [GNU Affero General Public License v3.0 or
+Harmonicast is licensed under the [GNU Affero General Public License v3.0 or
 later](LICENSE) (`AGPL-3.0-or-later`).

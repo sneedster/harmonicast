@@ -15,11 +15,11 @@ val releaseSigningProperties = Properties().apply {
 val hasReleaseSigning = releaseSigningPropertiesFile.isFile
 
 android {
-    namespace = "io.github.sneedster.resonance"
+    namespace = "io.github.sneedster.harmonicast"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.sneedster.resonance"
+        applicationId = "io.github.sneedster.harmonicast"
         minSdk = 26
         targetSdk = 35
         versionCode = providers.gradleProperty("versionCode").orElse("1").get().toInt()

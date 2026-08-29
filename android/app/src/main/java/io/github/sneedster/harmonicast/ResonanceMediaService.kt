@@ -1,4 +1,4 @@
-package io.github.sneedster.resonance
+package io.github.sneedster.harmonicast
 
 import android.app.PendingIntent
 import android.content.Context
