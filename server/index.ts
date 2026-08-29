@@ -850,8 +850,14 @@ app.post('/api/scrobble', requireAuth, requireActivePlayer, async (req, res) => 
   const plexSource = getActivePlexSource();
   if (plexSource) {
     // The initial playback notification is not a completion. Plex's scrobble
-    // endpoint is called only after a track reaches its end.
-    if (submission) await scrobblePlexTrack(plexSource, id);
+    // endpoint is called only after a track reaches its end. The first full
+    // play also establishes a neutral shared rating, so Plex and Jukebox no
+    // longer treat a known track as perpetually unrated.
+    if (submission) {
+      const track = await getPlexTrack(plexSource, id);
+      if (track.userRating === null) await ratePlexTrack(plexSource, id, 5);
+      await scrobblePlexTrack(plexSource, id);
+    }
     return res.json({ ok: true });
   }
   const conn = getConnection();
