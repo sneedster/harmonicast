@@ -36,7 +36,7 @@ cd "$script_dir"
   -PversionCode="$version_code"
 
 output_dir="$script_dir/releases"
-output_apk="$output_dir/resonance-$version_name.apk"
+output_apk="$output_dir/harmonicast-$version_name.apk"
 mkdir -p "$output_dir"
 cp "$script_dir/app/build/outputs/apk/release/app-release.apk" "$output_apk"
 sha256sum "$output_apk"
