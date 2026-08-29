@@ -347,12 +347,14 @@ class ResonanceMediaService : MediaLibraryService() {
                                 Log.d("ResonanceMedia", "Android Auto requested Track Radio queue")
                                 val result = JSONObject(api.json("queue/similar", "POST", JSONObject()))
                                 val added = result.optInt("added", 0)
+                                updateCustomLayout(added > 0)
                                 Log.d("ResonanceMedia", "Queued $added Track Radio songs from Android Auto")
                                 SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putInt("added", added) })
                             }
                             COMMAND_CLEAR_QUEUE -> {
                                 Log.d("ResonanceMedia", "Android Auto requested queue clear")
                                 api.json("queue", "DELETE", JSONObject())
+                                updateCustomLayout(false)
                                 SessionResult(SessionResult.RESULT_SUCCESS)
                             }
                             else -> SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
@@ -424,18 +426,7 @@ class ResonanceMediaService : MediaLibraryService() {
             if (sessionActivityPendingIntent != null) {
                 setSessionActivity(sessionActivityPendingIntent)
             }
-            setCustomLayout(listOf(
-                CommandButton.Builder(CommandButton.ICON_RADIO)
-                    .setSessionCommand(PLAY_SIMILAR_COMMAND)
-                    .setDisplayName("Queue Track Radio")
-                    .setSlots(CommandButton.SLOT_OVERFLOW)
-                    .build(),
-                CommandButton.Builder(CommandButton.ICON_UNDEFINED)
-                    .setSessionCommand(CLEAR_QUEUE_COMMAND)
-                    .setDisplayName("Clear upcoming queue")
-                    .setSlots(CommandButton.SLOT_OVERFLOW)
-                    .build(),
-            ))
+            setCustomLayout(customLayout(false))
         }.build()
 
         Log.d("ResonanceMedia", "Session built successfully")
@@ -484,6 +475,7 @@ class ResonanceMediaService : MediaLibraryService() {
             try {
                 val songs = fetchQueueSongs()
                 val queueIds = songs.map { it.id }
+                updateCustomLayout(songs.any { it.isRadio })
                 // DHU returns the user to the top every time its browsed
                 // children are invalidated. Only notify it when the actual
                 // visible queue has changed; position-only/state broadcasts
@@ -506,7 +498,7 @@ class ResonanceMediaService : MediaLibraryService() {
                 val o = array.getJSONObject(i)
                 add(Song(
                     o.optString("id"), o.optString("title"), o.optString("artist"),
-                    o.optString("album"), o.optInt("duration"), o.optString("coverArt"),
+                    o.optString("album"), o.optInt("duration"), o.optString("coverArt"), isRadio = o.optBoolean("isRadio"),
                 ))
             }
         }
@@ -541,6 +533,23 @@ class ResonanceMediaService : MediaLibraryService() {
         player.setMediaItems(desiredItems, 0, position)
         player.prepare()
         if (wasPlaying) player.play()
+    }
+
+    private fun customLayout(radioQueueActive: Boolean) = listOf(
+        CommandButton.Builder(if (radioQueueActive) CommandButton.ICON_CHECK_CIRCLE_FILLED else CommandButton.ICON_RADIO)
+            .setSessionCommand(PLAY_SIMILAR_COMMAND)
+            .setDisplayName(if (radioQueueActive) "Radio queue ready" else "Queue Track Radio")
+            .setSlots(CommandButton.SLOT_OVERFLOW)
+            .build(),
+        CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+            .setSessionCommand(CLEAR_QUEUE_COMMAND)
+            .setDisplayName("Clear upcoming queue")
+            .setSlots(CommandButton.SLOT_OVERFLOW)
+            .build(),
+    )
+
+    private fun updateCustomLayout(radioQueueActive: Boolean) {
+        mediaLibrarySession?.setCustomLayout(customLayout(radioQueueActive))
     }
 
     /**

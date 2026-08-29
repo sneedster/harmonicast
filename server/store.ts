@@ -100,7 +100,7 @@ export function fetchQueueSongs() {
   `).all();
 }
 
-export function addToQueue({ song, userId, userEmail, isManual = true }) {
+export function addToQueue({ song, userId, userEmail, isManual = true, queueKind = isManual ? 'request' : 'jukebox' }) {
   // Check duplicate
   const existing = db.prepare('SELECT COUNT(*) as c FROM queue WHERE song_id = ?').get(song.id);
   if (existing.c > 0) throw new Error('This song is already in the queue');
@@ -142,10 +142,10 @@ export function addToQueue({ song, userId, userEmail, isManual = true }) {
 
   const id = randomUUID();
   db.prepare(`
-    INSERT INTO queue (id, song_id, title, artist, album, duration, cover_art, position, added_by, added_by_email, is_manual)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO queue (id, song_id, title, artist, album, duration, cover_art, position, added_by, added_by_email, is_manual, queue_kind)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, song.id, song.title, song.artist, song.album, Math.round(song.duration) || 0, song.coverArt,
-    insertPos, userId, userEmail || '', isManual ? 1 : 0);
+    insertPos, userId, userEmail || '', isManual ? 1 : 0, queueKind);
 
   // Round-robin reorder for manual adds
   if (isManual) reorderRoundRobin();

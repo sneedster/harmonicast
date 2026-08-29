@@ -107,6 +107,7 @@ export function initDb() {
       added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       added_by_email TEXT NOT NULL DEFAULT '',
       is_manual INTEGER NOT NULL DEFAULT 1,
+      queue_kind TEXT NOT NULL DEFAULT 'request',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -197,6 +198,12 @@ export function initDb() {
   }
   if (!npColNames.includes('playback_position')) {
     db.exec('ALTER TABLE now_playing ADD COLUMN playback_position REAL NOT NULL DEFAULT 0');
+  }
+
+  const queueColumns = db.prepare("PRAGMA table_info(queue)").all() as { name: string }[];
+  if (!queueColumns.some((column) => column.name === 'queue_kind')) {
+    db.exec("ALTER TABLE queue ADD COLUMN queue_kind TEXT NOT NULL DEFAULT 'request'");
+    db.exec("UPDATE queue SET queue_kind = 'jukebox' WHERE is_manual = 0");
   }
 
   // Older releases only checked for an existing queue entry in application

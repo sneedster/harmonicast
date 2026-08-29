@@ -148,7 +148,7 @@ async function fillJukeboxQueueOnce() {
       const eligibleSongs = eligiblePlexQueueSongs(randomSongs, existingSongIds);
       for (const song of choosePlexJukeboxTracks(eligibleSongs, target)) {
         try {
-          addToQueue({ song, userId: null, userEmail: 'Jukebox', isManual: false });
+          addToQueue({ song, userId: null, userEmail: 'Jukebox', isManual: false, queueKind: 'jukebox' });
           added++;
         } catch { /* skip duplicates/cooldown */ }
       }
@@ -166,7 +166,7 @@ async function fillJukeboxQueueOnce() {
             id: row.song_id, title: row.title, artist: row.artist,
             album: row.album, duration: row.duration, coverArt: row.cover_art
           };
-          addToQueue({ song, userId: null, userEmail: 'Jukebox', isManual: false });
+          addToQueue({ song, userId: null, userEmail: 'Jukebox', isManual: false, queueKind: 'jukebox' });
           added++;
         } catch { /* skip duplicates/cooldown */ }
       }
@@ -178,7 +178,7 @@ async function fillJukeboxQueueOnce() {
         for (const song of randomSongs) {
           if (added >= target) break;
           try {
-            addToQueue({ song, userId: null, userEmail: 'Jukebox', isManual: false });
+          addToQueue({ song, userId: null, userEmail: 'Jukebox', isManual: false, queueKind: 'jukebox' });
             added++;
           } catch { /* skip duplicates/cooldown */ }
         }
@@ -615,7 +615,7 @@ app.get('/api/queue', requireAuth, (req, res) => {
   res.json(rows.map(r => ({
     id: r.song_id, title: r.title, artist: r.artist, album: r.album,
     duration: r.duration, coverArt: r.cover_art,
-    addedByEmail: r.added_by_email, isManual: !!r.is_manual,
+    addedByEmail: r.added_by_email, isManual: !!r.is_manual, isRadio: r.queue_kind === 'radio',
   })));
 });
 
@@ -687,7 +687,7 @@ app.post('/api/queue/similar', requireAuth, requireActivePlayer, async (req, res
     let added = 0;
     for (const song of eligiblePlexQueueSongs(songs, [np.song_id])) {
       try {
-        addToQueue({ song, userId: null, userEmail: 'Similar tracks', isManual: false });
+        addToQueue({ song, userId: null, userEmail: 'Similar tracks', isManual: false, queueKind: 'radio' });
         added++;
       } catch { /* skip duplicates and cooldown entries */ }
     }
