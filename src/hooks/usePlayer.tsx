@@ -17,7 +17,6 @@ import {
 import { connectWebSocket, getPlexTrackDetails, savePlaybackPosition, setJukeboxModeApi } from '@/lib/api';
 import {
   addToQueue,
-  clearAutoQueue,
   dequeueNext,
   fetchCooldownMinutes,
   fetchJukeboxMode,
@@ -58,7 +57,6 @@ interface PlayerContextValue {
   setVolume: (v: number) => void;
   thumbsUp: () => void;
   thumbsDown: () => void;
-  toggleJukebox: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -514,40 +512,6 @@ export function PlayerProvider({
   const thumbsUp = useCallback(() => { void vote('thumbs_up'); }, [vote]);
   const thumbsDown = useCallback(() => { void vote('thumbs_down'); }, [vote]);
 
-  const toggleJukebox = useCallback(() => {
-    if (!isHost) return;
-    const nextOn = !jukeboxRef.current;
-    setJukeboxMode(nextOn);
-    jukeboxRef.current = nextOn;
-    if (nextOn) {
-      void (async () => {
-        try {
-          await setJukeboxModeApi(true);
-          if (!currentRef.current) {
-            const result = await dequeueNext();
-            if (result.song) startPlaying(result.song, !result.isManual);
-          }
-        } catch {
-          setJukeboxMode(false);
-          jukeboxRef.current = false;
-        }
-      })();
-    } else {
-      void (async () => {
-        try {
-          await setJukeboxModeApi(false);
-          await clearAutoQueue();
-          const updated = await fetchQueueSongs();
-          setQueue(updated);
-          queueRef.current = updated;
-        } catch {
-          setJukeboxMode(true);
-          jukeboxRef.current = true;
-        }
-      })();
-    }
-  }, [isHost, startPlaying]);
-
   /** Starts automatic playback from the selected source without requiring a manual search. */
   const startRandomPlayback = useCallback(() => {
     if (!isHost || currentRef.current) return;
@@ -575,14 +539,14 @@ export function PlayerProvider({
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
-      thumbsUp, thumbsDown, toggleJukebox, startRandomPlayback,
+      thumbsUp, thumbsDown, startRandomPlayback,
     }),
     [
       connection, isHost, isHostUser, isActivePlayer, current, plexRating, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
-      thumbsUp, thumbsDown, toggleJukebox, startRandomPlayback,
+      thumbsUp, thumbsDown, startRandomPlayback,
     ],
   );
 

@@ -53,7 +53,6 @@ export function PlayerBar() {
     isPlaying,
     currentTime,
     duration,
-    jukeboxMode,
     loadingNext,
     streamError,
     togglePlay,
@@ -62,7 +61,6 @@ export function PlayerBar() {
     seek,
     thumbsUp,
     thumbsDown,
-    toggleJukebox,
   } = usePlayer();
 
   const total = duration || current?.duration || 0;
@@ -245,19 +243,8 @@ export function PlayerBar() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 sm:flex-1 sm:justify-end">
+        <div className="flex items-center justify-end sm:flex-1">
           <VolumeControl />
-          <button
-            onClick={toggleJukebox}
-            className={`flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold transition ${
-              jukeboxMode
-                ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/40'
-                : 'bg-ink-800 text-ink-300 hover:bg-ink-700 hover:text-white'
-            }`}
-          >
-            <Radio className={`h-4 w-4 ${jukeboxMode ? 'animate-pulse' : ''}`} />
-            Jukebox {jukeboxMode ? 'On' : 'Off'}
-          </button>
         </div>
       </div>
     </div>

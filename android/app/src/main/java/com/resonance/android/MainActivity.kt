@@ -30,7 +30,6 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil.compose.AsyncImage
 import com.google.common.util.concurrent.MoreExecutors
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -56,8 +55,6 @@ class ResonanceViewModel : ViewModel() {
     var results by mutableStateOf<List<Song>>(emptyList()); var query by mutableStateOf("")
     var controller by mutableStateOf<MediaController?>(null); private set
     var savedBaseUrl by mutableStateOf("")
-    var jukeboxMode by mutableStateOf(false); private set
-    private var settingsPollJob: kotlinx.coroutines.Job? = null
 
     fun initialize(appContext: Context) {
         if (::api.isInitialized) return
@@ -74,7 +71,6 @@ class ResonanceViewModel : ViewModel() {
         ready = api.base.isNotBlank() && api.token.isNotBlank()
         if (ready) {
             refresh()
-            startSettingsPolling()
         }
     }
 
@@ -113,8 +109,6 @@ class ResonanceViewModel : ViewModel() {
                     val npJson = api.json("now-playing")
                     val np = JSONObject(npJson)
                     nowPlaying = NowPlaying(np.optJSONObject("song")?.let(::song), np.optBoolean("isPlaying"))
-                    val settingsJson = api.json("settings")
-                    jukeboxMode = JSONObject(settingsJson).optBoolean("jukeboxMode", false)
                     socket?.close(1000, null)
                     socket = api.websocket { refresh() }
                     if (isHost) loadPlexSource()
@@ -205,39 +199,14 @@ class ResonanceViewModel : ViewModel() {
     fun vote(up: Boolean) = action("vote", "POST", JSONObject().put("vote", if (up) "up" else "down"))
     fun claim() = action("player/claim", "POST", JSONObject()) { refresh() }
 
-    fun toggleJukebox() {
-        viewModelScope.launch {
-            try {
-                val response = api.json("jukebox", "POST", JSONObject().put("enabled", !jukeboxMode))
-                jukeboxMode = JSONObject(response).optBoolean("jukeboxMode", !jukeboxMode)
-            } catch (e: Exception) {
-                error = "Failed to toggle jukebox"
-            }
-        }
-    }
-
     /** Enables Jukebox, populates its random queue, and starts its first song. */
     fun startRandomPlayback() {
         viewModelScope.launch {
             try {
-                val response = api.json("jukebox", "POST", JSONObject().put("enabled", true))
-                jukeboxMode = JSONObject(response).optBoolean("jukeboxMode", true)
+                api.json("jukebox", "POST", JSONObject().put("enabled", true))
                 controller?.seekToNext()
             } catch (e: Exception) {
                 error = "Failed to start random playback"
-            }
-        }
-    }
-    
-    fun startSettingsPolling() {
-        settingsPollJob?.cancel()
-        settingsPollJob = viewModelScope.launch {
-            while (true) {
-                delay(5000)
-                try {
-                    val settingsJson = api.json("settings")
-                    jukeboxMode = JSONObject(settingsJson).optBoolean("jukeboxMode", false)
-                } catch (e: Exception) {}
             }
         }
     }
@@ -262,7 +231,6 @@ class ResonanceViewModel : ViewModel() {
 
     override fun onCleared() {
         socket?.close(1000, null)
-        settingsPollJob?.cancel()
         controller?.let { MediaController.releaseFuture(com.google.common.util.concurrent.Futures.immediateFuture(it)) }
     }
 
@@ -419,34 +387,12 @@ class MainActivity : ComponentActivity() {
                 IconButton(onClick = { vm.nextSong() }, enabled = vm.isActivePlayer) { Icon(Icons.Default.SkipNext, "Next") }
             }
             if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Play on this device") }
-            
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = { vm.toggleJukebox() },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (vm.jukeboxMode) Color(0xFF4CAF50) else Color(0xFF607D8B)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (vm.jukeboxMode) "Jukebox: ON" else "Jukebox: OFF", color = Color.White)
-            }
         } else {
             Spacer(Modifier.height(100.dp))
             Text("Nothing is playing")
             if (vm.isHost) {
                 Button({ vm.claim() }, enabled = !vm.isActivePlayer) { Text("Claim this device as player") }
                 Button({ vm.startRandomPlayback() }, enabled = vm.isActivePlayer) { Text("Play random music") }
-            }
-            
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = { vm.toggleJukebox() },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (vm.jukeboxMode) Color(0xFF4CAF50) else Color(0xFF607D8B)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (vm.jukeboxMode) "Jukebox: ON" else "Jukebox: OFF", color = Color.White)
             }
         }
     }
