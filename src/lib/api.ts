@@ -118,6 +118,22 @@ export async function getPlexSource(): Promise<PlexSourceInfo> {
   return request<PlexSourceInfo>('/api/plex/source');
 }
 
+export interface PlexTrackDetails {
+  rating: number | null;
+  playCount: number;
+  skipCount: number;
+  lastPlayedAt: string | null;
+}
+
+export async function getPlexTrackDetails(id: string): Promise<PlexTrackDetails> {
+  return request(`/api/plex/tracks/${encodeURIComponent(id)}`);
+}
+
+export async function getServerVersion(): Promise<string> {
+  const result = await request<{ version: string }>('/api/version');
+  return result.version;
+}
+
 export interface PlexSetupServer { machineIdentifier: string; name: string }
 export interface PlexSetupLibrary { key: string; title: string; uuid: string | null }
 

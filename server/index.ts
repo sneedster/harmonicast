@@ -34,6 +34,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
+const SERVER_VERSION = process.env.RESONANCE_VERSION || '1.0.0';
 
 initDb();
 // Retain the legacy Subsonic environment fallback for upgrades. A normal
@@ -208,6 +209,10 @@ app.get('/api/auth/config', (req, res) => {
   });
 });
 
+app.get('/api/version', requireAuth, (req, res) => {
+  res.json({ version: SERVER_VERSION });
+});
+
 // ── Plex source discovery (owner only) ───────────────────────────────
 
 app.get('/api/plex/source', requireAuth, async (req, res) => {
@@ -228,6 +233,23 @@ app.get('/api/plex/source', requireAuth, async (req, res) => {
     // in server logs, not in a response visible to browsers.
     console.error('Plex source discovery error:', err);
     res.status(502).json({ error: 'Could not reach the configured Plex server' });
+  }
+});
+
+app.get('/api/plex/tracks/:id', requireAuth, async (req, res) => {
+  const source = getActivePlexSource();
+  if (!source) return res.status(404).json({ error: 'No Plex source configured' });
+  try {
+    const track = await getPlexTrack(source, req.params.id);
+    res.json({
+      rating: track.userRating,
+      playCount: track.viewCount,
+      skipCount: track.skipCount,
+      lastPlayedAt: track.lastViewedAt,
+    });
+  } catch (err) {
+    console.error('Plex track metadata error:', err);
+    res.status(502).json({ error: 'Could not load Plex track metadata' });
   }
 });
 

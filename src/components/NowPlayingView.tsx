@@ -8,6 +8,7 @@ export function NowPlayingView() {
     isHost,
     isHostUser,
     current,
+    plexRating,
     isPlaying,
     currentTime,
     duration,
@@ -78,6 +79,9 @@ export function NowPlayingView() {
         {current.album && (
           <p className="mt-0.5 text-xs text-ink-500">{current.album}</p>
         )}
+        <p className="mt-2 text-sm font-medium text-amber-400">
+          Plex rating · {plexRating === null ? 'Not rated yet' : `${plexRating.toFixed(0)} / 10`}
+        </p>
       </div>
 
       {/* Progress bar (read-only for guests) */}

@@ -3,7 +3,7 @@ import { Settings, Clock, Users, Loader2, Check, MonitorSpeaker, Pencil, Server 
 import { usePlayer } from '@/hooks/usePlayer';
 import {
   updateSettings, claimPlayer, listSessions, setDeviceName,
-  getPlexSource, type PlexSourceInfo, type SessionDevice,
+  getPlexSource, getServerVersion, type PlexSourceInfo, type SessionDevice,
 } from '@/lib/api';
 
 export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
@@ -18,6 +18,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   const [deviceName, setDeviceName] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [plexSource, setPlexSource] = useState<PlexSourceInfo | null>(null);
+  const [serverVersion, setServerVersion] = useState<string | null>(null);
 
   useEffect(() => { setCooldown(cooldownMinutes); }, [cooldownMinutes]);
   useEffect(() => { setMaxReq(maxRequestsPerUser); }, [maxRequestsPerUser]);
@@ -31,6 +32,8 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   useEffect(() => {
     if (isHostUser) getPlexSource().then(setPlexSource).catch(() => {});
   }, [isHostUser]);
+
+  useEffect(() => { getServerVersion().then(setServerVersion).catch(() => {}); }, []);
 
   const activeDevice = sessions.find(s => s.isActivePlayer);
 
@@ -276,6 +279,10 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
           </button>
         </form>
       </div>
+
+      {serverVersion && (
+        <p className="pb-2 text-center text-xs text-ink-600">Resonance server v{serverVersion}</p>
+      )}
 
     </div>
   );

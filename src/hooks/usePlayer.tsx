@@ -14,7 +14,7 @@ import {
   scrobble,
   streamUrl,
 } from '@/lib/subsonic';
-import { connectWebSocket, savePlaybackPosition, setJukeboxModeApi } from '@/lib/api';
+import { connectWebSocket, getPlexTrackDetails, savePlaybackPosition, setJukeboxModeApi } from '@/lib/api';
 import {
   addToQueue,
   clearAutoQueue,
@@ -35,6 +35,7 @@ interface PlayerContextValue {
   isHostUser: boolean;
   isActivePlayer: boolean;
   current: Song | null;
+  plexRating: number | null;
   queue: Song[];
   queueRows: { id: string; addedByEmail: string; isManual: boolean }[];
   history: Song[];
@@ -80,6 +81,7 @@ export function PlayerProvider({
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [current, setCurrent] = useState<Song | null>(null);
+  const [plexRating, setPlexRating] = useState<number | null>(null);
   const [queue, setQueue] = useState<Song[]>([]);
   const [queueRows, setQueueRows] = useState<{ id: string; addedByEmail: string; isManual: boolean }[]>([]);
   const [history, setHistory] = useState<Song[]>([]);
@@ -110,6 +112,18 @@ export function PlayerProvider({
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { jukeboxRef.current = jukeboxMode; }, [jukeboxMode]);
   useEffect(() => { isHostRef.current = isHost; }, [isHost]);
+
+  useEffect(() => {
+    if (!current) {
+      setPlexRating(null);
+      return;
+    }
+    let cancelled = false;
+    void getPlexTrackDetails(current.id)
+      .then((track) => { if (!cancelled) setPlexRating(track.rating); })
+      .catch(() => { if (!cancelled) setPlexRating(null); });
+    return () => { cancelled = true; };
+  }, [current?.id]);
 
   const coverUrl = useCallback(
     (coverArt: string, size = 300) => buildCoverArtUrl(connRef.current, coverArt, size),
@@ -483,7 +497,8 @@ export function PlayerProvider({
       const song = currentRef.current;
       if (!song) return;
       try {
-        await voteOnCurrent(event === 'thumbs_up' ? 'up' : 'down');
+        const rating = await voteOnCurrent(event === 'thumbs_up' ? 'up' : 'down');
+        if (rating !== null) setPlexRating(rating);
       } catch {
         // No song playing, or the vote was rejected.
       }
@@ -556,14 +571,14 @@ export function PlayerProvider({
 
   const value = useMemo<PlayerContextValue>(
     () => ({
-      connection, isHost, isHostUser, isActivePlayer, current, queue, queueRows, history,
+      connection, isHost, isHostUser, isActivePlayer, current, plexRating, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
       thumbsUp, thumbsDown, toggleJukebox, startRandomPlayback,
     }),
     [
-      connection, isHost, isHostUser, isActivePlayer, current, queue, queueRows, history,
+      connection, isHost, isHostUser, isActivePlayer, current, plexRating, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,

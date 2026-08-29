@@ -99,11 +99,12 @@ export async function dequeueNext(): Promise<{ song: Song | null; isManual: bool
 
 // Plex is the shared rating authority, so every successful tap adjusts its
 // owner-account rating and deliberately has no per-user attribution.
-export async function voteOnCurrent(vote: 'up' | 'down'): Promise<void> {
-  await request('/api/vote', {
+export async function voteOnCurrent(vote: 'up' | 'down'): Promise<number | null> {
+  const result = await request<{ rating?: number }>('/api/vote', {
     method: 'POST',
     body: JSON.stringify({ vote }),
   });
+  return typeof result.rating === 'number' ? result.rating : null;
 }
 
 export async function clearOldVotes(songId: string): Promise<void> {
