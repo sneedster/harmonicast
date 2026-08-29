@@ -208,6 +208,12 @@ export function updatePlaybackPosition(position: number) {
 }
 
 export function updateNowPlaying(song, isPlaying, isAutoQueue = false) {
+  // A playing track must no longer also be an upcoming entry. This repairs
+  // older duplicate state and covers clients that start a browsed queue item
+  // directly rather than taking the queue head through /queue/dequeue.
+  const removedFromQueue = song?.id && isPlaying
+    ? db.prepare('DELETE FROM queue WHERE song_id = ?').run(song.id).changes > 0
+    : false;
   db.prepare(`
     UPDATE now_playing SET
       song_id = ?, title = ?, artist = ?, album = ?, duration = ?, cover_art = ?,
@@ -217,6 +223,7 @@ export function updateNowPlaying(song, isPlaying, isAutoQueue = false) {
     song?.id ?? null, song?.title ?? '', song?.artist ?? '', song?.album ?? '',
     song?.duration ?? 0, song?.coverArt ?? '', isPlaying ? 1 : 0, isAutoQueue ? 1 : 0
   );
+  return removedFromQueue;
 }
 
 // ── Votes ─────────────────────────────────────────────────────────────

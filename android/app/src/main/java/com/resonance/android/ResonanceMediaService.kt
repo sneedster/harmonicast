@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicReference
 class ResonanceMediaService : MediaLibraryService() {
     private lateinit var player: ExoPlayer
     private var mediaLibrarySession: MediaLibrarySession? = null
+    private var lastPublishedBrowserQueueIds: List<String>? = null
     private lateinit var api: Api
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -467,7 +468,15 @@ class ResonanceMediaService : MediaLibraryService() {
         scope.launch {
             try {
                 val songs = fetchQueueSongs()
-                mediaLibrarySession?.notifyChildrenChanged(QUEUE_ID, songs.size, null)
+                val queueIds = songs.map { it.id }
+                // DHU returns the user to the top every time its browsed
+                // children are invalidated. Only notify it when the actual
+                // visible queue has changed; position-only/state broadcasts
+                // still synchronize the player timeline below.
+                if (queueIds != lastPublishedBrowserQueueIds) {
+                    lastPublishedBrowserQueueIds = queueIds
+                    mediaLibrarySession?.notifyChildrenChanged(QUEUE_ID, songs.size, null)
+                }
                 synchronizePlayerTimeline(songs)
             } catch (e: Exception) {
                 Log.e("ResonanceMedia", "Failed to refresh Android Auto queue", e)
@@ -502,7 +511,12 @@ class ResonanceMediaService : MediaLibraryService() {
 
     private fun synchronizePlayerTimeline(queue: List<Song>) {
         val current = player.currentMediaItem ?: return
-        val desiredItems = listOf(current) + queue.map(::createMediaItem)
+        // A browsed queue item can be selected directly by Android Auto.
+        // The server removes it as it becomes now playing, but never present a
+        // transient duplicate in Auto's Up next list while that update wins.
+        val desiredItems = listOf(current) + queue
+            .filterNot { it.id == current.mediaId }
+            .map(::createMediaItem)
         val currentIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
         val desiredIds = desiredItems.map { it.mediaId }
         if (player.currentMediaItemIndex == 0 && currentIds == desiredIds) return

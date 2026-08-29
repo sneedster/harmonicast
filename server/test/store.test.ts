@@ -12,6 +12,7 @@ const {
   dequeueNext,
   fetchQueue,
   removeFromQueue,
+  updateNowPlaying,
   isActivePlayerSession,
   setActivePlayerSession,
   setCooldownMinutes,
@@ -91,4 +92,15 @@ test('removing a queued song leaves the remaining fair order intact', () => {
   assert.equal(removeFromQueue('bob-1'), true);
   assert.equal(removeFromQueue('missing'), false);
   assert.deepEqual(fetchQueue().map((row: { song_id: string }) => row.song_id), ['alice-1', 'auto-1']);
+});
+
+test('starting a queued track removes it from upcoming entries', () => {
+  resetDatabase();
+  const alice = createUser('alice@example.test');
+  const queued = song('now-playing');
+  addToQueue({ song: queued, userId: alice, userEmail: 'alice@example.test' });
+
+  assert.equal(updateNowPlaying(queued, true), true);
+  assert.deepEqual(fetchQueue(), []);
+  assert.equal(updateNowPlaying(queued, true), false);
 });
