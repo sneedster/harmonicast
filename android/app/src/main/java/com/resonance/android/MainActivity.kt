@@ -11,6 +11,8 @@ import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
@@ -18,11 +20,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -359,14 +366,15 @@ class MainActivity : ComponentActivity() {
             )
         },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(Modifier.height(56.dp)) {
                 val items = listOf("Now playing" to Icons.Default.MusicNote, "Queue" to Icons.AutoMirrored.Filled.QueueMusic, "Search" to Icons.Default.Search)
                 items.forEachIndexed { index, item ->
                     NavigationBarItem(
                         selected = tab == index,
                         onClick = { tab = index },
-                        icon = { Icon(item.second, null) },
-                        label = { Text(item.first) }
+                        icon = { Icon(item.second, item.first) },
+                        label = null,
+                        alwaysShowLabel = false,
                     )
                 }
             }
@@ -424,18 +432,66 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun Now(vm: ResonanceViewModel) {
     val song = vm.nowPlaying.song
-    Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
+        val artworkSize = minOf((maxWidth - 12.dp).coerceAtLeast(180.dp), maxHeight * 0.5f)
+        val skipThreshold = with(LocalDensity.current) { 96.dp.toPx() }
+        var swipeOffset by remember(song?.id) { mutableFloatStateOf(0f) }
+        Column(
+            Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
         if (song != null) {
-            Cover(vm, song, 260.dp)
-            Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("${song.artist} · ${song.album}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                IconButton(onClick = { vm.vote(false) }) { Icon(Icons.Default.ThumbDown, "Vote down") }
-                FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .pointerInput(song.id, vm.isActivePlayer) {
+                        detectHorizontalDragGestures(
+                            onHorizontalDrag = { change, amount ->
+                                if (vm.isActivePlayer && amount < 0f) {
+                                    change.consume()
+                                    swipeOffset = (swipeOffset + amount).coerceAtLeast(-skipThreshold)
+                                }
+                            },
+                            onDragEnd = {
+                                if (swipeOffset <= -skipThreshold) vm.nextSong()
+                                swipeOffset = 0f
+                            },
+                            onDragCancel = { swipeOffset = 0f },
+                        )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Cover(
+                    vm,
+                    song,
+                    artworkSize,
+                    Modifier.graphicsLayer { translationX = swipeOffset },
+                )
+                if (vm.isActivePlayer && swipeOffset < -12f) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                        shape = RoundedCornerShape(20.dp),
+                    ) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.SkipNext, null)
+                            Text("Skip", Modifier.padding(start = 4.dp))
+                        }
+                    }
+                }
+            }
+            Text(song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (song.album.isNotBlank()) Text(song.album, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (vm.isActivePlayer) Text("Swipe left on the artwork to skip", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.ThumbDown, "Vote down") }
+                FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.size(64.dp)) {
                     Icon(if (vm.nowPlaying.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or pause")
                 }
-                IconButton(onClick = { vm.vote(true) }) { Icon(Icons.Default.ThumbUp, "Vote up") }
-                IconButton(onClick = { vm.nextSong() }, enabled = vm.isActivePlayer) { Icon(Icons.Default.SkipNext, "Next") }
+                IconButton(onClick = { vm.nextSong() }, enabled = vm.isActivePlayer, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.SkipNext, "Next") }
+                IconButton(onClick = { vm.vote(true) }, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.ThumbUp, "Vote up") }
             }
             if (vm.isHost) {
                 OutlinedButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer) {
@@ -452,6 +508,7 @@ class MainActivity : ComponentActivity() {
                 Button({ vm.claim() }, enabled = !vm.isActivePlayer) { Text("Claim this device as player") }
                 Button({ vm.startRandomPlayback() }, enabled = vm.isActivePlayer) { Text("Play random music") }
             }
+        }
         }
     }
 }
@@ -512,7 +569,9 @@ class MainActivity : ComponentActivity() {
     HorizontalDivider()
 }
 
-@Composable private fun Cover(vm: ResonanceViewModel, song: Song, size: androidx.compose.ui.unit.Dp) {
+@Composable private fun Cover(vm: ResonanceViewModel, song: Song, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
     val url = if (song.coverArt.isBlank()) null else "${vm.serverUrl()}/api/cover-art/${URLEncoder.encode(song.coverArt, "UTF-8")}?size=300&token=${URLEncoder.encode(vm.mediaToken(), "UTF-8")}"
-    if (url == null) Icon(Icons.Default.Album, null, Modifier.size(size)) else AsyncImage(url, null, Modifier.size(size))
+    val shape = RoundedCornerShape(if (size >= 180.dp) 24.dp else 12.dp)
+    val coverModifier = Modifier.size(size).clip(shape).then(modifier)
+    if (url == null) Icon(Icons.Default.Album, null, coverModifier) else AsyncImage(url, null, coverModifier, contentScale = ContentScale.Crop)
 }
