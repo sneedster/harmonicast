@@ -126,6 +126,12 @@ export async function getPlexSource(): Promise<PlexSourceInfo> {
 }
 
 export interface PlexTrackDetails {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  coverArt: string;
   rating: number | null;
   playCount: number;
   skipCount: number;
