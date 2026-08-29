@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>Harmonicast</Name>
-  <Repository>mjstrong/harmonicast:1.0.9</Repository>
+  <Repository>mjstrong/harmonicast:1.0.16</Repository>
   <Registry>https://hub.docker.com/r/mjstrong/harmonicast</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
