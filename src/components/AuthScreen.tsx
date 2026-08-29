@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Disc3, Loader2, AlertCircle, Music4 } from 'lucide-react';
+import { Disc3, Loader2, AlertCircle, Music4, Smartphone } from 'lucide-react';
 import { getAuthConfig, plexSignInUrl } from '@/lib/api';
+
+const ANDROID_APP_DOWNLOAD_URL = 'https://github.com/sneedster/resonance/releases/latest/download/resonance.apk';
 
 export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
   const [config, setConfig] = useState<{ plexOAuth: boolean; setupInProgress?: boolean } | null>(null);
@@ -104,6 +106,15 @@ export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
             <span>The first person to sign in becomes the host.</span>
           </div>
         )}
+
+        <a
+          href={ANDROID_APP_DOWNLOAD_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-6 flex items-center justify-center gap-2 text-sm text-amber-400 transition hover:text-amber-300"
+        >
+          <Smartphone className="h-4 w-4" /> Get the Android app
+        </a>
       </div>
     </div>
   );
