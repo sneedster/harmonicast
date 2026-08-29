@@ -27,9 +27,9 @@
   active-player model.
   - In progress: `/kiosk` route with full-screen now playing, large touch
     controls for the active player, queue visibility, and Plex search/request.
-  - Next: add artwork-led browse/discovery surfaces and an optional kiosk
-    idle/attract screen; keep ordinary Plex authentication and active-player
-    restrictions intact.
+  - Completed: artwork-led discovery shelves and an optional idle/attract
+    screen; ordinary Plex authentication and active-player restrictions remain
+    intact.
 - Optional on-demand Plex metadata views such as lyrics, artist biography, and
   album details. Fetch them only when requested; do not bulk-index them.
 - Better queue controls, including explicit removal/reordering where Android
