@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -41,6 +42,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import androidx.media3.common.MediaItem
 import coil.compose.AsyncImage
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.launch
@@ -280,6 +282,12 @@ class ResonanceViewModel : ViewModel() {
     }
 
     fun nextSong() { controller?.seekToNext() }
+    fun playQueued(song: Song) {
+        if (!isActivePlayer) return
+        controller?.setMediaItem(MediaItem.Builder().setMediaId(song.id).build())
+        controller?.prepare()
+        controller?.play()
+    }
     fun seekTo(seconds: Float) { controller?.seekTo((seconds.coerceAtLeast(0f) * 1_000).toLong()) }
 
     fun loadArtistDiscovery(song: Song) {
@@ -717,6 +725,7 @@ private fun formatDuration(totalSeconds: Int): String {
 
 @Composable private fun SongRow(vm: ResonanceViewModel, song: Song, add: Boolean) {
     ListItem(
+        modifier = Modifier.clickable(enabled = !add && vm.isActivePlayer) { vm.playQueued(song) },
         headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = { Text("${song.artist}${if (song.addedByEmail.isNotBlank()) " · ${song.addedByEmail}" else ""}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         leadingContent = { Cover(vm, song, 48.dp) },
