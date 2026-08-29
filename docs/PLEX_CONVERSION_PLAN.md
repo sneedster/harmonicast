@@ -14,9 +14,13 @@ queue, listener requests, player arbitration, and playback history.
   owner Plex server and Music library before Resonance creates a session.
 - The configured Plex owner remains the only Resonance administrator. Plex
   sharing does not grant administration.
-- Existing Google/ Subsonic users and data remain readable during migration;
-  legacy login and source configuration are removed only after a verified Plex
-  cutover.
+- A clean install has no required Plex environment variables. The first Plex
+  server owner signs in, selects an owned server and Music library, and
+  Resonance persists that source locally.
+- The selected owner Plex token is stored in local app data as plaintext by
+  explicit self-hosted product choice. It is never sent to clients, logged, or
+  included in backups/documentation by default. Container file permissions
+  limit it to the app user and host administrator.
 - Ratings will remain in Resonance until native Plex rating capabilities are
   verified against a real target server. No unverified Plex rating write will
   be enabled.
@@ -27,9 +31,11 @@ queue, listener requests, player arbitration, and playback history.
    Plex PIN, redirects the browser to Plex's authorization UI, and
    polls/consumes the PIN on the server. It then verifies the returned identity
    and server access before issuing the existing Resonance session token.
-2. **Owner setup.** An owner pairs their Plex account once and selects one
-   server and Music library. The selected machine identifier and library key
-   are stored as configuration; the Plex access token is treated as a secret.
+2. **First-run owner setup.** A clean install sends the first browser through
+   Plex sign-in, lists only Plex resources marked as owned, and requires an
+   owned server plus one Music library selection. The selected machine
+   identifier, reachable connection, library key, and owner token are stored
+   in local app data. No `.env` source configuration is required.
 3. **Plex source adapter.** A narrow adapter owns Plex headers, key resolution,
    pagination, search, metadata mapping, artwork, and audio stream URLs. API
    handlers use the adapter instead of constructing Plex paths directly.
@@ -54,17 +60,20 @@ queue, listener requests, player arbitration, and playback history.
 **Acceptance:** existing Google/Subsonic deployments operate unchanged; Plex
 utilities never return an access token to a Resonance client.
 
-### 1. Plex sign-in and owner pairing
+### 1. Plex sign-in and owner pairing — in progress
 
-- Add a Plex PIN login flow and user identity migration (`plex_id`), preserving
-  current accounts by email where safe.
-- Add an owner-only pairing flow that discovers accessible servers and Music
-  libraries, then persists the chosen source.
-- Enforce library access for each Plex user before issuing a Resonance session.
-- Add explicit token revocation/re-pairing behavior and never log tokens.
+- Add a clean-install setup wizard: Plex PIN login, owned-server selection,
+  Music-library selection, then first Resonance session.
+- Persist source configuration and owner token in local app data; restrict file
+  access and never expose/log the token.
+- Enforce selected-library access for each guest Plex user and derive admin
+  status from Plex resource ownership, not `ADMIN_EMAIL` or an invite list.
+- Allow the owner to change server/library later; require confirmation and
+  reset or namespace queue/now-playing state because Plex IDs are server-bound.
 
-**Acceptance:** an invited, shared Plex user can sign in; an unshared Plex user
-cannot; only the pre-existing Resonance owner can administer settings.
+**Acceptance:** a fresh deployment reaches setup without Plex `.env` values;
+only an owned Plex server can be selected; a shared-library user can sign in;
+an unshared user cannot; only the Plex server owner can administer settings.
 
 ### 2. Plex music adapter and API cutover
 
@@ -83,11 +92,13 @@ Plex library from web and Android without Subsonic credentials.
 - Migrate or intentionally retire source-specific cache/configuration fields.
 - Preserve local ratings/play history where Plex identifiers can be matched;
   document unmatched items.
-- Remove Google OAuth and Subsonic configuration, routes, dependencies, and
-  client copy only after a rollback window.
+- Remove environment-based Plex source credentials, `ADMIN_EMAIL`, Google OAuth,
+  Subsonic configuration, routes, dependencies, and client copy after upgrade
+  migration and a rollback window.
 
-**Acceptance:** a new deployment requires neither Google nor Subsonic settings;
-an upgraded deployment has a documented, recoverable cutover path.
+**Acceptance:** a new deployment requires neither Plex source nor Google/
+Subsonic settings; an upgraded deployment has a documented, recoverable
+cutover path.
 
 ### 4. Queue evolution
 
@@ -104,7 +115,7 @@ queue.
 
 ## Explicit non-goals for the initial cutover
 
-- Supporting multiple owner Plex servers or libraries.
+- Supporting multiple active Plex servers or libraries at once.
 - Passing Plex credentials/tokens through the web or Android client.
 - Assuming undocumented Plex endpoints or rating behavior.
-- Deleting Google/Subsonic data before a tested Plex deployment is available.
+- Deleting existing source data before a tested migration/recovery path exists.
