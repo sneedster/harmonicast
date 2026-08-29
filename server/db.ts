@@ -19,6 +19,7 @@ export function initDb() {
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL DEFAULT '',
       google_id TEXT,
+      plex_id TEXT,
       name TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -135,6 +136,10 @@ export function initDb() {
   if (!userColNames.includes('google_id')) {
     db.exec('ALTER TABLE users ADD COLUMN google_id TEXT');
   }
+  if (!userColNames.includes('plex_id')) {
+    db.exec('ALTER TABLE users ADD COLUMN plex_id TEXT');
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_plex_id ON users(plex_id) WHERE plex_id IS NOT NULL');
   if (!userColNames.includes('name')) {
     db.exec('ALTER TABLE users ADD COLUMN name TEXT');
   }

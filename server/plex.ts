@@ -13,6 +13,12 @@ export interface PlexPin {
   authToken: string | null;
 }
 
+export interface PlexAccount {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
 export interface PlexFetch {
   (input: string | URL, init?: RequestInit): Promise<Response>;
 }
@@ -99,4 +105,21 @@ export function buildPlexAuthUrl(pin: Pick<PlexPin, 'code'>, forwardUrl: string)
     'context[device][product]': PLEX_PRODUCT,
   });
   return `https://app.plex.tv/auth#?${params.toString()}`;
+}
+
+/** Validate a Plex access token and return the minimum identity Resonance needs. */
+export async function getPlexAccount(token: string, fetcher: PlexFetch = fetch): Promise<PlexAccount> {
+  if (!token) throw new Error('Plex access token is required');
+  const response = await fetcher(`${PLEX_API_BASE_URL}/api/v2/user`, {
+    headers: plexHeaders(undefined, token),
+  });
+  if (!response.ok) throw new Error(`Plex account lookup failed (${response.status})`);
+  const account = await response.json() as Record<string, unknown>;
+  const id = String(account.id ?? account.uuid ?? '');
+  const email = typeof account.email === 'string' ? account.email.trim().toLowerCase() : '';
+  const displayName = typeof account.title === 'string'
+    ? account.title
+    : typeof account.username === 'string' ? account.username : null;
+  if (!id || !email) throw new Error('Plex account response is missing an id or email');
+  return { id, email, name: displayName };
 }

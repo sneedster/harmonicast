@@ -98,6 +98,10 @@ export function getUserByGoogleId(googleId: string) {
   return db.prepare('SELECT * FROM users WHERE google_id = ?').get(googleId);
 }
 
+export function getUserByPlexId(plexId: string) {
+  return db.prepare('SELECT * FROM users WHERE plex_id = ?').get(plexId);
+}
+
 export function userCount(): number {
   const row = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
   return row.count;
@@ -112,6 +116,17 @@ export function createUserFromGoogle(googleId: string, email: string, name: stri
 
 export function updateGoogleUserInfo(userId: number, googleId: string, name: string | null): void {
   db.prepare('UPDATE users SET google_id = ?, name = ? WHERE id = ?').run(googleId, name, userId);
+}
+
+export function createUserFromPlex(plexId: string, email: string, name: string | null): number {
+  const result = db.prepare(
+    'INSERT INTO users (email, plex_id, name, password_hash) VALUES (?, ?, ?, ?)'
+  ).run(email.toLowerCase(), plexId, name, '');
+  return Number(result.lastInsertRowid);
+}
+
+export function updatePlexUserInfo(userId: number, plexId: string, name: string | null): void {
+  db.prepare('UPDATE users SET plex_id = ?, name = ? WHERE id = ?').run(plexId, name, userId);
 }
 
 // ── Invite list ───────────────────────────────────────────────────────
@@ -186,6 +201,16 @@ export function getGoogleOAuthConfig() {
 export function isGoogleOAuthConfigured(): boolean {
   const { clientId, clientSecret, publicUrl } = getGoogleOAuthConfig();
   return !!(clientId && clientSecret && publicUrl);
+}
+
+/** Plex's OAuth-style PIN flow needs a public return URL but no client secret. */
+export function getPlexOAuthConfig() {
+  const publicUrl = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
+  return { publicUrl };
+}
+
+export function isPlexOAuthConfigured(): boolean {
+  return !!getPlexOAuthConfig().publicUrl;
 }
 
 export function buildGoogleAuthUrl(state: string): string {

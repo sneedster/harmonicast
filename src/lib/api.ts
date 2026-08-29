@@ -43,6 +43,7 @@ export interface AuthUser { id: number; email: string; name?: string | null; }
 
 export interface AuthConfig {
   googleOAuth: boolean;
+  plexOAuth: boolean;
 }
 
 export async function getAuthConfig(): Promise<AuthConfig> {
@@ -51,6 +52,10 @@ export async function getAuthConfig(): Promise<AuthConfig> {
 
 export function googleSignInUrl(): string {
   return `${API_BASE}/api/auth/google`;
+}
+
+export function plexSignInUrl(): string {
+  return `${API_BASE}/api/auth/plex`;
 }
 
 export async function signOut(): Promise<void> {

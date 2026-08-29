@@ -7,8 +7,10 @@ import { initDb } from './db.js';
 import {
   authMiddleware, requireAuth, createSession, deleteSession,
   getUserByEmail, getUserByGoogleId, createUserFromGoogle, updateGoogleUserInfo,
+  getUserByPlexId, createUserFromPlex, updatePlexUserInfo,
   isEmailAllowed, addAllowedEmail, removeAllowedEmail, listAllowedEmails,
   isGoogleOAuthConfigured, buildGoogleAuthUrl, exchangeGoogleCode, userCount,
+  getPlexOAuthConfig, isPlexOAuthConfigured,
   createOAuthState, consumeOAuthState, deleteSessionsForEmail, purgeExpiredSessions,
   parseDeviceName, listActiveSessions, setSessionDeviceName, getSessionDeviceName,
 } from './auth.js';
@@ -24,6 +26,7 @@ import {
   getActivePlayerSession, setActivePlayerSession, isActivePlayerSession,
 } from './store.js';
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
+import { buildPlexAuthUrl, createPlexPin, getPlexAccount, getPlexPin } from './plex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -141,15 +144,115 @@ async function fillJukeboxQueueOnce() {
 
 // ── Auth config (public) ───────────────────────────────────────────────
 
+interface PendingPlexPin {
+  id: number;
+  code: string;
+  expiresAt: number;
+}
+
+const pendingPlexPins = new Map<string, PendingPlexPin>();
+
+function prunePendingPlexPins(): void {
+  const now = Date.now();
+  for (const [state, pin] of pendingPlexPins) {
+    if (pin.expiresAt <= now) pendingPlexPins.delete(state);
+  }
+}
+
+function consumePendingPlexPin(state: unknown): PendingPlexPin | null {
+  if (typeof state !== 'string' || !state) return null;
+  const pin = pendingPlexPins.get(state);
+  pendingPlexPins.delete(state);
+  return pin && pin.expiresAt > Date.now() ? pin : null;
+}
+
 app.get('/api/auth/config', (req, res) => {
   const adminEmail = process.env.ADMIN_EMAIL?.trim() || null;
   const hasUsers = userCount() > 0;
   res.json({
     googleOAuth: isGoogleOAuthConfigured(),
+    plexOAuth: isPlexOAuthConfigured(),
     adminEmail,
     needsAdmin: !adminEmail && !hasUsers,
     hasUsers,
   });
+});
+
+// ── Plex OAuth (PIN/forwarding flow) ─────────────────────────────────
+
+app.get('/api/auth/plex', async (req, res) => {
+  if (!isPlexOAuthConfigured()) {
+    return res.status(400).json({ error: 'Plex sign-in needs PUBLIC_URL to be configured.' });
+  }
+  const mobileRedirect = req.query.mobile_redirect === 'resonance://auth'
+    ? 'resonance://auth'
+    : null;
+  const state = createOAuthState(mobileRedirect);
+  try {
+    const pin = await createPlexPin();
+    const { publicUrl } = getPlexOAuthConfig();
+    prunePendingPlexPins();
+    pendingPlexPins.set(state, { id: pin.id, code: pin.code, expiresAt: Date.now() + 10 * 60 * 1000 });
+    const forwardUrl = `${publicUrl}/api/auth/plex/callback?state=${encodeURIComponent(state)}`;
+    res.redirect(buildPlexAuthUrl(pin, forwardUrl));
+  } catch (err) {
+    console.error('Plex OAuth start error:', err);
+    res.redirect('/?auth_error=oauth_failed');
+  }
+});
+
+app.get('/api/auth/plex/callback', async (req, res) => {
+  const pendingState = consumeOAuthState(req.query.state);
+  if (!pendingState) return res.redirect('/?auth_error=invalid_state');
+
+  const pin = consumePendingPlexPin(req.query.state);
+  if (!pin) return res.redirect('/?auth_error=invalid_state');
+
+  // The authorization PIN and resulting Plex access token remain server-side.
+  // The callback URL contains only our short-lived opaque state value.
+  try {
+    const claimedPin = await getPlexPin(pin);
+    if (!claimedPin.authToken) return res.redirect('/?auth_error=oauth_failed');
+    const account = await getPlexAccount(claimedPin.authToken);
+    const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+    const isFirstUser = userCount() === 0;
+
+    if (isFirstUser) {
+      if (adminEmail && account.email !== adminEmail) {
+        return res.redirect('/?auth_error=not_admin');
+      }
+    } else if (!isEmailAllowed(account.email)) {
+      return res.redirect('/?auth_error=not_invited');
+    }
+
+    let user = getUserByPlexId(account.id);
+    if (!user) {
+      user = getUserByEmail(account.email);
+      if (user) {
+        updatePlexUserInfo(user.id, account.id, account.name);
+      } else {
+        const userId = createUserFromPlex(account.id, account.email, account.name);
+        user = { id: userId, email: account.email };
+        if (isFirstUser) addAllowedEmail(account.email, userId);
+      }
+    }
+
+    if (adminEmail && account.email === adminEmail) {
+      assignHostFromAdminEmail();
+    } else if (isFirstUser) {
+      assignHostIfUnset(user.id);
+    }
+
+    const token = createSession(user.id, parseDeviceName(req.headers['user-agent']));
+    const target = pendingState.mobileRedirect || '/';
+    if (target === 'resonance://auth') {
+      return res.redirect(`${target}?auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
+    }
+    return res.redirect(`${target}#auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
+  } catch (err) {
+    console.error('Plex OAuth callback error:', err);
+    return res.redirect('/?auth_error=oauth_failed');
+  }
 });
 
 // ── Google OAuth ─────────────────────────────────────────────────────
