@@ -23,10 +23,10 @@ queue, listener requests, player arbitration, and playback history.
 
 ## Architecture
 
-1. **Plex identity.** The server creates a short-lived Plex PIN, redirects the
-   browser to Plex's authorization UI, and polls/consumes the PIN on the
-   server. It then verifies the returned identity and server access before
-   issuing the existing Resonance session token.
+1. **Plex identity (Plex OAuth/PIN flow).** The server creates a short-lived
+   Plex PIN, redirects the browser to Plex's authorization UI, and
+   polls/consumes the PIN on the server. It then verifies the returned identity
+   and server access before issuing the existing Resonance session token.
 2. **Owner setup.** An owner pairs their Plex account once and selects one
    server and Music library. The selected machine identifier and library key
    are stored as configuration; the Plex access token is treated as a secret.

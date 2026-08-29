@@ -66,18 +66,23 @@ function asPlexPin(payload: unknown): PlexPin {
 
 /** Create a one-time Plex authorization PIN. The token is never sent to a client. */
 export async function createPlexPin(fetcher: PlexFetch = fetch): Promise<PlexPin> {
-  const response = await fetcher(`${PLEX_API_BASE_URL}/api/v2/pins?strong=true`, {
+  const response = await fetcher(`${PLEX_API_BASE_URL}/api/v2/pins`, {
     method: 'POST',
-    headers: plexHeaders(),
+    headers: {
+      ...plexHeaders(),
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ strong: 'true' }),
   });
   if (!response.ok) throw new Error(`Plex PIN request failed (${response.status})`);
   return asPlexPin(await response.json());
 }
 
 /** Read the PIN result after Plex completes authorization. */
-export async function getPlexPin(pinId: number, fetcher: PlexFetch = fetch): Promise<PlexPin> {
-  if (!Number.isInteger(pinId) || pinId <= 0) throw new Error('Invalid Plex PIN id');
-  const response = await fetcher(`${PLEX_API_BASE_URL}/api/v2/pins/${pinId}`, {
+export async function getPlexPin(pin: Pick<PlexPin, 'id' | 'code'>, fetcher: PlexFetch = fetch): Promise<PlexPin> {
+  if (!Number.isInteger(pin.id) || pin.id <= 0 || !pin.code) throw new Error('Invalid Plex PIN');
+  const params = new URLSearchParams({ code: pin.code });
+  const response = await fetcher(`${PLEX_API_BASE_URL}/api/v2/pins/${pin.id}?${params}`, {
     headers: plexHeaders(),
   });
   if (!response.ok) throw new Error(`Plex PIN lookup failed (${response.status})`);
