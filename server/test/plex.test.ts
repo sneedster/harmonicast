@@ -14,6 +14,7 @@ const {
   getActivePlexSource,
   getPersistedPlexSource,
   getPlexRelatedTracks,
+  getPlexArtistDiscovery,
   getPlexSetup,
   getPlexTrack,
   savePersistedPlexSource,
@@ -121,5 +122,29 @@ test('Plex track metadata provides Android Auto-safe title, artist, album, and a
     viewCount: 12,
     skipCount: 3,
     lastViewedAt: '2023-11-14T22:13:20.000Z',
+  });
+});
+
+test('artist discovery includes album context without failing when related artists are unavailable', async () => {
+  const fetcher: PlexFetch = async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path === '/') return response({ MediaContainer: { machineIdentifier: 'server-1', friendlyName: 'Test Plex' } });
+    if (path === '/library/metadata/101') return response({ MediaContainer: { Metadata: [{
+      type: 'track', ratingKey: '101', title: 'Track', grandparentRatingKey: '201',
+      grandparentTitle: 'Artist', parentRatingKey: '301', parentTitle: 'Album', librarySectionID: '5',
+    }] } });
+    if (path === '/library/metadata/201') return response({ MediaContainer: { Metadata: [{
+      type: 'artist', ratingKey: '201', title: 'Artist', summary: 'Artist biography.', Genre: [{ tag: 'Rock' }],
+    }] } });
+    if (path === '/library/metadata/301') return response({ MediaContainer: { Metadata: [{
+      type: 'album', ratingKey: '301', title: 'Album', year: 1994, summary: 'Album context.',
+    }] } });
+    return new Response('missing', { status: 404 });
+  };
+
+  const discovery = await getPlexArtistDiscovery(source, 'plex:server-1:101', fetcher);
+  assert.deepEqual(discovery, {
+    name: 'Artist', bio: 'Artist biography.', genres: ['Rock'], similarArtists: [],
+    album: { name: 'Album', year: 1994, summary: 'Album context.' },
   });
 });

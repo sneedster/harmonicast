@@ -304,7 +304,13 @@ class ResonanceViewModel : ViewModel() {
             try {
                 val item = JSONObject(api.json("plex/tracks/${URLEncoder.encode(song.id, "UTF-8")}/discovery"))
                 fun strings(key: String) = item.optJSONArray(key)?.let { a -> List(a.length()) { a.optString(it) }.filter { it.isNotBlank() } } ?: emptyList()
-                artistDiscovery = ArtistDiscovery(item.optString("name", song.artist), item.optString("bio"), strings("genres"), strings("similarArtists"))
+                val album = item.optJSONObject("album")
+                artistDiscovery = ArtistDiscovery(
+                    item.optString("name", song.artist), item.optString("bio"), strings("genres"), strings("similarArtists"),
+                    album?.optString("name").orEmpty(),
+                    album?.takeIf { it.has("year") && !it.isNull("year") }?.optInt("year"),
+                    album?.optString("summary").orEmpty(),
+                )
             } catch (e: Exception) {
                 artistDiscoveryError = e.message ?: "Could not load artist discovery"
             } finally {
@@ -671,6 +677,14 @@ class MainActivity : ComponentActivity() {
                         val info = vm.artistDiscovery!!
                         Text(info.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                         if (info.genres.isNotEmpty()) DetailLine("Genres", info.genres.joinToString(" · "))
+                        if (info.albumName.isNotBlank()) {
+                            Text("Album context", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "${info.albumName}${info.albumYear?.let { " ($it)" }.orEmpty()}",
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            if (info.albumSummary.isNotBlank()) Text(info.albumSummary, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Justify)
+                        }
                         if (info.bio.isNotBlank()) Text(
                             info.bio,
                             style = MaterialTheme.typography.bodyLarge,

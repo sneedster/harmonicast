@@ -9,7 +9,7 @@ import org.json.JSONObject
 
 data class Song(val id: String, val title: String, val artist: String, val album: String = "", val duration: Int = 0, val coverArt: String = "", val rating: Int? = null, val addedByEmail: String = "", val isManual: Boolean = true)
 data class NowPlaying(val song: Song? = null, val isPlaying: Boolean = false)
-data class ArtistDiscovery(val name: String, val bio: String, val genres: List<String>, val similarArtists: List<String>)
+data class ArtistDiscovery(val name: String, val bio: String, val genres: List<String>, val similarArtists: List<String>, val albumName: String, val albumYear: Int?, val albumSummary: String)
 data class PlexServer(val machineIdentifier: String, val name: String)
 data class PlexLibrary(val key: String, val title: String)
 

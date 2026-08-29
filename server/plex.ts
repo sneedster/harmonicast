@@ -398,18 +398,25 @@ export async function getPlexArtistDiscovery(source: PlexSource, trackId: string
   const track = await getConfiguredPlexTrack(source, trackId, fetcher);
   const artistKey = String(track.grandparentRatingKey ?? '');
   if (!artistKey) throw new Error('This track has no Plex artist');
+  const albumKey = String(track.parentRatingKey ?? '');
   const within = <T>(promise: Promise<T>, milliseconds: number): Promise<T> => Promise.race([
     promise,
     new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Plex discovery timed out')), milliseconds)),
   ]);
   // The artist record is the useful part. Related-artist lookup is optional
   // and can be disproportionately slow on some Plex libraries.
-  const artistContainer = await within(plexServerJson(source, `/library/metadata/${artistKey}`, fetcher), 5_000);
-  const relatedContainer = await within(
-    plexServerJson(source, `/library/metadata/${artistKey}/related?type=8`, fetcher),
-    2_000,
-  ).catch(() => ({}));
+  const [artistContainer, relatedContainer, albumContainer] = await Promise.all([
+    within(plexServerJson(source, `/library/metadata/${artistKey}`, fetcher), 5_000),
+    within(
+      plexServerJson(source, `/library/metadata/${artistKey}/related?type=8`, fetcher),
+      2_000,
+    ).catch(() => ({})),
+    albumKey
+      ? within(plexServerJson(source, `/library/metadata/${albumKey}`, fetcher), 3_000).catch(() => ({}))
+      : Promise.resolve({}),
+  ]);
   const artist = metadataArray(artistContainer)[0] ?? {};
+  const album = metadataArray(albumContainer)[0] ?? {};
   return {
     name: typeof artist.title === 'string' ? artist.title : typeof track.grandparentTitle === 'string' ? track.grandparentTitle : 'Unknown artist',
     bio: typeof artist.summary === 'string' ? artist.summary : '',
@@ -419,6 +426,11 @@ export async function getPlexArtistDiscovery(source: PlexSource, trackId: string
       .map((item) => typeof item.title === 'string' ? item.title : '')
       .filter(Boolean)
       .slice(0, 12),
+    album: {
+      name: typeof album.title === 'string' ? album.title : typeof track.parentTitle === 'string' ? track.parentTitle : '',
+      year: Number.isFinite(Number(album.year)) ? Number(album.year) : null,
+      summary: typeof album.summary === 'string' ? album.summary : '',
+    },
   };
 }
 

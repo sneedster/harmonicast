@@ -147,6 +147,7 @@ export interface PlexArtistDiscovery {
   bio: string;
   genres: string[];
   similarArtists: string[];
+  album: { name: string; year: number | null; summary: string };
 }
 
 /** Fetch artist-facing Plex metadata only when the listener opens discovery. */
