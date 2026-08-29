@@ -51,6 +51,8 @@ export function initDb() {
       plex_library_key TEXT,
       plex_library_name TEXT,
       plex_owner_token TEXT,
+      plex_setup_user_id INTEGER,
+      plex_setup_token TEXT,
       host_user_id INTEGER,
       cooldown_minutes INTEGER NOT NULL DEFAULT 30,
       max_requests_per_user INTEGER NOT NULL DEFAULT 5,
@@ -181,6 +183,8 @@ export function initDb() {
     'plex_library_key TEXT',
     'plex_library_name TEXT',
     'plex_owner_token TEXT',
+    'plex_setup_user_id INTEGER',
+    'plex_setup_token TEXT',
   ]) {
     const name = column.split(' ')[0];
     if (!settingsColNames.includes(name)) db.exec(`ALTER TABLE settings ADD COLUMN ${column}`);

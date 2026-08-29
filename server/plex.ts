@@ -36,6 +36,12 @@ export interface PlexMusicLibrary {
   uuid: string | null;
 }
 
+export interface PlexOwnedServer {
+  machineIdentifier: string;
+  name: string;
+  connections: { uri: string; local: boolean; relay: boolean }[];
+}
+
 export interface PlexSource extends PlexConnection {
   libraryKey: string;
 }
@@ -153,6 +159,23 @@ export function savePersistedPlexSource(source: PersistedPlexSource): void {
     plexServerBaseUrl(source.baseUrl), source.machineIdentifier, source.serverName,
     source.libraryKey, source.libraryName, source.token,
   );
+}
+
+export function getPlexSetup(): { userId: number; token: string } | null {
+  const row = db.prepare('SELECT plex_setup_user_id, plex_setup_token FROM settings WHERE id = 1').get() as
+    { plex_setup_user_id?: number | null; plex_setup_token?: string | null } | undefined;
+  if (!row?.plex_setup_user_id || !row.plex_setup_token) return null;
+  return { userId: row.plex_setup_user_id, token: row.plex_setup_token };
+}
+
+/** The token is retained only until the first owner chooses a Plex source. */
+export function beginPlexSetup(userId: number, token: string): void {
+  db.prepare(`UPDATE settings SET plex_setup_user_id = ?, plex_setup_token = ?, updated_at = datetime('now') WHERE id = 1`)
+    .run(userId, token);
+}
+
+export function clearPlexSetup(): void {
+  db.prepare(`UPDATE settings SET plex_setup_user_id = NULL, plex_setup_token = NULL, updated_at = datetime('now') WHERE id = 1`).run();
 }
 
 function serverUrl(connection: PlexConnection, path: string): string {
@@ -338,7 +361,7 @@ export async function canAccessConfiguredPlexLibrary(
   userToken: string,
   fetcher: PlexFetch = fetch,
 ): Promise<boolean> {
-  const source = getPlexSourceFromEnv();
+  const source = getActivePlexSource();
   if (!source || !userToken) return false;
   try {
     const userConnection: PlexConnection = { baseUrl: source.baseUrl, token: userToken };
@@ -347,6 +370,52 @@ export async function canAccessConfiguredPlexLibrary(
   } catch {
     return false;
   }
+}
+
+/** List only Plex Media Servers actually owned by this Plex account. */
+export async function listOwnedPlexServers(token: string, fetcher: PlexFetch = fetch): Promise<PlexOwnedServer[]> {
+  if (!token) throw new Error('Plex access token is required');
+  const response = await fetcher(`${PLEX_API_BASE_URL}/api/v2/resources?includeHttps=1&includeRelay=1`, {
+    headers: plexHeaders(undefined, token),
+  });
+  if (!response.ok) throw new Error(`Plex resource request failed (${response.status})`);
+  const resources = await response.json();
+  if (!Array.isArray(resources)) throw new Error('Plex returned an invalid resource list');
+  return resources.flatMap((resource): PlexOwnedServer[] => {
+    if (!resource || typeof resource !== 'object') return [];
+    const item = resource as Record<string, unknown>;
+    const provides = typeof item.provides === 'string' ? item.provides.split(',') : [];
+    const machineIdentifier = typeof item.clientIdentifier === 'string' ? item.clientIdentifier : '';
+    const name = typeof item.name === 'string' ? item.name : '';
+    if (item.owned !== true || !provides.includes('server') || !machineIdentifier || !name) return [];
+    const connections = Array.isArray(item.connections) ? item.connections.flatMap((connection) => {
+      if (!connection || typeof connection !== 'object') return [];
+      const value = connection as Record<string, unknown>;
+      const uri = typeof value.uri === 'string' ? value.uri : '';
+      if (!uri) return [];
+      return [{ uri: plexServerBaseUrl(uri), local: value.local === true, relay: value.relay === true }];
+    }) : [];
+    return connections.length ? [{ machineIdentifier, name, connections }] : [];
+  });
+}
+
+/** Resolve a server connection using the owner token, preferring local links. */
+export async function connectOwnedPlexServer(
+  token: string,
+  server: PlexOwnedServer,
+  fetcher: PlexFetch = fetch,
+): Promise<PlexConnection> {
+  const candidates = [...server.connections].sort((a, b) => Number(b.local) - Number(a.local));
+  for (const candidate of candidates) {
+    const connection = { baseUrl: candidate.uri, token };
+    try {
+      const identity = await getPlexServerInfo(connection, fetcher);
+      if (identity.machineIdentifier === server.machineIdentifier) return connection;
+    } catch {
+      // Continue through Plex's advertised direct, then relay, connections.
+    }
+  }
+  throw new Error('Could not reach that Plex server');
 }
 
 function asPlexPin(payload: unknown): PlexPin {

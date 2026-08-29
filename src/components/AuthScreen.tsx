@@ -3,7 +3,7 @@ import { Disc3, Loader2, AlertCircle, Music4 } from 'lucide-react';
 import { getAuthConfig, plexSignInUrl } from '@/lib/api';
 
 export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
-  const [config, setConfig] = useState<{ plexOAuth: boolean; adminEmail?: string | null; needsAdmin?: boolean; hasUsers?: boolean } | null>(null);
+  const [config, setConfig] = useState<{ plexOAuth: boolean; setupInProgress?: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,8 +26,8 @@ export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
 
     if (authError) {
       const messages: Record<string, string> = {
-        not_admin: 'Only the admin email configured in docker-compose.yml can create the first account.',
         not_shared: 'Your Plex account does not have access to this jukebox’s Music library.',
+        setup_required: 'Initial Plex setup is being completed by another account.',
         oauth_failed: 'Plex sign-in failed. Please try again.',
         invalid_state: 'This sign-in link has expired or is not valid. Please start again.',
       };
@@ -93,15 +93,10 @@ export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
           </div>
         )}
 
-        {config?.adminEmail && !config?.hasUsers ? (
+        {config?.setupInProgress ? (
           <div className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-ink-500">
             <Music4 className="h-3.5 w-3.5" />
-            <span>Sign in with <span className="text-amber-400 font-medium">{config.adminEmail}</span> to set up the jukebox.</span>
-          </div>
-        ) : config?.needsAdmin ? (
-          <div className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-amber-400">
-            <AlertCircle className="h-3.5 w-3.5" />
-            <span>Set ADMIN_EMAIL in docker-compose.yml to get started.</span>
+            <span>The first Plex account is choosing this installation’s music library.</span>
           </div>
         ) : (
           <div className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-ink-500">

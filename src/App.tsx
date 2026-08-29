@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Disc3, Search, ListMusic, BarChart3, LogOut, Radio, User, Unplug, Music2, Settings, MonitorSpeaker, Loader2 } from 'lucide-react';
 import type { Connection } from '@/types';
-import { loadConnection, saveConn, clearConnection, connectionFromInfo } from '@/lib/connectionStore';
+import { saveConn, clearConnection, connectionFromInfo } from '@/lib/connectionStore';
 import { PlayerProvider, usePlayer } from '@/hooks/usePlayer';
 import { ConnectionSetup } from '@/components/ConnectionSetup';
+import { PlexSetup } from '@/components/PlexSetup';
 import { AuthScreen } from '@/components/AuthScreen';
 import { PlayerBar } from '@/components/PlayerBar';
 import { SearchView } from '@/components/SearchView';
@@ -11,7 +12,7 @@ import { QueueView } from '@/components/QueueView';
 import { StatsView } from '@/components/StatsView';
 import { NowPlayingView } from '@/components/NowPlayingView';
 import { SettingsView } from '@/components/SettingsView';
-import { claimPlayer, getPlayerStatus, getMe, signOut, listSessions, type SessionDevice } from '@/lib/api';
+import { claimPlayer, getConnection, getPlayerStatus, getMe, signOut, listSessions, type SessionDevice } from '@/lib/api';
 
 type Tab = 'nowplaying' | 'search' | 'queue' | 'stats' | 'settings';
 
@@ -226,6 +227,8 @@ export default function App() {
   const [userName, setUserName] = useState<string | null>(null);
   const [connection, setConnection] = useState<Connection | null>(null);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const [needsPlexSetup, setNeedsPlexSetup] = useState(false);
+  const [isPlexSetupOwner, setIsPlexSetupOwner] = useState(false);
   const [isHostUser, setIsHostUser] = useState(false);
   const [isActivePlayer, setIsActivePlayer] = useState(false);
   const [showDeviceModal, setShowDeviceModal] = useState(false);
@@ -250,12 +253,14 @@ export default function App() {
     if (!userEmail) return;
     let cancelled = false;
     (async () => {
-      const info = await loadConnection();
+      const info = await getConnection();
       if (cancelled) return;
 
-      if (!info) {
+      if (!info.configured) {
         setNeedsSetup(true);
-        setIsHostUser(true);
+        setNeedsPlexSetup(!!info.needsPlexSetup);
+        setIsPlexSetupOwner(!!info.isSetupOwner);
+        setIsHostUser(!!info.isSetupOwner);
         setIsActivePlayer(false);
         return;
       }
@@ -263,6 +268,7 @@ export default function App() {
       const conn = connectionFromInfo(info);
       setConnection(conn);
       setNeedsSetup(false);
+      setNeedsPlexSetup(false);
 
       // Determine host and active player status from the full ConnectionInfo
       setIsHostUser(!!info.isHost);
@@ -322,6 +328,8 @@ export default function App() {
     setUserName(null);
     setConnection(null);
     setNeedsSetup(false);
+    setNeedsPlexSetup(false);
+    setIsPlexSetupOwner(false);
     setIsHostUser(false);
     setIsActivePlayer(false);
     setShowDeviceModal(false);
@@ -335,6 +343,36 @@ export default function App() {
 
   if (!userEmail) {
     return <AuthScreen onAuth={handleAuth} />;
+  }
+
+  if (needsPlexSetup && !connection && isPlexSetupOwner) {
+    return (
+      <PlexSetup
+        onComplete={async () => {
+          const info = await getConnection();
+          if (!info.configured) throw new Error('Plex source was not saved');
+          const conn = connectionFromInfo(info);
+          await claimPlayer().catch(() => {});
+          setConnection(conn);
+          setNeedsSetup(false);
+          setNeedsPlexSetup(false);
+          setIsHostUser(true);
+          setIsActivePlayer(true);
+        }}
+      />
+    );
+  }
+
+  if (needsPlexSetup && !connection) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-ink-950 p-5">
+        <div className="w-full max-w-lg rounded-2xl border border-ink-800 bg-ink-900 p-7 text-center shadow-2xl">
+          <h1 className="text-xl font-semibold text-white">Plex setup is in progress</h1>
+          <p className="mt-3 text-sm leading-relaxed text-ink-400">The Plex account that began setup must choose the server and Music library before anyone else can use this installation.</p>
+          <button onClick={() => void handleSignOut()} className="mt-6 rounded-xl border border-ink-700 px-4 py-2 text-sm text-ink-200">Sign out</button>
+        </div>
+      </main>
+    );
   }
 
   if (needsSetup && !connection) {

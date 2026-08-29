@@ -80,6 +80,8 @@ export interface ConnectionInfo {
   isActivePlayer?: boolean;
   hasActivePlayer?: boolean;
   activePlayerDeviceName?: string | null;
+  needsPlexSetup?: boolean;
+  isSetupOwner?: boolean;
 }
 
 export async function getConnection(): Promise<ConnectionInfo> {
@@ -107,6 +109,25 @@ export interface PlexSourceInfo {
 
 export async function getPlexSource(): Promise<PlexSourceInfo> {
   return request<PlexSourceInfo>('/api/plex/source');
+}
+
+export interface PlexSetupServer { machineIdentifier: string; name: string }
+export interface PlexSetupLibrary { key: string; title: string; uuid: string | null }
+
+export async function getPlexSetupServers(): Promise<{ servers: PlexSetupServer[] }> {
+  return request('/api/setup/plex/servers');
+}
+
+export async function getPlexSetupLibraries(machineIdentifier: string): Promise<{
+  server: PlexSetupServer; libraries: PlexSetupLibrary[];
+}> {
+  return request(`/api/setup/plex/servers/${encodeURIComponent(machineIdentifier)}/libraries`);
+}
+
+export async function selectPlexSetupSource(machineIdentifier: string, libraryKey: string): Promise<void> {
+  await request('/api/setup/plex/select', {
+    method: 'POST', body: JSON.stringify({ machineIdentifier, libraryKey }),
+  });
 }
 
 // ── Active playback device ────────────────────────────────────────────

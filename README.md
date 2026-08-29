@@ -42,8 +42,9 @@ Designed for road trips: run the server on your Unraid box, open the web app on 
    docker compose up -d
    ```
 4. Open `http://localhost:3001` in your browser (or the host port you map in Compose).
-5. Sign in with Plex using the email you set as `ADMIN_EMAIL` — this user becomes the host.
-6. Configure your music server connection (or pre-configure it via env vars), then start playing.
+5. Sign in with Plex. On a brand-new installation, select one of the Plex
+   servers you own and then its Music library. That account becomes the host.
+6. Start playing. Share that Music library in Plex to let other Plex users join.
 
 Pin `RESONANCE_IMAGE_TAG` in `.env` to an immutable release tag after testing.
 
@@ -56,21 +57,10 @@ need a Plex client secret or Google Cloud configuration.
    `https://resonance.example.com`.
 2. Optionally set `PLEX_CLIENT_IDENTIFIER` to a stable opaque identifier. If
    omitted, Resonance generates one and persists it in its SQLite data volume.
-3. Set `ADMIN_EMAIL` to the email on the Plex account that should become the
-   owner. Plex library sharing controls guest access after setup.
-
-Plex library integration is in progress. This initial conversion slice changes
-identity only; the configured music source remains Subsonic-compatible until
-the Plex library adapter is complete.
-
-### Plex source discovery (development)
-
-The next migration slice discovers Music libraries through a Plex server token.
-Set `PLEX_SERVER_URL` and `PLEX_SERVER_TOKEN` in the deployment environment;
-the owner can then call `GET /api/plex/source` to verify the server and list
-Music libraries. Set `PLEX_LIBRARY_KEY` to one returned `key` to switch search,
-random selection, artwork, and playback to that library. The token is never
-returned by the API or stored in SQLite.
+3. Sign in. On first run, Resonance lists only the Plex Media Servers owned by
+   that account, then lets the owner choose a Music library. The selected Plex
+   token is stored locally in the SQLite data volume so the server can access
+   music after restart; it is never sent to browsers or Android clients.
 
 ### Using Docker on Unraid
 
@@ -105,7 +95,7 @@ returned by the API or stored in SQLite.
 
 The native Android client lives in [`android/`](android/). It supports Plex sign-in, real-time queue/search/voting, and host playback using the same API as the web client.
 
-1. Ensure the server has `PUBLIC_URL` and a Subsonic connection configured as described above.
+1. Ensure the server has `PUBLIC_URL` configured as described above.
 2. Open the `android` directory in Android Studio (JDK 17 and Android SDK 35), then run the `app` configuration on a device.
 3. Enter the public/LAN URL of your Resonance server and sign in. The app returns from Plex using the `resonance://auth` deep link.
 
@@ -113,7 +103,7 @@ For LAN HTTP servers, cleartext traffic is deliberately enabled for this app. Us
 
 ## How Host / Guest Works
 
-- **Admin-controlled access**: set `ADMIN_EMAIL` to designate the host. Only that account can create the first account.
+- **Plex-owned setup**: the first Plex account selects a server it owns and becomes the host.
 - The host's browser plays audio through its speakers. Only one device is the active player at a time — if a second host device connects, it can take over playback or watch as a guest.
 - Other Plex users can sign in only when Plex shares the selected Music library with them. They join as **guests** and can search, queue, and vote, but audio plays on the host device only.
 - For road trips: open the web app on your Android Auto head unit as the host, and passengers connect from their phones.
@@ -128,16 +118,15 @@ For LAN HTTP servers, cleartext traffic is deliberately enabled for this app. Us
 | `DATA_DIR` | `../data` | Directory for the SQLite database file |
 | `PUBLIC_URL` | _(none)_ | The exact public URL where users access Resonance (no trailing slash). Required for Plex's sign-in return URL. Example: `http://localhost:3001` |
 | `PLEX_CLIENT_IDENTIFIER` | generated | Optional stable Plex client identifier. If omitted, generated once and persisted in SQLite. |
-| `PLEX_SERVER_URL` | _(none)_ | Plex Media Server URL for source discovery; `/web` URLs are accepted. |
-| `PLEX_SERVER_TOKEN` | _(none)_ | Plex token for the configured server. Keep it only in the deployment environment; it is never exposed by Resonance. |
-| `PLEX_LIBRARY_KEY` | _(none)_ | Selected Plex Music library key returned by `GET /api/plex/source`. Activates the Plex source adapter. |
-| `ADMIN_EMAIL` | _(none)_ | The email address of the admin/owner. This user is the only account that can create the first Resonance account. Plex library sharing controls guest access. |
 | `MUSIC_SERVER_URL` | _(none)_ | Pre-configure your Navidrome/Subsonic server address so you don't have to type it every time. Example: `http://192.168.1.50:4533` |
 | `MUSIC_SERVER_USER` | _(none)_ | Username for the music server |
 | `MUSIC_SERVER_PASSWORD` | _(none)_ | Password for the music server |
 | `MUSIC_SERVER_NAME` | _(none)_ | Optional display name for the music server |
 
-When `MUSIC_SERVER_URL`, `MUSIC_SERVER_USER`, and `MUSIC_SERVER_PASSWORD` are all set, the server auto-configures the connection on startup. When `ADMIN_EMAIL` is set, that user automatically becomes the host on first sign-in — no setup screen needed.
+Plex source selection happens in the first-run sign-in flow; no Plex URL, token,
+library key, or admin email is required in the environment. The chosen source's
+owner token lives in the local SQLite data volume and is never exposed to app
+clients. The optional Subsonic variables remain only for legacy migrations.
 
 ### Host Settings (in-app)
 

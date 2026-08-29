@@ -20,25 +20,27 @@ import {
   getNowPlaying, updateNowPlaying, updatePlaybackPosition, voteOnCurrent, getVoteCounts, clearOldVotes,
   getCooldownMinutes, setCooldownMinutes, getMaxRequestsPerUser, setMaxRequestsPerUser,
   getJukeboxMode, setJukeboxMode,
-  saveConnection, clearConnection, isHost, getHostUserId, autoConfigureFromEnv, assignHostIfUnset,
-  assignHostFromAdminEmail, cleanupStaleState,
+  saveConnection, clearConnection, isHost, getHostUserId, assignHostIfUnset,
+  cleanupStaleState,
   getActivePlayerSession, setActivePlayerSession, isActivePlayerSession,
 } from './store.js';
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
 import {
-  buildPlexAuthUrl, canAccessConfiguredPlexLibrary, createPlexPin, getPlexAccount, getPlexConnectionFromEnv,
-  getPlexPin, getPlexRandomTracks, getPlexServerInfo, getPlexSourceFromEnv,
-  getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listPlexMusicLibraries, plexHeaders, searchPlexTracks,
+  beginPlexSetup, buildPlexAuthUrl, canAccessConfiguredPlexLibrary, clearPlexSetup, connectOwnedPlexServer,
+  createPlexPin, getActivePlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexServerInfo,
+  getPlexSetup, getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listOwnedPlexServers, listPlexMusicLibraries,
+  plexHeaders, savePersistedPlexSource, searchPlexTracks,
 } from './plex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
 
 initDb();
+// Retain the legacy Subsonic environment fallback for upgrades. A normal
+// Plex-only deployment has none of these variables and enters first-run setup.
 autoConfigureFromEnv();
 purgeExpiredSessions();
 cleanupStaleState();
-assignHostFromAdminEmail();
 
 const app = express();
 
@@ -49,16 +51,6 @@ const PUBLIC_URL = process.env.PUBLIC_URL?.trim().replace(/\/+$/, '') || null;
 app.use(cors(PUBLIC_URL ? { origin: PUBLIC_URL } : { origin: false }));
 app.use(express.json({ limit: '256kb' }));
 app.use(authMiddleware);
-
-// Ensure env-var auto-configuration is applied on every request,
-// not just startup (handles cases where the volume persists old data).
-app.use((req, _res, next) => {
-  if (req.path.startsWith('/api/')) {
-    autoConfigureFromEnv();
-    assignHostFromAdminEmail();
-  }
-  next();
-});
 
 function requireActivePlayer(req, res, next) {
   if (!isHost(req.user.id)) {
@@ -91,7 +83,7 @@ async function fillJukeboxQueueOnce() {
   console.log(`Jukebox auto-fill check: queue size is ${currentQueue.length}`);
   if (currentQueue.length >= 5) return;
 
-  const plexSource = getPlexSourceFromEnv();
+  const plexSource = getActivePlexSource();
   const conn = plexSource ? null : getConnection();
   if (!plexSource && !conn) {
     console.log('Jukebox auto-fill: no connection configured');
@@ -173,14 +165,10 @@ function consumePendingPlexPin(state: unknown): PendingPlexPin | null {
 }
 
 app.get('/api/auth/config', (req, res) => {
-  const adminEmail = process.env.ADMIN_EMAIL?.trim() || null;
-  const hasUsers = userCount() > 0;
   res.json({
     plexOAuth: isPlexOAuthConfigured(),
-    plexSourceConfigured: !!getPlexConnectionFromEnv(),
-    adminEmail,
-    needsAdmin: !adminEmail && !hasUsers,
-    hasUsers,
+    plexSourceConfigured: !!getActivePlexSource(),
+    setupInProgress: !!getPlexSetup(),
   });
 });
 
@@ -188,16 +176,16 @@ app.get('/api/auth/config', (req, res) => {
 
 app.get('/api/plex/source', requireAuth, async (req, res) => {
   if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can inspect the Plex source' });
-  const connection = getPlexConnectionFromEnv();
-  if (!connection) return res.json({ configured: false });
+  const source = getActivePlexSource();
+  if (!source) return res.json({ configured: false });
   try {
-    const server = await getPlexServerInfo(connection);
-    const libraries = await listPlexMusicLibraries(connection);
+    const server = await getPlexServerInfo(source);
+    const libraries = await listPlexMusicLibraries(source);
     res.json({
       configured: true,
       server,
       libraries,
-      selectedLibraryKey: process.env.PLEX_LIBRARY_KEY?.trim() || null,
+      selectedLibraryKey: source.libraryKey,
     });
   } catch (err) {
     // The underlying error may mention a private LAN address; retain it only
@@ -243,16 +231,20 @@ app.get('/api/auth/plex/callback', async (req, res) => {
     const claimedPin = await getPlexPin(pin);
     if (!claimedPin.authToken) return res.redirect('/?auth_error=oauth_failed');
     const account = await getPlexAccount(claimedPin.authToken);
-    const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
     const isFirstUser = userCount() === 0;
+    const plexSource = getActivePlexSource();
 
-    if (isFirstUser && adminEmail && account.email !== adminEmail) {
-      return res.redirect('/?auth_error=not_admin');
-    }
     // Once a source is selected, Plex library sharing—not a Resonance email
     // allowlist—decides whether a guest may sign in.
-    if (!isFirstUser && !(await canAccessConfiguredPlexLibrary(claimedPin.authToken))) {
+    if (plexSource && !isFirstUser && !(await canAccessConfiguredPlexLibrary(claimedPin.authToken))) {
       return res.redirect('/?auth_error=not_shared');
+    }
+    if (!plexSource && !isFirstUser) {
+      const setup = getPlexSetup();
+      const setupUser = getUserByPlexId(account.id) ?? getUserByEmail(account.email);
+      if (!setup || !setupUser || setup.userId !== setupUser.id) {
+        return res.redirect('/?auth_error=setup_required');
+      }
     }
 
     let user = getUserByPlexId(account.id);
@@ -266,11 +258,8 @@ app.get('/api/auth/plex/callback', async (req, res) => {
       }
     }
 
-    if (adminEmail && account.email === adminEmail) {
-      assignHostFromAdminEmail();
-    } else if (isFirstUser) {
-      assignHostIfUnset(user.id);
-    }
+    if (!plexSource) beginPlexSetup(user.id, claimedPin.authToken);
+    else if (isFirstUser) assignHostIfUnset(user.id);
 
     const token = createSession(user.id, parseDeviceName(req.headers['user-agent']));
     const target = pendingState.mobileRedirect || '/';
@@ -281,6 +270,71 @@ app.get('/api/auth/plex/callback', async (req, res) => {
   } catch (err) {
     console.error('Plex OAuth callback error:', err);
     return res.redirect('/?auth_error=oauth_failed');
+  }
+});
+
+// ── First-run Plex source selection ──────────────────────────────────
+
+function requirePlexSetupOwner(req, res): { token: string } | null {
+  if (getActivePlexSource()) {
+    res.status(409).json({ error: 'A Plex source is already configured' });
+    return null;
+  }
+  const setup = getPlexSetup();
+  if (!setup || setup.userId !== req.user.id) {
+    res.status(403).json({ error: 'Only the first Plex account can complete setup' });
+    return null;
+  }
+  return { token: setup.token };
+}
+
+app.get('/api/setup/plex/servers', requireAuth, async (req, res) => {
+  const setup = requirePlexSetupOwner(req, res);
+  if (!setup) return;
+  try {
+    const servers = await listOwnedPlexServers(setup.token);
+    res.json({ servers: servers.map(({ machineIdentifier, name }) => ({ machineIdentifier, name })) });
+  } catch (err) {
+    console.error('Plex setup server discovery error:', err);
+    res.status(502).json({ error: 'Could not retrieve owned Plex servers' });
+  }
+});
+
+app.get('/api/setup/plex/servers/:machineIdentifier/libraries', requireAuth, async (req, res) => {
+  const setup = requirePlexSetupOwner(req, res);
+  if (!setup) return;
+  try {
+    const server = (await listOwnedPlexServers(setup.token)).find((item) => item.machineIdentifier === req.params.machineIdentifier);
+    if (!server) return res.status(404).json({ error: 'Plex server not found or not owned by this account' });
+    const connection = await connectOwnedPlexServer(setup.token, server);
+    const libraries = await listPlexMusicLibraries(connection);
+    res.json({ server: { machineIdentifier: server.machineIdentifier, name: server.name }, libraries });
+  } catch (err) {
+    console.error('Plex setup library discovery error:', err);
+    res.status(502).json({ error: 'Could not reach that Plex server' });
+  }
+});
+
+app.post('/api/setup/plex/select', requireAuth, async (req, res) => {
+  const setup = requirePlexSetupOwner(req, res);
+  if (!setup) return;
+  const machineIdentifier = typeof req.body?.machineIdentifier === 'string' ? req.body.machineIdentifier : '';
+  const libraryKey = typeof req.body?.libraryKey === 'string' ? req.body.libraryKey : '';
+  if (!machineIdentifier || !/^\d+$/.test(libraryKey)) return res.status(400).json({ error: 'A Plex server and Music library are required' });
+  try {
+    const server = (await listOwnedPlexServers(setup.token)).find((item) => item.machineIdentifier === machineIdentifier);
+    if (!server) return res.status(404).json({ error: 'Plex server not found or not owned by this account' });
+    const connection = await connectOwnedPlexServer(setup.token, server);
+    const libraries = await listPlexMusicLibraries(connection);
+    const library = libraries.find((item) => item.key === libraryKey);
+    if (!library) return res.status(400).json({ error: 'Choose a Music library from the selected Plex server' });
+    savePersistedPlexSource({ ...connection, machineIdentifier: server.machineIdentifier, serverName: server.name, libraryKey, libraryName: library.title });
+    clearPlexSetup();
+    assignHostIfUnset(req.user.id);
+    res.json({ ok: true, serverName: server.name, libraryName: library.title });
+  } catch (err) {
+    console.error('Plex setup selection error:', err);
+    res.status(502).json({ error: 'Could not save the Plex source selection' });
   }
 });
 
@@ -296,9 +350,7 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 // ── Connection ────────────────────────────────────────────────────────
 
 app.get('/api/connection', requireAuth, (req, res) => {
-  autoConfigureFromEnv();
-  assignHostFromAdminEmail();
-  const plexSource = getPlexSourceFromEnv();
+  const plexSource = getActivePlexSource();
   const s = getSettings();
   const hostUserId = s?.host_user_id;
   const activeSession = getActivePlayerSession();
@@ -314,7 +366,10 @@ app.get('/api/connection', requireAuth, (req, res) => {
       activePlayerDeviceName: activeDeviceName,
     });
   }
-  if (!s || !s.base_url) return res.json({ configured: false });
+  if (!s || !s.base_url) {
+    const setup = getPlexSetup();
+    return res.json({ configured: false, needsPlexSetup: !!setup, isSetupOwner: setup?.userId === req.user.id });
+  }
   res.json({
     configured: true,
     baseUrl: s.base_url,
@@ -334,8 +389,8 @@ app.post('/api/connection', requireAuth, async (req, res) => {
   if (currentHostId !== null && currentHostId !== req.user.id) {
     return res.status(403).json({ error: 'Only the host can change the music server connection' });
   }
-  if (getPlexSourceFromEnv()) {
-    return res.status(409).json({ error: 'Plex is configured through deployment environment variables' });
+  if (getActivePlexSource()) {
+    return res.status(409).json({ error: 'Plex is configured through Resonance setup' });
   }
 
   const { baseUrl, username, password, serverName } = req.body;
@@ -673,7 +728,7 @@ app.post('/api/jukebox', requireAuth, requireActivePlayer, async (req, res) => {
 });
 
 app.get('/api/search', requireAuth, async (req, res) => {
-  const plexSource = getPlexSourceFromEnv();
+  const plexSource = getActivePlexSource();
   if (plexSource) {
     try {
       return res.json(await searchPlexTracks(plexSource, String(req.query.q || '')));
@@ -694,7 +749,7 @@ app.get('/api/search', requireAuth, async (req, res) => {
 });
 
 app.get('/api/random-songs', requireAuth, async (req, res) => {
-  const plexSource = getPlexSourceFromEnv();
+  const plexSource = getActivePlexSource();
   if (plexSource) {
     try {
       return res.json(await getPlexRandomTracks(plexSource, Number(req.query.size) || 100));
@@ -717,7 +772,7 @@ app.get('/api/random-songs', requireAuth, async (req, res) => {
 app.post('/api/scrobble', requireAuth, requireActivePlayer, async (req, res) => {
   // Resonance keeps its own play history. Native Plex scrobbling is deferred
   // until it is validated against the configured server and user token model.
-  if (getPlexSourceFromEnv()) return res.json({ ok: true });
+  if (getActivePlexSource()) return res.json({ ok: true });
   const conn = getConnection();
   if (!conn) return res.status(400).json({ error: 'No music server configured' });
   const { id, submission } = req.body;
@@ -728,7 +783,7 @@ app.post('/api/scrobble', requireAuth, requireActivePlayer, async (req, res) => 
 // ── Stream & cover art passthrough ────────────────────────────────────
 
 app.get('/api/stream/:id', requireAuth, requireActivePlayer, async (req, res) => {
-  const plexSource = getPlexSourceFromEnv();
+  const plexSource = getActivePlexSource();
   if (plexSource) {
     try {
       const url = await getPlexTrackStreamUrl(plexSource, req.params.id);
@@ -775,7 +830,7 @@ app.get('/api/stream/:id', requireAuth, requireActivePlayer, async (req, res) =>
 });
 
 app.get('/api/cover-art/:id', requireAuth, async (req, res) => {
-  const plexSource = getPlexSourceFromEnv();
+  const plexSource = getActivePlexSource();
   if (plexSource) {
     try {
       const url = await getPlexTrackArtworkUrl(plexSource, req.params.id);
