@@ -1,0 +1,25 @@
+# Submission metadata for the F-Droid main repository. Copy this file to
+# fdroiddata/metadata/ after creating and pushing the first F-Droid release tag.
+# Replace the Build commit with that tag's immutable full commit hash.
+Categories:
+  - Multimedia
+License: AGPL-3.0-or-later
+SourceCode: https://github.com/sneedster/resonance
+IssueTracker: https://github.com/sneedster/resonance/issues
+Changelog: https://github.com/sneedster/resonance/releases
+RepoType: git
+Repo: https://github.com/sneedster/resonance.git
+AntiFeatures:
+  NonFreeNet:
+    en-US: Requires a Plex account and service to access a Music library.
+Builds:
+  - versionName: 1.0.16
+    versionCode: 17
+    # Set to the full commit SHA of the v1.0.16 F-Droid release.
+    commit: REPLACE_WITH_RELEASE_COMMIT
+    subdir: android
+    gradle:
+      - yes
+
+AutoUpdateMode: None
+UpdateCheckMode: None

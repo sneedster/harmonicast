@@ -27,6 +27,9 @@ between the web client, Android app, and Android Auto.
 Resonance is experimental software. Keep it on a trusted network or put it
 behind HTTPS and appropriate access controls before exposing it publicly.
 
+Resonance is an independent project and is not affiliated with, endorsed by,
+or sponsored by Plex. "Plex" is used only to identify the compatible service.
+
 ## Architecture
 
 ```
@@ -99,6 +102,14 @@ uses the compatible local Java/SDK setup:
 
 The project deliberately permits cleartext Android traffic for trusted LAN
 servers; use HTTPS for any server reachable outside that network.
+
+## Privacy
+
+Resonance is self-hosted and includes no analytics, advertising SDKs, or
+crash-reporting service. The app sends data only to the Resonance server URL
+configured by the user. That server communicates with Plex to authenticate
+users and access the configured Music library. See the full
+[Privacy Policy](PRIVACY.md), including the data stored by the server operator.
 
 ### Signed Android release APK
 
@@ -213,4 +224,5 @@ player, vote, and playback-position changes.
 
 ## License
 
-Private project.
+Resonance is licensed under the [GNU Affero General Public License v3.0 or
+later](LICENSE) (`AGPL-3.0-or-later`).

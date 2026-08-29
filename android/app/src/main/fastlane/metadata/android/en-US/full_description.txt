@@ -1,0 +1,24 @@
+<p>Resonance is a self-hosted shared music player for a Plex Music library.</p>
+
+<p>Sign in to your own Resonance server, search a Music library you are
+authorised to use, add requests to a shared queue, vote on requests, and take
+control of playback from your Android device or Android Auto.</p>
+
+<p>One device is the active player at a time, while everyone with access to the
+selected library can browse, queue, and vote. The active player streams music
+through the self-hosted Resonance server.</p>
+
+<p>Features include:</p>
+<ul>
+<li>Plex PIN/forwarding sign-in</li>
+<li>Shared request queue and fair automatic playback</li>
+<li>Plex-backed ratings and completed-play scrobbling</li>
+<li>Artist and album discovery and Track Radio</li>
+<li>Android Auto search, queue, playback, and voting controls</li>
+</ul>
+
+<p>Resonance has no central service, advertising, analytics, or telemetry. It
+communicates with the server URL you configure, which in turn uses Plex to
+access the selected Music library.</p>
+
+<p>Resonance is not affiliated with, endorsed by, or sponsored by Plex.</p>
