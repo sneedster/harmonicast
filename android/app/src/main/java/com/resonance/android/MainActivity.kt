@@ -15,6 +15,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -35,6 +36,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.pointer.pointerInput
@@ -631,8 +633,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun ArtistDiscoveryPage(vm: ResonanceViewModel, song: Song, close: () -> Unit) {
+    val listState = rememberLazyListState()
     LazyColumn(
-        Modifier.fillMaxSize().pointerInput(song.id) {
+        state = listState,
+        modifier = Modifier.fillMaxSize().pointerInput(song.id, listState) {
             awaitPointerEventScope {
                 while (true) {
                     awaitFirstDown(requireUnconsumed = false)
@@ -641,7 +645,12 @@ class MainActivity : ComponentActivity() {
                     while (active) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         val change = event.changes.firstOrNull() ?: break
-                        downward += change.positionChange().y.coerceAtLeast(0f)
+                        val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+                        downward = if (atTop) {
+                            downward + change.positionChange().y.coerceAtLeast(0f)
+                        } else {
+                            0f
+                        }
                         if (downward > 90f) { close(); active = false }
                         if (!change.pressed) active = false
                     }
@@ -662,7 +671,11 @@ class MainActivity : ComponentActivity() {
                         val info = vm.artistDiscovery!!
                         Text(info.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                         if (info.genres.isNotEmpty()) DetailLine("Genres", info.genres.joinToString(" · "))
-                        if (info.bio.isNotBlank()) Text(info.bio, style = MaterialTheme.typography.bodyLarge)
+                        if (info.bio.isNotBlank()) Text(
+                            info.bio,
+                            style = MaterialTheme.typography.bodyLarge,
+                            textAlign = TextAlign.Justify,
+                        )
                         if (info.similarArtists.isNotEmpty()) {
                             Text("Similar artists", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             Text(info.similarArtists.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
