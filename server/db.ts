@@ -19,6 +19,7 @@ export function initDb() {
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL DEFAULT '',
       google_id TEXT,
+      plex_id TEXT,
       name TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -43,6 +44,15 @@ export function initDb() {
       username TEXT NOT NULL DEFAULT '',
       password TEXT NOT NULL DEFAULT '',
       server_name TEXT,
+      plex_client_identifier TEXT,
+      plex_server_url TEXT,
+      plex_server_machine_id TEXT,
+      plex_server_name TEXT,
+      plex_library_key TEXT,
+      plex_library_name TEXT,
+      plex_owner_token TEXT,
+      plex_setup_user_id INTEGER,
+      plex_setup_token TEXT,
       host_user_id INTEGER,
       cooldown_minutes INTEGER NOT NULL DEFAULT 30,
       max_requests_per_user INTEGER NOT NULL DEFAULT 5,
@@ -134,6 +144,10 @@ export function initDb() {
   if (!userColNames.includes('google_id')) {
     db.exec('ALTER TABLE users ADD COLUMN google_id TEXT');
   }
+  if (!userColNames.includes('plex_id')) {
+    db.exec('ALTER TABLE users ADD COLUMN plex_id TEXT');
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_plex_id ON users(plex_id) WHERE plex_id IS NOT NULL');
   if (!userColNames.includes('name')) {
     db.exec('ALTER TABLE users ADD COLUMN name TEXT');
   }
@@ -158,6 +172,22 @@ export function initDb() {
   }
   if (!settingsColNames.includes('jukebox_mode')) {
     db.exec('ALTER TABLE settings ADD COLUMN jukebox_mode INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!settingsColNames.includes('plex_client_identifier')) {
+    db.exec('ALTER TABLE settings ADD COLUMN plex_client_identifier TEXT');
+  }
+  for (const column of [
+    'plex_server_url TEXT',
+    'plex_server_machine_id TEXT',
+    'plex_server_name TEXT',
+    'plex_library_key TEXT',
+    'plex_library_name TEXT',
+    'plex_owner_token TEXT',
+    'plex_setup_user_id INTEGER',
+    'plex_setup_token TEXT',
+  ]) {
+    const name = column.split(' ')[0];
+    if (!settingsColNames.includes(name)) db.exec(`ALTER TABLE settings ADD COLUMN ${column}`);
   }
 
   const npColumns = db.prepare("PRAGMA table_info(now_playing)").all() as { name: string }[];

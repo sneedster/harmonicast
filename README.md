@@ -42,21 +42,25 @@ Designed for road trips: run the server on your Unraid box, open the web app on 
    docker compose up -d
    ```
 4. Open `http://localhost:3001` in your browser (or the host port you map in Compose).
-5. Sign in with Google using the email you set as `ADMIN_EMAIL` — this user becomes the host.
-6. Configure your music server connection (or pre-configure it via env vars), then start playing.
+5. Sign in with Plex. On a brand-new installation, select one of the Plex
+   servers you own and then its Music library. That account becomes the host.
+6. Start playing. Share that Music library in Plex to let other Plex users join.
 
 Pin `RESONANCE_IMAGE_TAG` in `.env` to an immutable release tag after testing.
 
-### Google OAuth Setup
+### Plex sign-in
 
-Resonance uses Google OAuth for sign-in with an invite-only access model.
+Resonance uses Plex's OAuth-style PIN/forwarding flow for sign-in. It does not
+need a Plex client secret or Google Cloud configuration.
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
-2. Create an OAuth 2.0 Client ID (Web application).
-3. Add an authorized redirect URI: `<PUBLIC_URL>/api/auth/google/callback`
-   - e.g. `http://localhost:8080/api/auth/google/callback`
-4. Set the `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `PUBLIC_URL` environment variables in your docker-compose or Docker run command.
-5. Set `ADMIN_EMAIL` to your Google email. This user is always the host and is the only account that can sign in initially. After signing in, the host can invite others from the Settings page.
+1. Set `PUBLIC_URL` to the exact browser-facing URL of Resonance, for example
+   `https://resonance.example.com`.
+2. Optionally set `PLEX_CLIENT_IDENTIFIER` to a stable opaque identifier. If
+   omitted, Resonance generates one and persists it in its SQLite data volume.
+3. Sign in. On first run, Resonance lists only the Plex Media Servers owned by
+   that account, then lets the owner choose a Music library. The selected Plex
+   token is stored locally in the SQLite data volume so the server can access
+   music after restart; it is never sent to browsers or Android clients.
 
 ### Using Docker on Unraid
 
@@ -89,19 +93,19 @@ Resonance uses Google OAuth for sign-in with an invite-only access model.
 
 ### Android app
 
-The native Android client lives in [`android/`](android/). It supports Google sign-in, real-time queue/search/voting, and host playback using the same API as the web client.
+The native Android client lives in [`android/`](android/). It supports Plex sign-in, real-time queue/search/voting, and host playback using the same API as the web client.
 
-1. Ensure the server has `PUBLIC_URL`, Google OAuth credentials, and a Subsonic connection configured as described above.
+1. Ensure the server has `PUBLIC_URL` configured as described above.
 2. Open the `android` directory in Android Studio (JDK 17 and Android SDK 35), then run the `app` configuration on a device.
-3. Enter the public/LAN URL of your Resonance server and sign in. The app returns from Google using the `resonance://auth` deep link.
+3. Enter the public/LAN URL of your Resonance server and sign in. The app returns from Plex using the `resonance://auth` deep link.
 
 For LAN HTTP servers, cleartext traffic is deliberately enabled for this app. Use HTTPS for any server reachable outside your trusted network.
 
 ## How Host / Guest Works
 
-- **Admin-controlled access**: set `ADMIN_EMAIL` to designate the host. Only the admin can create the first account. After signing in, the host invites others by adding their Google email in the Settings page.
+- **Plex-owned setup**: the first Plex account selects a server it owns and becomes the host.
 - The host's browser plays audio through its speakers. Only one device is the active player at a time — if a second host device connects, it can take over playback or watch as a guest.
-- Other users sign in with Google and join as **guests** — they can search, queue, and vote, but audio plays on the host device only.
+- Other Plex users can sign in only when Plex shares the selected Music library with them. They join as **guests** and can search, queue, and vote, but audio plays on the host device only.
 - For road trips: open the web app on your Android Auto head unit as the host, and passengers connect from their phones.
 
 ## Configuration
@@ -112,26 +116,27 @@ For LAN HTTP servers, cleartext traffic is deliberately enabled for this app. Us
 |----------|---------|-------------|
 | `PORT` | `3001` | Port the server listens on |
 | `DATA_DIR` | `../data` | Directory for the SQLite database file |
-| `PUBLIC_URL` | _(none)_ | The public URL where users access Resonance (no trailing slash). Must match the redirect URI in Google Cloud Console. Example: `http://localhost:3001` |
-| `GOOGLE_CLIENT_ID` | _(none)_ | Google OAuth 2.0 Client ID (from Google Cloud Console) |
-| `GOOGLE_CLIENT_SECRET` | _(none)_ | Google OAuth 2.0 Client Secret |
-| `ADMIN_EMAIL` | _(none)_ | The email address of the admin/owner. This user is always the host and is the only one who can create the first account. After the admin has signed in, they can invite more people from the Settings page. |
+| `PUBLIC_URL` | _(none)_ | The exact public URL where users access Resonance (no trailing slash). Required for Plex's sign-in return URL. Example: `http://localhost:3001` |
+| `PLEX_CLIENT_IDENTIFIER` | generated | Optional stable Plex client identifier. If omitted, generated once and persisted in SQLite. |
 | `MUSIC_SERVER_URL` | _(none)_ | Pre-configure your Navidrome/Subsonic server address so you don't have to type it every time. Example: `http://192.168.1.50:4533` |
 | `MUSIC_SERVER_USER` | _(none)_ | Username for the music server |
 | `MUSIC_SERVER_PASSWORD` | _(none)_ | Password for the music server |
 | `MUSIC_SERVER_NAME` | _(none)_ | Optional display name for the music server |
 
-When `MUSIC_SERVER_URL`, `MUSIC_SERVER_USER`, and `MUSIC_SERVER_PASSWORD` are all set, the server auto-configures the connection on startup. When `ADMIN_EMAIL` is set, that user automatically becomes the host on first sign-in — no setup screen needed.
+Plex source selection happens in the first-run sign-in flow; no Plex URL, token,
+library key, or admin email is required in the environment. The chosen source's
+owner token lives in the local SQLite data volume and is never exposed to app
+clients. The optional Subsonic variables remain only for legacy migrations.
 
 ### Host Settings (in-app)
 
 - **Song Cooldown** — minutes before a song can be re-queued (0 = disabled).
 - **Max Requests Per User** — how many songs one person can have in the queue at once.
-- **Manage Invites** — add or remove Google email addresses that are allowed to sign in.
+- **Plex Music Source** — view the configured server and selected Music library. Manage guest access in Plex sharing.
 
 ## API Reference
 
-All API endpoints are under `/api`. Authentication uses a Bearer token obtained via Google OAuth.
+All API endpoints are under `/api`. Authentication uses a Bearer token issued by Resonance after Plex sign-in.
 
 ### Authentication
 
@@ -139,16 +144,19 @@ All API endpoints are under `/api`. Authentication uses a Bearer token obtained 
 Check which authentication methods are configured.
 ```json
 // Response 200
-{ "googleOAuth": true }
+{ "plexOAuth": true }
 ```
 
-#### `GET /api/auth/google`
-Redirects to Google's OAuth consent screen. After consent, Google redirects back to `/api/auth/google/callback`.
+#### `GET /api/auth/plex`
+Starts the Plex OAuth/PIN forwarding flow. Plex returns the browser to
+`/api/auth/plex/callback`; the Plex access token stays server-side.
 
 The Android app uses `?mobile_redirect=resonance://auth`; this is the only accepted mobile return URL and the resulting token is placed in the URL fragment.
 
-#### `GET /api/auth/google/callback`
-OAuth callback endpoint. Exchanges the code for user info, checks the invite list, creates a session, and redirects with `#auth_token=<token>&auth_email=<email>`.
+#### `GET /api/auth/plex/callback`
+Plex sign-in callback. It validates the Plex account and its access to the
+configured Music library, creates a Resonance session, and redirects with
+`#auth_token=<token>&auth_email=<email>`.
 
 #### `POST /api/auth/signout`
 Sign out (invalidates the current token). Requires auth.
@@ -158,29 +166,6 @@ Get the current authenticated user. Requires auth.
 ```json
 // Response 200
 { "user": { "id": 1, "email": "user@example.com", "name": "User Name" } }
-```
-
-### Invites
-
-#### `GET /api/invites`
-List all invited emails. Host only.
-```json
-// Response 200
-[{ "email": "friend@example.com", "created_at": "2026-01-01 00:00:00" }]
-```
-
-#### `POST /api/invites`
-Add an email to the invite list. Host only.
-```json
-// Request
-{ "email": "friend@example.com" }
-```
-
-#### `DELETE /api/invites`
-Remove an email from the invite list. Host only.
-```json
-// Request
-{ "email": "friend@example.com" }
 ```
 
 ### Connection

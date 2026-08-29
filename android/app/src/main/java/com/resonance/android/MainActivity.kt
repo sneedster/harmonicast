@@ -76,7 +76,7 @@ class ResonanceViewModel : ViewModel() {
     fun serverUrl() = savedBaseUrl
     fun mediaToken() = if (::api.isInitialized) api.token else ""
     fun setServer(url: String) { api.setBase(url); savedBaseUrl = api.base; error = "" }
-    fun authUrl(): String = "${api.base}/api/auth/google?mobile_redirect=resonance%3A%2F%2Fauth"
+    fun authUrl(): String = "${api.base}/api/auth/plex?mobile_redirect=resonance%3A%2F%2Fauth"
     
     fun receiveAuth(uri: Uri) {
         android.util.Log.d("ResonanceAuth", "receiveAuth called with: $uri")
@@ -228,7 +228,7 @@ class MainActivity : ComponentActivity() {
             Button(onClick = { vm.setServer(server); CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(vm.authUrl())) }, enabled = server.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Login, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Sign in with Google")
+                Text("Sign in with Plex")
             }
             if (vm.error.isNotBlank()) Text(vm.error, color = MaterialTheme.colorScheme.error)
         }

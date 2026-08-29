@@ -17,5 +17,9 @@
     "express": "^4.21.0",
     "tsx": "^4.19.0",
     "ws": "^8.18.0"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true,
+    "esbuild@0.28.2": true
   }
 }
