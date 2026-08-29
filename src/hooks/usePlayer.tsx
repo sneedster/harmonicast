@@ -248,7 +248,11 @@ export function PlayerProvider({
   useEffect(() => {
     if (!isHost || !current || !audioRef.current) return;
     const audio = audioRef.current;
-    if (audio.src.endsWith(`/api/stream/${encodeURIComponent(current.id)}`)) return;
+    const expectedPath = `/api/stream/${encodeURIComponent(current.id)}`;
+    if (new URL(audio.src).pathname === expectedPath) {
+      audio.volume = volume;
+      return;
+    }
     audio.src = streamUrl(connRef.current, current.id);
     audio.volume = volume;
     const playWhenReady = () => {
@@ -256,8 +260,9 @@ export function PlayerProvider({
     };
     audio.addEventListener('canplay', playWhenReady, { once: true });
     if (isPlaying) audio.play().catch(() => {});
-    // Re-broadcast now-playing so all clients see the new device is active.
-    void updateNowPlaying(current, true, currentIsAutoRef.current);
+    // Re-broadcast now-playing when this host has loaded a new stream. Preserve
+    // a paused state; publishing `true` here would immediately undo pause.
+    void updateNowPlaying(current, isPlaying, currentIsAutoRef.current);
     return () => audio.removeEventListener('canplay', playWhenReady);
   }, [current, isHost, isPlaying, volume]);
 

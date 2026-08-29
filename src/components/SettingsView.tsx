@@ -1,12 +1,11 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { Settings, Clock, Users, Loader2, Check, MonitorSpeaker, Pencil, Server, Smartphone, ExternalLink } from 'lucide-react';
+import { Settings, Clock, Users, Loader2, Check, MonitorSpeaker, Pencil, Server, Smartphone } from 'lucide-react';
 import { usePlayer } from '@/hooks/usePlayer';
+import { AndroidAppDownload } from '@/components/AndroidAppDownload';
 import {
   updateSettings, claimPlayer, listSessions, setDeviceName as setSessionDeviceName,
   getPlexSource, getServerVersion, type PlexSourceInfo, type SessionDevice,
 } from '@/lib/api';
-
-const ANDROID_APP_DOWNLOAD_URL = 'https://github.com/sneedster/resonance/releases/latest/download/resonance.apk';
 
 export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   const { isActivePlayer, cooldownMinutes, maxRequestsPerUser } = usePlayer();
@@ -211,14 +210,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
         </div>
         <div className="rounded-2xl border border-ink-800 bg-ink-900/80 p-6">
           <p className="text-sm leading-relaxed text-ink-400">Install Resonance on an Android phone to play music directly or use Android Auto.</p>
-          <a
-            href={ANDROID_APP_DOWNLOAD_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-500/40 px-4 py-2.5 text-sm font-semibold text-amber-300 transition hover:border-amber-400 hover:bg-amber-500/10"
-          >
-            <Smartphone className="h-4 w-4" /> Download Android app <ExternalLink className="h-3.5 w-3.5" />
-          </a>
+          <div className="mt-4"><AndroidAppDownload compact /></div>
           <p className="mt-3 text-xs leading-relaxed text-ink-500">Android may ask you to allow installs from the browser that downloaded the APK.</p>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { ThumbsDown, ThumbsUp, Volume2, Loader2, Radio, WandSparkles } from 'lucide-react';
 import { usePlayer } from '@/hooks/usePlayer';
 import { CoverArt } from '@/components/CoverArt';
+import { AndroidAppDownload } from '@/components/AndroidAppDownload';
 import { formatTime } from '@/lib/format';
 
 export function NowPlayingView() {
@@ -38,6 +39,7 @@ export function NowPlayingView() {
               ? 'Select Play here above to make this device active, then choose a track from Search.'
             : 'Waiting for the host to start music.'}
         </p>
+        <AndroidAppDownload compact />
       </div>
     );
   }
@@ -135,6 +137,8 @@ export function NowPlayingView() {
           <WandSparkles className="h-4 w-4" /> Queue Track Radio
         </button>
       )}
+
+      <AndroidAppDownload />
     </div>
   );
 }
