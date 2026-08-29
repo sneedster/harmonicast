@@ -4,7 +4,7 @@ import { CoverArt } from '@/components/CoverArt';
 import { formatTime } from '@/lib/format';
 
 export function QueueView() {
-  const { isHost, queue, queueRows, current, playNow, clearQueue } = usePlayer();
+  const { isHost, queue, queueRows, current, playNow, clearQueue, removeQueueItem } = usePlayer();
 
   return (
     <div className="animate-fade-in">
@@ -58,13 +58,22 @@ export function QueueView() {
                   {formatTime(song.duration)}
                 </span>
                 {isHost && (
-                  <button
-                    onClick={() => playNow(song)}
-                    title="Play now"
-                    className="rounded-full bg-white p-2 text-ink-950 opacity-0 transition hover:scale-105 group-hover:opacity-100"
-                  >
-                    <Play className="h-3.5 w-3.5 translate-x-px" fill="currentColor" />
-                  </button>
+                  <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                    <button
+                      onClick={() => playNow(song)}
+                      title="Play now"
+                      className="rounded-full bg-white p-2 text-ink-950 transition hover:scale-105"
+                    >
+                      <Play className="h-3.5 w-3.5 translate-x-px" fill="currentColor" />
+                    </button>
+                    <button
+                      onClick={() => removeQueueItem(song)}
+                      title="Remove from queue"
+                      className="rounded-full p-2 text-ink-400 transition hover:bg-red-500/10 hover:text-red-400"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 )}
               </div>
             );

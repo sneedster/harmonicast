@@ -93,6 +93,10 @@ export async function clearAutoQueue(): Promise<void> {
   await request('/api/queue/auto', { method: 'DELETE' });
 }
 
+export async function removeFromQueue(songId: string): Promise<void> {
+  await request(`/api/queue/${encodeURIComponent(songId)}`, { method: 'DELETE' });
+}
+
 export async function dequeueNext(): Promise<{ song: Song | null; isManual: boolean }> {
   return request<{ song: Song | null; isManual: boolean }>('/api/queue/dequeue', { method: 'POST' });
 }

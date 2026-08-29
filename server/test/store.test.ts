@@ -11,6 +11,7 @@ const {
   addToQueue,
   dequeueNext,
   fetchQueue,
+  removeFromQueue,
   isActivePlayerSession,
   setActivePlayerSession,
   setCooldownMinutes,
@@ -75,4 +76,19 @@ test('active player session has exactly one current token', () => {
   setActivePlayerSession('second-player');
   assert.equal(isActivePlayerSession('first-player'), false);
   assert.equal(isActivePlayerSession('second-player'), true);
+});
+
+test('removing a queued song leaves the remaining fair order intact', () => {
+  resetDatabase();
+  const alice = createUser('alice@example.test');
+  const bob = createUser('bob@example.test');
+  setCooldownMinutes(0);
+  setMaxRequestsPerUser(5);
+  addToQueue({ song: song('alice-1'), userId: alice, userEmail: 'alice@example.test' });
+  addToQueue({ song: song('bob-1'), userId: bob, userEmail: 'bob@example.test' });
+  addToQueue({ song: song('auto-1'), userId: null, userEmail: 'Automatic', isManual: false });
+
+  assert.equal(removeFromQueue('bob-1'), true);
+  assert.equal(removeFromQueue('missing'), false);
+  assert.deepEqual(fetchQueue().map((row: { song_id: string }) => row.song_id), ['alice-1', 'auto-1']);
 });

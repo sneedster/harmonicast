@@ -231,6 +231,7 @@ class ResonanceViewModel : ViewModel() {
     }
 
     fun add(song: Song) = action("queue", "POST", JSONObject().put("song", songJson(song))) { refresh() }
+    fun remove(song: Song) = action("queue/${URLEncoder.encode(song.id, "UTF-8")}", "DELETE", JSONObject()) { refresh() }
     fun vote(up: Boolean) = action("vote", "POST", JSONObject().put("vote", if (up) "up" else "down"))
     fun claim() = action("player/claim", "POST", JSONObject()) { refresh() }
     fun clearQueue() = action("queue", "DELETE", JSONObject()) { refresh() }
@@ -614,7 +615,10 @@ class MainActivity : ComponentActivity() {
         headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = { Text("${song.artist}${if (song.addedByEmail.isNotBlank()) " · ${song.addedByEmail}" else ""}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         leadingContent = { Cover(vm, song, 48.dp) },
-        trailingContent = { if (add) IconButton(onClick = { vm.add(song) }) { Icon(Icons.Default.Add, "Add to queue") } }
+        trailingContent = {
+            if (add) IconButton(onClick = { vm.add(song) }) { Icon(Icons.Default.Add, "Add to queue") }
+            else if (vm.isHost) IconButton(onClick = { vm.remove(song) }) { Icon(Icons.Default.Delete, "Remove from queue") }
+        }
     )
     HorizontalDivider()
 }

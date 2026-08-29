@@ -16,7 +16,7 @@ import {
 import { ping, getRandomSongs, search, scrobble, getSettings, getConnection } from './subsonic.js';
 import {
   recordPlayEvent, fetchStatsFor, fetchTopRated, fetchMostPlayed, fetchRecentlyPlayed,
-  fetchQueue, addToQueue, dequeueNext, clearQueue, clearAutoQueue,
+  fetchQueue, addToQueue, dequeueNext, clearQueue, clearAutoQueue, removeFromQueue,
   getNowPlaying, updateNowPlaying, updatePlaybackPosition, voteOnCurrent, getVoteCounts, clearOldVotes,
   getCooldownMinutes, setCooldownMinutes, getMaxRequestsPerUser, setMaxRequestsPerUser,
   getJukeboxMode, setJukeboxMode,
@@ -636,6 +636,13 @@ app.delete('/api/queue', requireAuth, (req, res) => {
 app.delete('/api/queue/auto', requireAuth, (req, res) => {
   if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can clear auto songs' });
   clearAutoQueue();
+  broadcastQueue();
+  res.json({ ok: true });
+});
+
+app.delete('/api/queue/:songId', requireAuth, (req, res) => {
+  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can remove queue items' });
+  if (!removeFromQueue(req.params.songId)) return res.status(404).json({ error: 'Song is no longer in the queue' });
   broadcastQueue();
   res.json({ ok: true });
 });
