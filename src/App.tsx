@@ -170,7 +170,7 @@ function JukeboxApp({
       {isHost && !current && !jukeboxMode && (
         <div className="flex items-center justify-center gap-2 border-t border-ink-800 bg-ink-900/60 px-4 py-2 text-center text-xs text-ink-500">
           <Radio className="h-3.5 w-3.5" />
-          Start with Search, then choose Play now. Turn on Jukebox later for continuous playback.
+          Press Play for a random queue, or use Search to choose a specific track.
         </div>
       )}
       <PlayerBar />

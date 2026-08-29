@@ -61,6 +61,7 @@ interface PlayerContextValue {
   playNow: (song: Song) => void;
   enqueue: (song: Song) => void;
   togglePlay: () => void;
+  startRandomPlayback: () => void;
   next: () => void;
   seek: (seconds: number) => void;
   setVolume: (v: number) => void;
@@ -579,20 +580,41 @@ export function PlayerProvider({
     }
   }, [isHost, startPlaying]);
 
+  /** Starts automatic playback from the selected source without requiring a manual search. */
+  const startRandomPlayback = useCallback(() => {
+    if (!isHost || currentRef.current) return;
+    const wasEnabled = jukeboxRef.current;
+    // Asking the server to enable Jukebox also makes sure its random queue is
+    // populated. Do this even when it was already enabled but happened to be
+    // empty, so the idle Play button is always a reliable way to start music.
+    setJukeboxMode(true);
+    jukeboxRef.current = true;
+    void (async () => {
+      try {
+        await setJukeboxModeApi(true);
+        const result = await dequeueNext();
+        if (result.song) startPlaying(result.song, !result.isManual);
+      } catch {
+        setJukeboxMode(wasEnabled);
+        jukeboxRef.current = wasEnabled;
+      }
+    })();
+  }, [dequeueNext, isHost, startPlaying]);
+
   const value = useMemo<PlayerContextValue>(
     () => ({
       connection, isHost, isHostUser, isActivePlayer, current, currentStats, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, statsVersion, voteCounts, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
-      thumbsUp, thumbsDown, toggleJukebox,
+      thumbsUp, thumbsDown, toggleJukebox, startRandomPlayback,
     }),
     [
       connection, isHost, isHostUser, isActivePlayer, current, currentStats, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
       streamError, statsVersion, voteCounts, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
-      thumbsUp, thumbsDown, toggleJukebox,
+      thumbsUp, thumbsDown, toggleJukebox, startRandomPlayback,
     ],
   );
 

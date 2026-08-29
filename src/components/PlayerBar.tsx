@@ -59,6 +59,7 @@ export function PlayerBar() {
     streamError,
     voteCounts,
     togglePlay,
+    startRandomPlayback,
     next,
     seek,
     thumbsUp,
@@ -194,7 +195,7 @@ export function PlayerBar() {
               <div>
                 <p className="text-sm font-medium text-ink-300">Nothing playing</p>
                 <p className="text-xs text-ink-500">
-                  Search your Plex library, then choose Play now to begin.
+                  Press Play for a random queue, or search your Plex library for a specific track.
                 </p>
               </div>
             </div>
@@ -216,9 +217,9 @@ export function PlayerBar() {
             </button>
 
             <button
-              onClick={togglePlay}
-              disabled={!current}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-ink-950 transition hover:scale-105 disabled:opacity-40"
+              onClick={current ? togglePlay : startRandomPlayback}
+              title={current ? (isPlaying ? 'Pause' : 'Play') : 'Start random playback'}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-ink-950 transition hover:scale-105"
             >
               {isPlaying ? (
                 <Pause className="h-5 w-5" fill="currentColor" />

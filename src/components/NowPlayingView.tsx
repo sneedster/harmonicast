@@ -34,7 +34,7 @@ export function NowPlayingView() {
         <p className="text-sm font-medium text-ink-300">Nothing playing right now</p>
         <p className="text-xs text-ink-500">
           {isHost
-            ? 'Search your Plex library, then choose Play now to begin.'
+            ? 'Press Play to start a random queue, or search your Plex library for a specific track.'
             : isHostUser
               ? 'Select Play here above to make this device active, then choose a track from Search.'
             : 'Waiting for the host to start music.'}
