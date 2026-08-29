@@ -21,6 +21,10 @@
 
 ## Future enhancements
 
+- Optional kiosk mode for a tablet or web display: a touch-friendly,
+  TouchTunes-inspired browsing interface with prominent artwork, discovery,
+  search, and queue actions while preserving the shared Resonance queue and
+  active-player model.
 - Optional on-demand Plex metadata views such as lyrics, artist biography, and
   album details. Fetch them only when requested; do not bulk-index them.
 - Better queue controls, including explicit removal/reordering where Android
