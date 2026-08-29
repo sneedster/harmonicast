@@ -43,6 +43,7 @@ export function initDb() {
       username TEXT NOT NULL DEFAULT '',
       password TEXT NOT NULL DEFAULT '',
       server_name TEXT,
+      plex_client_identifier TEXT,
       host_user_id INTEGER,
       cooldown_minutes INTEGER NOT NULL DEFAULT 30,
       max_requests_per_user INTEGER NOT NULL DEFAULT 5,
@@ -158,6 +159,9 @@ export function initDb() {
   }
   if (!settingsColNames.includes('jukebox_mode')) {
     db.exec('ALTER TABLE settings ADD COLUMN jukebox_mode INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!settingsColNames.includes('plex_client_identifier')) {
+    db.exec('ALTER TABLE settings ADD COLUMN plex_client_identifier TEXT');
   }
 
   const npColumns = db.prepare("PRAGMA table_info(now_playing)").all() as { name: string }[];
