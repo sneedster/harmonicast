@@ -8,6 +8,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -437,8 +441,29 @@ class MainActivity : ComponentActivity() {
     val song = vm.nowPlaying.song
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
         val artworkSize = minOf((maxWidth - 12.dp).coerceAtLeast(180.dp), maxHeight * 0.5f)
-        val skipThreshold = with(LocalDensity.current) { 96.dp.toPx() }
+        val density = LocalDensity.current
+        val throwDistance = with(density) { (maxWidth + artworkSize).toPx() }
+        val skipThreshold = throwDistance * 0.35f
         var swipeOffset by remember(song?.id) { mutableFloatStateOf(0f) }
+        var throwingSongAway by remember(song?.id) { mutableStateOf(false) }
+        val animatedSwipeOffset by animateFloatAsState(
+            targetValue = if (throwingSongAway) -throwDistance else swipeOffset,
+            animationSpec = if (throwingSongAway) {
+                tween(durationMillis = 220, easing = FastOutSlowInEasing)
+            } else {
+                spring()
+            },
+            label = "artwork throw",
+            finishedListener = {
+                if (throwingSongAway) {
+                    // Keep the old art off-screen until the next queue update
+                    // replaces it, rather than springing it back into view.
+                    swipeOffset = -throwDistance
+                    throwingSongAway = false
+                    vm.nextSong()
+                }
+            },
+        )
         Column(
             Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -453,12 +478,12 @@ class MainActivity : ComponentActivity() {
                             onHorizontalDrag = { change, amount ->
                                 if (vm.isActivePlayer && amount < 0f) {
                                     change.consume()
-                                    swipeOffset = (swipeOffset + amount).coerceAtLeast(-skipThreshold)
+                                    swipeOffset = (swipeOffset + amount).coerceAtLeast(-throwDistance * 0.8f)
                                 }
                             },
                             onDragEnd = {
-                                if (swipeOffset <= -skipThreshold) vm.nextSong()
-                                swipeOffset = 0f
+                                if (swipeOffset <= -skipThreshold) throwingSongAway = true
+                                else swipeOffset = 0f
                             },
                             onDragCancel = { swipeOffset = 0f },
                         )
@@ -469,9 +494,13 @@ class MainActivity : ComponentActivity() {
                     vm,
                     song,
                     artworkSize,
-                    Modifier.graphicsLayer { translationX = swipeOffset },
+                    Modifier.graphicsLayer {
+                        translationX = animatedSwipeOffset
+                        rotationZ = (animatedSwipeOffset / throwDistance * 14f).coerceAtLeast(-14f)
+                        alpha = (1f + animatedSwipeOffset / throwDistance * 0.55f).coerceIn(0.45f, 1f)
+                    },
                 )
-                if (vm.isActivePlayer && swipeOffset < -12f) {
+                if (vm.isActivePlayer && animatedSwipeOffset < -12f) {
                     Surface(
                         modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
