@@ -6,7 +6,7 @@ an image back to source.
 
 | Channel | Version / tag | Source | Notes |
 | --- | --- | --- | --- |
-| Docker | `mjstrong/resonance:1.0.9` | Release commit | Server and web release; also published as `latest` and an immutable `main-<commit>` tag. Includes album search and the full-screen kiosk attract display. |
+| Docker | `mjstrong/harmonicast:1.0.9` | Release commit | Server and web release; also published as `latest` and an immutable `main-<commit>` tag. Includes album search and the full-screen kiosk attract display. |
 | Android | GitHub release `v1.0.15` / APK `1.0.15` (code 16) | Release commit | Signed Android client with a persistent owner-only Take control action. |
 
 ## Release rules

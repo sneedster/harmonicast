@@ -1,6 +1,6 @@
 services:
   resonance:
-    image: mjstrong/resonance:${RESONANCE_IMAGE_TAG:-latest}
+    image: mjstrong/harmonicast:${RESONANCE_IMAGE_TAG:-latest}
     container_name: resonance
     ports:
       - "${RESONANCE_PORT:-3001}:3001"

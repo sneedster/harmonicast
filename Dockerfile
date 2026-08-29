@@ -11,7 +11,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 ARG VCS_REF=unknown
-LABEL org.opencontainers.image.source="https://github.com/sneedster/resonance" \
+LABEL org.opencontainers.image.source="https://github.com/sneedster/harmonicast" \
       org.opencontainers.image.revision="$VCS_REF"
 
 # Install server dependencies

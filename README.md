@@ -63,10 +63,10 @@ unless you intentionally want to reset the installation and repeat Plex setup.
 
 ### Unraid
 
-Import [`unraid/resonance.xml`](unraid/resonance.xml), or create a container
+Import [`unraid/harmonicast.xml`](unraid/harmonicast.xml), or create a container
 with these settings:
 
-- Image: `mjstrong/resonance:1.0.9` (or `latest`)
+- Image: `mjstrong/harmonicast:1.0.9` (or `latest`)
 - Port: container `3001` mapped to your chosen host port
 - Volume: `/app/data` mapped to an Unraid appdata directory
 - Variable: `PUBLIC_URL` set to the exact browser-facing URL

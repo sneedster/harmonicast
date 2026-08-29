@@ -1,20 +1,20 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>Resonance</Name>
-  <Repository>mjstrong/resonance:1.0.9</Repository>
-  <Registry>https://hub.docker.com/r/mjstrong/resonance</Registry>
+  <Name>Harmonicast</Name>
+  <Repository>mjstrong/harmonicast:1.0.9</Repository>
+  <Registry>https://hub.docker.com/r/mjstrong/harmonicast</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/sneedster/resonance</Support>
-  <Project>https://github.com/sneedster/resonance</Project>
+  <Support>https://github.com/sneedster/harmonicast</Support>
+  <Project>https://github.com/sneedster/harmonicast</Project>
   <Overview>Self-hosted collaborative Plex music jukebox with shared playback, requests, Track Radio, web, Android, Android Auto, and kiosk mode. On first launch, sign in with the Plex account that owns the server and choose its Music library.</Overview>
   <Category>MediaApp:Music</Category>
   <WebUI>http://[IP]:[PORT:3001]</WebUI>
-  <Icon>https://raw.githubusercontent.com/sneedster/resonance/main/public/resonance-icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/sneedster/harmonicast/main/public/resonance-icon.png</Icon>
   <ExtraParams>--security-opt no-new-privileges:true</ExtraParams>
-  <Config Name="Web UI port" Target="3001" Default="3001" Mode="tcp" Description="Resonance web application" Type="Port" Display="always" Required="true" Mask="false">3001</Config>
+  <Config Name="Web UI port" Target="3001" Default="3001" Mode="tcp" Description="Harmonicast web application" Type="Port" Display="always" Required="true" Mask="false">3001</Config>
   <Config Name="Application data" Target="/app/data" Default="/mnt/user/appdata/resonance" Mode="rw" Description="Persistent SQLite database" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/resonance</Config>
-  <Config Name="Public URL" Target="PUBLIC_URL" Default="http://[IP]:[PORT:3001]" Mode="" Description="Exact browser-facing Resonance URL, without a trailing slash. Required for the Plex sign-in return URL." Type="Variable" Display="always" Required="true" Mask="false">http://[IP]:[PORT:3001]</Config>
+  <Config Name="Public URL" Target="PUBLIC_URL" Default="http://[IP]:[PORT:3001]" Mode="" Description="Exact browser-facing Harmonicast URL, without a trailing slash. Required for the Plex sign-in return URL." Type="Variable" Display="always" Required="true" Mask="false">http://[IP]:[PORT:3001]</Config>
   <Config Name="Plex client identifier" Target="PLEX_CLIENT_IDENTIFIER" Default="" Mode="" Description="Optional stable Plex client ID. Leave blank to generate and persist one automatically." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>

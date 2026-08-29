@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Download, QrCode, Smartphone, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
-const ANDROID_APP_DOWNLOAD_URL = 'https://github.com/sneedster/resonance/releases/latest/download/resonance.apk';
+const ANDROID_APP_DOWNLOAD_URL = 'https://github.com/sneedster/harmonicast/releases/latest/download/harmonicast.apk';
 
 export function AndroidAppDownload({ compact = false }: { compact?: boolean }) {
   const [showQr, setShowQr] = useState(false);

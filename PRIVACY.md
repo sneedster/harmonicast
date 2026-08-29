@@ -68,7 +68,7 @@ volume.
 ## Contact
 
 For questions about the upstream software, open an issue at
-https://github.com/sneedster/resonance/issues. For questions about a particular
+https://github.com/sneedster/harmonicast/issues. For questions about a particular
 deployment, contact that deployment's server operator.
 
 ## Relationship to Plex

@@ -2,7 +2,7 @@
 
 ## Deployment
 
-- Docker images are published to `mjstrong/resonance` with a numbered release
+- Docker images are published to `mjstrong/harmonicast` with a numbered release
   tag, `latest`, and an immutable `main-<commit>` tag.
 - `docker-compose.yaml` is pull-only: it never contains `build:`.
 - `/app/data` is the sole persistent application-data path. It contains the

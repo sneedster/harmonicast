@@ -4,11 +4,11 @@
 Categories:
   - Multimedia
 License: AGPL-3.0-or-later
-SourceCode: https://github.com/sneedster/resonance
-IssueTracker: https://github.com/sneedster/resonance/issues
-Changelog: https://github.com/sneedster/resonance/releases
+SourceCode: https://github.com/sneedster/harmonicast
+IssueTracker: https://github.com/sneedster/harmonicast/issues
+Changelog: https://github.com/sneedster/harmonicast/releases
 RepoType: git
-Repo: https://github.com/sneedster/resonance.git
+Repo: https://github.com/sneedster/harmonicast.git
 AntiFeatures:
   NonFreeNet:
     en-US: Requires a Plex account and service to access a Music library.
