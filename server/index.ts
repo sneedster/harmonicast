@@ -34,7 +34,7 @@ import {
 import type { PlexSong } from './plex.js';
 import { createExtensionRequest, extensionTokenIsValid, getExtensionRequest, getMusicSourceExtension, updateExtensionRequest } from './extensions.js';
 import { listPluginSettings, pluginSecretsAreAvailable, savePluginSettings } from './plugin-settings.js';
-import { loadPlugins } from './plugins.js';
+import { installPlugin, loadPlugins } from './plugins.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -983,6 +983,18 @@ app.get('/api/plugins', requireAuth, (req, res) => {
   res.json({ plugins: plugins.map(({ manifest, source, revision, checksum, enabled, status, error }) => ({
     id: manifest.id, displayName: manifest.displayName, settings: manifest.settings || [], source, revision, checksum, enabled, status, error,
   })) });
+});
+
+app.post('/api/plugins/install', requireAuth, async (req, res) => {
+  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can install plugins' });
+  const source = typeof req.body?.source === 'string' ? req.body.source.trim() : '';
+  const revision = typeof req.body?.revision === 'string' ? req.body.revision.trim() : '';
+  try {
+    const plugin = await installPlugin(source, revision);
+    res.status(201).json({ plugin, restartRequired: true });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Could not install plugin' });
+  }
 });
 
 app.put('/api/plugins/:id/settings', requireAuth, (req, res) => {

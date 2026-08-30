@@ -1,5 +1,9 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, normalize, relative, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { DATA_DIR } from './db.js';
 
@@ -46,6 +50,69 @@ function registryEntries(): RegistryEntry[] {
       && typeof (entry as Record<string, unknown>).revision === 'string'
       && typeof (entry as Record<string, unknown>).checksum === 'string');
   } catch { return []; }
+}
+
+function writeRegistry(entries: RegistryEntry[]) {
+  writeFileSync(`${REGISTRY_PATH}.tmp`, JSON.stringify(entries, null, 2), { mode: 0o600 });
+  renameSync(`${REGISTRY_PATH}.tmp`, REGISTRY_PATH);
+}
+
+function githubArchiveUrl(source: string, revision: string): string {
+  let url: URL;
+  try { url = new URL(source); } catch { throw new Error('Plugin source must be a GitHub repository URL'); }
+  const match = url.hostname === 'github.com' && url.pathname.match(/^\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
+  if (!match || url.username || url.password || url.search || url.hash) throw new Error('Plugin source must be a plain GitHub repository URL');
+  if (!/^[A-Za-z0-9._/-]{1,200}$/.test(revision) || revision.includes('..')) throw new Error('Plugin revision must be a tag or commit');
+  return `https://api.github.com/repos/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}/tarball/${encodeURIComponent(revision)}`;
+}
+
+async function run(command: string, args: string[], cwd: string) {
+  await new Promise<void>((resolvePromise, reject) => {
+    const child = spawn(command, args, { cwd, stdio: 'ignore' });
+    child.once('error', () => reject(new Error('Plugin installation tool is unavailable')));
+    child.once('exit', (code) => code === 0 ? resolvePromise() : reject(new Error('Plugin installation failed')));
+  });
+}
+
+/** Installs an immutable GitHub source without exposing repository credentials to the browser. */
+export async function installPlugin(source: string, revision: string) {
+  const archiveUrl = githubArchiveUrl(source, revision);
+  const headers: Record<string, string> = { Accept: 'application/vnd.github+json', 'User-Agent': 'Harmonicast' };
+  const token = process.env.HARMONICAST_PLUGIN_SOURCE_TOKEN?.trim();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(archiveUrl, { headers, redirect: 'follow', signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error('Could not download plugin source');
+  const archive = Buffer.from(await response.arrayBuffer());
+  if (archive.length === 0 || archive.length > 100 * 1024 * 1024) throw new Error('Plugin archive is invalid or too large');
+  const checksum = createHash('sha256').update(archive).digest('hex');
+  const staging = await mkdtemp(join(tmpdir(), 'harmonicast-plugin-'));
+  try {
+    const archivePath = join(staging, 'plugin.tar.gz');
+    await writeFile(archivePath, archive, { mode: 0o600 });
+    await run('tar', ['-xzf', archivePath, '-C', staging], staging);
+    const children = (await readdir(staging, { withFileTypes: true })).filter((entry) => entry.isDirectory());
+    if (children.length !== 1) throw new Error('Plugin archive has an invalid layout');
+    const extracted = join(staging, children[0].name);
+    const manifest = JSON.parse(await readFile(join(extracted, 'harmonicast-plugin.json'), 'utf8')) as unknown;
+    if (!isManifest(manifest)) throw new Error('Plugin manifest is invalid');
+    await run('npm', ['ci', '--omit=dev', '--ignore-scripts'], extracted);
+    await mkdir(PLUGINS_DIR, { recursive: true });
+    const destination = join(PLUGINS_DIR, manifest.id);
+    const replacement = join(PLUGINS_DIR, `${manifest.id}.replacement`);
+    await rm(replacement, { recursive: true, force: true });
+    await rename(extracted, replacement);
+    const entries = registryEntries().filter((entry) => entry.id !== manifest.id);
+    entries.push({ id: manifest.id, directory: manifest.id, enabled: true, source, revision, checksum });
+    const previous = join(PLUGINS_DIR, `${manifest.id}.previous`);
+    await rm(previous, { recursive: true, force: true });
+    if (existsSync(destination)) await rename(destination, previous);
+    await rename(replacement, destination);
+    writeRegistry(entries);
+    await rm(previous, { recursive: true, force: true });
+    return { id: manifest.id, displayName: manifest.displayName, revision, checksum };
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
 }
 
 /** Loads only approved local entries; a broken plugin never blocks Harmonicast startup. */
