@@ -4,7 +4,7 @@ import { usePlayer } from '@/hooks/usePlayer';
 import { AndroidAppDownload } from '@/components/AndroidAppDownload';
 import {
   updateSettings, claimPlayer, listSessions, setDeviceName as setSessionDeviceName,
-  getMusicSourceExtension, getPlexSource, getServerVersion, type MusicSourceExtensionStatus, type PlexSourceInfo, type SessionDevice,
+  getMusicSourceExtension, getPlugins, getPlexSource, getServerVersion, installPlugin, type InstalledPlugin, type MusicSourceExtensionStatus, type PlexSourceInfo, type SessionDevice,
 } from '@/lib/api';
 
 export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
@@ -21,6 +21,9 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   const [plexSource, setPlexSource] = useState<PlexSourceInfo | null>(null);
   const [serverVersion, setServerVersion] = useState<string | null>(null);
   const [musicSourceExtension, setMusicSourceExtension] = useState<MusicSourceExtensionStatus | null>(null);
+  const [plugins, setPlugins] = useState<InstalledPlugin[]>([]);
+  const [pluginSource, setPluginSource] = useState(''); const [pluginRevision, setPluginRevision] = useState('');
+  const [pluginInstallStatus, setPluginInstallStatus] = useState<string | null>(null); const [installingPlugin, setInstallingPlugin] = useState(false);
 
   useEffect(() => { setCooldown(cooldownMinutes); }, [cooldownMinutes]);
   useEffect(() => { setMaxReq(maxRequestsPerUser); }, [maxRequestsPerUser]);
@@ -37,6 +40,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
 
   useEffect(() => { getServerVersion().then(setServerVersion).catch(() => {}); }, []);
   useEffect(() => { if (isHostUser) getMusicSourceExtension().then(setMusicSourceExtension).catch(() => {}); }, [isHostUser]);
+  useEffect(() => { if (isHostUser) getPlugins().then(setPlugins).catch(() => {}); }, [isHostUser]);
 
   const activeDevice = sessions.find(s => s.isActivePlayer);
 
@@ -75,6 +79,19 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
     } catch {
       setStatus('idle');
     }
+  }
+
+  async function handlePluginInstall(e: FormEvent) {
+    e.preventDefault();
+    if (!pluginSource.trim() || !pluginRevision.trim()) return;
+    setInstallingPlugin(true); setPluginInstallStatus(null);
+    try {
+      const result = await installPlugin(pluginSource.trim(), pluginRevision.trim());
+      setPluginInstallStatus(`${result.plugin.displayName} installed. Restart Harmonicast to activate it.`);
+      setPluginSource(''); setPluginRevision('');
+      setPlugins(await getPlugins());
+    } catch (error) { setPluginInstallStatus(error instanceof Error ? error.message : 'Plugin installation failed.'); }
+    finally { setInstallingPlugin(false); }
   }
 
   return (
@@ -213,6 +230,25 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
           </div>
           <div className="rounded-2xl border border-ink-800 bg-ink-900/80 p-6">
             {musicSourceExtension?.available ? <><p className="text-sm font-medium text-white">{musicSourceExtension.displayName} is available</p><p className="mt-2 text-xs leading-relaxed text-ink-500">Guests can use it only after a library search returns no tracks. It is configured outside Harmonicast.</p></> : <><p className="text-sm font-medium text-white">No connected source is available</p><p className="mt-2 text-xs leading-relaxed text-ink-500">Extensions are optional. See the administrator documentation to connect a compatible private source.</p></>}
+          </div>
+        </div>
+      )}
+
+      {isHostUser && (
+        <div>
+          <div className="mb-6 flex items-center gap-2">
+            <PlugZap className="h-5 w-5 text-amber-400" />
+            <h2 className="text-lg font-semibold text-white">Plugins</h2>
+          </div>
+          <div className="space-y-5 rounded-2xl border border-ink-800 bg-ink-900/80 p-6">
+            <p className="text-xs leading-relaxed text-ink-500">Plugins run trusted server code. Install only a repository you control or trust. GitHub sources must be pinned to a tag or commit; a restart activates a newly installed plugin.</p>
+            <form onSubmit={handlePluginInstall} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem_auto]">
+              <input value={pluginSource} onChange={(e) => setPluginSource(e.target.value)} placeholder="https://github.com/owner/plugin" className="rounded-lg border border-ink-700 bg-ink-850 px-3.5 py-2.5 text-sm text-white placeholder:text-ink-500 outline-none focus:border-amber-500/60" />
+              <input value={pluginRevision} onChange={(e) => setPluginRevision(e.target.value)} placeholder="tag or commit" className="rounded-lg border border-ink-700 bg-ink-850 px-3.5 py-2.5 text-sm text-white placeholder:text-ink-500 outline-none focus:border-amber-500/60" />
+              <button type="submit" disabled={installingPlugin || !pluginSource.trim() || !pluginRevision.trim()} className="flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-ink-950 disabled:opacity-60">{installingPlugin && <Loader2 className="h-4 w-4 animate-spin" />} Install</button>
+            </form>
+            {pluginInstallStatus && <p className="text-sm text-amber-300" role="status">{pluginInstallStatus}</p>}
+            <div className="space-y-2">{plugins.map((plugin) => <div key={plugin.id} className="rounded-lg border border-ink-800 bg-ink-850/50 px-4 py-3"><div className="flex items-center justify-between gap-3"><span className="font-medium text-white">{plugin.displayName}</span><span className={plugin.status === 'loaded' ? 'text-xs font-medium text-emerald-400' : 'text-xs font-medium text-amber-300'}>{plugin.status}</span></div><p className="mt-1 truncate text-xs text-ink-500">{plugin.source} · {plugin.revision}</p>{plugin.error && <p className="mt-1 text-xs text-rose-300">{plugin.error}</p>}</div>)}{!plugins.length && <p className="text-sm text-ink-500">No plugins installed.</p>}</div>
           </div>
         </div>
       )}

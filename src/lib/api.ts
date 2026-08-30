@@ -119,6 +119,21 @@ export async function launchMusicSourceExtension(id: string, query: string): Pro
   });
 }
 
+export interface InstalledPlugin {
+  id: string; displayName: string; source: string; revision: string; checksum: string;
+  enabled: boolean; status: 'loaded' | 'disabled' | 'error'; error?: string;
+  settings: { key: string; label: string; type: string; secret?: boolean }[];
+}
+
+export async function getPlugins(): Promise<InstalledPlugin[]> {
+  const result = await request<{ plugins: InstalledPlugin[] }>('/api/plugins');
+  return result.plugins;
+}
+
+export async function installPlugin(source: string, revision: string): Promise<{ plugin: { id: string; displayName: string }; restartRequired: boolean }> {
+  return request('/api/plugins/install', { method: 'POST', body: JSON.stringify({ source, revision }) });
+}
+
 export async function saveConnection(conn: {
   baseUrl: string; username: string; password: string; serverName?: string;
 }): Promise<void> {

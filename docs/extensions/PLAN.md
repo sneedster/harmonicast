@@ -8,6 +8,10 @@ ships the loader and plugin contract only; provider-specific code, credentials,
 and source repositories remain private. The first private plugin will use an
 operator's existing MusicGrabber service.
 
+The currently implemented manifest and install format is documented in
+[`PLUGIN_FORMAT.md`](PLUGIN_FORMAT.md). The router and music-source lifecycle
+host API remain the next implementation milestone.
+
 ## Trust and installation boundary
 
 - A plugin is trusted server-side code. Installing one is equivalent to giving
