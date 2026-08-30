@@ -7,8 +7,10 @@ License: AGPL-3.0-or-later
 SourceCode: https://github.com/sneedster/harmonicast
 IssueTracker: https://github.com/sneedster/harmonicast/issues
 Changelog: https://github.com/sneedster/harmonicast/releases
+
 RepoType: git
 Repo: https://github.com/sneedster/harmonicast.git
+
 Builds:
   - versionName: 1.0.20
     versionCode: 21
