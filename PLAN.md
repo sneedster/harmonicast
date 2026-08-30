@@ -35,3 +35,10 @@ explicitly skipped for local troubleshooting.
 - `RELEASES.md` is the human-readable ledger of the currently published
   Docker image and Android APK. Update it in the same commit that prepares a
   new release.
+
+## Planned: connected music-source extensions
+
+The extension protocol and v1 boundaries are documented in
+[`docs/extensions/PLAN.md`](docs/extensions/PLAN.md). Harmonicast will ship a
+generic, optional external-source interface only; providers are independently
+deployed and no acquisition provider is bundled with the server.
