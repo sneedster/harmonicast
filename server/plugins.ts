@@ -17,6 +17,7 @@ export interface PluginManifest {
   displayName: string;
   apiVersion: number;
   entry: string;
+  capabilities?: string[];
   settings?: { key: string; label: string; type: 'text' | 'url' | 'password' | 'boolean' | 'number'; secret?: boolean }[];
 }
 
@@ -47,6 +48,7 @@ function isManifest(value: unknown): value is PluginManifest {
   return typeof manifest.id === 'string' && /^[a-z][a-z0-9-]{2,63}$/.test(manifest.id)
     && typeof manifest.displayName === 'string' && manifest.displayName.length > 0 && manifest.displayName.length <= 100
     && manifest.apiVersion === PLUGIN_API_VERSION && typeof manifest.entry === 'string'
+    && (manifest.capabilities === undefined || (Array.isArray(manifest.capabilities) && manifest.capabilities.every((capability) => typeof capability === 'string' && /^[a-z][a-z0-9-]{1,63}$/.test(capability))))
     && !isAbsolute(manifest.entry) && !normalize(manifest.entry).startsWith('..');
 }
 
