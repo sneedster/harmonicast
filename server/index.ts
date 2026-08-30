@@ -32,7 +32,7 @@ import {
   plexHeaders, ratePlexTrack, savePersistedPlexSource, scrobblePlexTrack, searchPlexTracks,
 } from './plex.js';
 import type { PlexSong } from './plex.js';
-import { createExtensionRequest, extensionTokenIsValid, getExtensionRequest, getMusicSourceExtension, updateExtensionRequest } from './extensions.js';
+import { createExtensionRequest, createPluginExtensionRequest, extensionTokenIsValid, getExtensionRequest, getMusicSourceExtension, updateExtensionRequest } from './extensions.js';
 import { getPluginSettings, listPluginSettings, pluginSecretsAreAvailable, savePluginSettings } from './plugin-settings.js';
 import { installPlugin, loadPlugins, type MusicSourceStatus } from './plugins.js';
 
@@ -657,6 +657,13 @@ app.post('/api/subsonic', requireAuth, async (req, res) => {
 // ── Connected music-source extensions ─────────────────────────────────
 
 app.get('/api/extensions/music-sources', requireAuth, async (_req, res) => {
+  const plugin = plugins.find((item) => item.status === 'loaded' && item.manifest.capabilities?.includes('music-source'));
+  if (plugin) {
+    try {
+      const available = await plugin.instance?.health?.() === true;
+      return res.json({ extension: { id: plugin.manifest.id, displayName: plugin.manifest.displayName, available } });
+    } catch { return res.json({ extension: { id: plugin.manifest.id, displayName: plugin.manifest.displayName, available: false } }); }
+  }
   const extension = getMusicSourceExtension();
   if (!extension) return res.json({ extension: null });
   try {
@@ -669,10 +676,15 @@ app.get('/api/extensions/music-sources', requireAuth, async (_req, res) => {
 });
 
 app.post('/api/extensions/music-sources/:id/launch', requireAuth, (req, res) => {
-  const extension = getMusicSourceExtension();
-  if (!extension || req.params.id !== extension.id) return res.status(404).json({ error: 'Music-source extension is unavailable' });
+  const plugin = plugins.find((item) => item.status === 'loaded' && item.manifest.id === req.params.id && item.manifest.capabilities?.includes('music-source'));
   const query = typeof req.body?.query === 'string' ? req.body.query.trim().replace(/\s+/g, ' ') : '';
   if (!query || query.length > 200) return res.status(400).json({ error: 'A search query is required' });
+  if (plugin) {
+    const request = createPluginExtensionRequest(plugin.manifest.id, req.user, query);
+    return res.status(201).json({ requestId: request.id, launchUrl: `/api/plugins/${encodeURIComponent(plugin.manifest.id)}/kiosk?requestId=${encodeURIComponent(request.id)}` });
+  }
+  const extension = getMusicSourceExtension();
+  if (!extension || req.params.id !== extension.id) return res.status(404).json({ error: 'Music-source extension is unavailable' });
   const publicBase = (process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
   const launch = createExtensionRequest(extension, req.user, query, `${publicBase}/api/extensions/music-sources/callback`);
   const launchUrl = new URL('/v1/launch', extension.baseUrl);

@@ -37,6 +37,16 @@ export function createExtensionRequest(extension: MusicSourceExtension, user: { 
   return { id, token: signClaims(claims, extension.secret) };
 }
 
+/** Creates a durable request for an in-process plugin; no bridge token exists. */
+export function createPluginExtensionRequest(pluginId: string, user: { id: number; email: string }, query: string) {
+  const id = randomUUID();
+  db.prepare(`INSERT INTO extension_requests
+    (id, extension_id, requester_id, requester_email, query, status, expires_at)
+    VALUES (?, ?, ?, ?, ?, 'resolving', datetime('now', '+1 day'))`
+  ).run(id, pluginId, user.id, user.email, query);
+  return { id };
+}
+
 export function extensionTokenIsValid(extension: MusicSourceExtension, provided: unknown): boolean {
   if (typeof provided !== 'string' || !provided) return false;
   const expected = Buffer.from(extension.secret);
