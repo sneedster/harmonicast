@@ -4,6 +4,7 @@ AntiFeatures:
 Categories:
   - Multimedia
 License: AGPL-3.0-or-later
+AuthorName: Michael Strong
 SourceCode: https://github.com/sneedster/harmonicast
 IssueTracker: https://github.com/sneedster/harmonicast/issues
 Changelog: https://github.com/sneedster/harmonicast/releases
@@ -14,13 +15,12 @@ Repo: https://github.com/sneedster/harmonicast.git
 Builds:
   - versionName: 1.0.20
     versionCode: 21
-    commit: v1.0.20
+    commit: 55c9fd7fd6719b7e1b42419ae5133278c1e6b9bc
     subdir: android
     gradle:
       - yes
-    output: app/build/outputs/apk/release/app-release-unsigned.apk
 
-AutoUpdateMode: None
-UpdateCheckMode: None
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
 CurrentVersion: 1.0.20
 CurrentVersionCode: 21
