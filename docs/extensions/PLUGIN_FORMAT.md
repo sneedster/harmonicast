@@ -48,16 +48,19 @@ password fields and does not return their values to clients.
 The entry module must use ESM and export a default factory function:
 
 ```js
-export default function createPlugin() {
-  return {};
+export default function createPlugin({ dataDir, settings }) {
+  // `settings` includes normal values and server-only decrypted secrets.
+  return { router: undefined };
 }
 ```
 
-At the current loader milestone Harmonicast validates and imports this factory
-at startup. The music-source lifecycle host API and router registration are the
-next contract milestone; do not rely on undeclared server internals or direct
-SQLite access. Keeping the factory side-effect free makes upgrades and failed
-plugin isolation safe.
+At startup Harmonicast calls the factory with a plugin-specific persistent
+`dataDir` and server-only `settings`. A factory may return an Express-compatible
+`router`; Harmonicast mounts it at `/api/plugins/<plugin-id>` behind normal
+Harmonicast authentication. The music-source lifecycle host API is the next
+contract milestone; do not rely on undeclared server internals or direct SQLite
+access. Keeping factory initialization small makes upgrades and failed plugin
+isolation safe.
 
 ## Installation
 

@@ -48,4 +48,10 @@ export function listPluginSettings(pluginId: string) {
     FROM plugin_settings WHERE plugin_id = ? ORDER BY setting_key`).all(pluginId) as { key: string; isSecret: number; updatedAt: string }[];
 }
 
+/** Server-only values for the plugin identified by the host loader. */
+export function getPluginSettings(pluginId: string): Record<string, string> {
+  const rows = db.prepare('SELECT setting_key, value, is_secret FROM plugin_settings WHERE plugin_id = ?').all(pluginId) as { setting_key: string; value: string; is_secret: number }[];
+  return Object.fromEntries(rows.map((row) => [row.setting_key, row.is_secret ? decryptPluginSetting(row.value) : row.value]));
+}
+
 export function pluginSecretsAreAvailable(): boolean { return masterKey() !== null; }

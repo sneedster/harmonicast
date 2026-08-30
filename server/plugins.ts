@@ -5,6 +5,7 @@ import { isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import type { Router } from 'express';
 import { DATA_DIR } from './db.js';
 
 export const PLUGIN_API_VERSION = 1;
@@ -20,7 +21,9 @@ export interface PluginManifest {
 }
 
 interface RegistryEntry { id: string; directory: string; enabled: boolean; source: string; revision: string; checksum: string; }
-export interface LoadedPlugin { manifest: PluginManifest; source: string; revision: string; checksum: string; enabled: boolean; status: 'loaded' | 'disabled' | 'error'; error?: string; }
+export interface PluginHost { dataDir: string; settings: Record<string, string>; }
+export interface PluginInstance { router?: Router; health?: () => Promise<boolean>; }
+export interface LoadedPlugin { manifest: PluginManifest; source: string; revision: string; checksum: string; enabled: boolean; status: 'loaded' | 'disabled' | 'error'; error?: string; instance?: PluginInstance; }
 
 function safePluginPath(directory: string): string | null {
   if (!directory || isAbsolute(directory) || normalize(directory).startsWith('..')) return null;
@@ -116,7 +119,7 @@ export async function installPlugin(source: string, revision: string) {
 }
 
 /** Loads only approved local entries; a broken plugin never blocks Harmonicast startup. */
-export async function loadPlugins(): Promise<LoadedPlugin[]> {
+export async function loadPlugins(createHost: (manifest: PluginManifest) => PluginHost): Promise<LoadedPlugin[]> {
   const seen = new Set<string>();
   const loaded: LoadedPlugin[] = [];
   for (const entry of registryEntries()) {
@@ -132,7 +135,9 @@ export async function loadPlugins(): Promise<LoadedPlugin[]> {
       if (relative(directory, entryPath).startsWith('..')) throw new Error('Invalid plugin entry');
       const module = await import(pathToFileURL(entryPath).href);
       if (typeof module.default !== 'function') throw new Error('Plugin entry must have a default factory export');
-      loaded.push({ manifest, ...entry, status: 'loaded' });
+      const instance = await module.default(createHost(manifest));
+      if (!instance || typeof instance !== 'object') throw new Error('Plugin factory returned an invalid instance');
+      loaded.push({ manifest, ...entry, status: 'loaded', instance });
     } catch {
       loaded.push({ manifest: { id: entry.id, displayName: entry.id, apiVersion: PLUGIN_API_VERSION, entry: '' }, ...entry, status: 'error', error: 'Plugin could not be loaded' });
     }

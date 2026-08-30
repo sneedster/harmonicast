@@ -3,7 +3,7 @@ import cors from 'cors';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { initDb } from './db.js';
+import { DATA_DIR, initDb } from './db.js';
 import {
   authMiddleware, requireAuth, createSession, deleteSession,
   getUserByEmail,
@@ -33,7 +33,7 @@ import {
 } from './plex.js';
 import type { PlexSong } from './plex.js';
 import { createExtensionRequest, extensionTokenIsValid, getExtensionRequest, getMusicSourceExtension, updateExtensionRequest } from './extensions.js';
-import { listPluginSettings, pluginSecretsAreAvailable, savePluginSettings } from './plugin-settings.js';
+import { getPluginSettings, listPluginSettings, pluginSecretsAreAvailable, savePluginSettings } from './plugin-settings.js';
 import { installPlugin, loadPlugins } from './plugins.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -48,7 +48,6 @@ initDb();
 autoConfigureFromEnv();
 purgeExpiredSessions();
 cleanupStaleState();
-const plugins = await loadPlugins();
 
 const app = express();
 
@@ -59,6 +58,10 @@ const PUBLIC_URL = process.env.PUBLIC_URL?.trim().replace(/\/+$/, '') || null;
 app.use(cors(PUBLIC_URL ? { origin: PUBLIC_URL } : { origin: false }));
 app.use(express.json({ limit: '256kb' }));
 app.use(authMiddleware);
+const plugins = await loadPlugins((manifest) => ({ dataDir: join(DATA_DIR, 'plugins', manifest.id, 'data'), settings: getPluginSettings(manifest.id) }));
+for (const plugin of plugins) {
+  if (plugin.status === 'loaded' && plugin.instance?.router) app.use(`/api/plugins/${plugin.manifest.id}`, requireAuth, plugin.instance.router);
+}
 
 function requireActivePlayer(req, res, next) {
   if (!isHost(req.user.id)) {
