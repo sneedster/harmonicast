@@ -4,7 +4,7 @@ import { usePlayer } from '@/hooks/usePlayer';
 import { AndroidAppDownload } from '@/components/AndroidAppDownload';
 import {
   updateSettings, claimPlayer, listSessions, setDeviceName as setSessionDeviceName,
-  getMusicSourceExtension, getPlugins, getPlexSource, getServerVersion, installPlugin, type InstalledPlugin, type MusicSourceExtensionStatus, type PlexSourceInfo, type SessionDevice,
+  getMusicSourceExtension, getPluginSettings, getPlugins, getPlexSource, getServerVersion, installPlugin, savePluginSettings, type InstalledPlugin, type MusicSourceExtensionStatus, type PlexSourceInfo, type SessionDevice,
 } from '@/lib/api';
 
 export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
@@ -24,6 +24,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   const [plugins, setPlugins] = useState<InstalledPlugin[]>([]);
   const [pluginSource, setPluginSource] = useState(''); const [pluginRevision, setPluginRevision] = useState('');
   const [pluginInstallStatus, setPluginInstallStatus] = useState<string | null>(null); const [installingPlugin, setInstallingPlugin] = useState(false);
+  const [pluginValues, setPluginValues] = useState<Record<string, Record<string, string>>>({}); const [pluginSettingsStatus, setPluginSettingsStatus] = useState<Record<string, string>>({});
 
   useEffect(() => { setCooldown(cooldownMinutes); }, [cooldownMinutes]);
   useEffect(() => { setMaxReq(maxRequestsPerUser); }, [maxRequestsPerUser]);
@@ -41,6 +42,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   useEffect(() => { getServerVersion().then(setServerVersion).catch(() => {}); }, []);
   useEffect(() => { if (isHostUser) getMusicSourceExtension().then(setMusicSourceExtension).catch(() => {}); }, [isHostUser]);
   useEffect(() => { if (isHostUser) getPlugins().then(setPlugins).catch(() => {}); }, [isHostUser]);
+  useEffect(() => { for (const plugin of plugins) void getPluginSettings(plugin.id).then(({ settings }) => setPluginValues((current) => ({ ...current, [plugin.id]: Object.fromEntries(settings.map((setting) => [setting.key, setting.value ?? ''])) }))).catch(() => {}); }, [plugins]);
 
   const activeDevice = sessions.find(s => s.isActivePlayer);
 
@@ -92,6 +94,12 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
       setPlugins(await getPlugins());
     } catch (error) { setPluginInstallStatus(error instanceof Error ? error.message : 'Plugin installation failed.'); }
     finally { setInstallingPlugin(false); }
+  }
+  async function handlePluginSettings(plugin: InstalledPlugin) {
+    const values = pluginValues[plugin.id] || {};
+    const settings = Object.fromEntries(plugin.settings.filter((field) => !field.secret || values[field.key]).map((field) => [field.key, { value: values[field.key] || '', secret: Boolean(field.secret) }]));
+    try { await savePluginSettings(plugin.id, settings); setPluginSettingsStatus((current) => ({ ...current, [plugin.id]: 'Saved' })); }
+    catch (error) { setPluginSettingsStatus((current) => ({ ...current, [plugin.id]: error instanceof Error ? error.message : 'Could not save settings' })); }
   }
 
   return (
@@ -248,7 +256,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
               <button type="submit" disabled={installingPlugin || !pluginSource.trim() || !pluginRevision.trim()} className="flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-ink-950 disabled:opacity-60">{installingPlugin && <Loader2 className="h-4 w-4 animate-spin" />} Install</button>
             </form>
             {pluginInstallStatus && <p className="text-sm text-amber-300" role="status">{pluginInstallStatus}</p>}
-            <div className="space-y-2">{plugins.map((plugin) => <div key={plugin.id} className="rounded-lg border border-ink-800 bg-ink-850/50 px-4 py-3"><div className="flex items-center justify-between gap-3"><span className="font-medium text-white">{plugin.displayName}</span><span className={plugin.status === 'loaded' ? 'text-xs font-medium text-emerald-400' : 'text-xs font-medium text-amber-300'}>{plugin.status}</span></div><p className="mt-1 truncate text-xs text-ink-500">{plugin.source} · {plugin.revision}</p>{plugin.error && <p className="mt-1 text-xs text-rose-300">{plugin.error}</p>}</div>)}{!plugins.length && <p className="text-sm text-ink-500">No plugins installed.</p>}</div>
+            <div className="space-y-2">{plugins.map((plugin) => <div key={plugin.id} className="rounded-lg border border-ink-800 bg-ink-850/50 px-4 py-3"><div className="flex items-center justify-between gap-3"><span className="font-medium text-white">{plugin.displayName}</span><span className={plugin.status === 'loaded' ? 'text-xs font-medium text-emerald-400' : 'text-xs font-medium text-amber-300'}>{plugin.status}</span></div><p className="mt-1 truncate text-xs text-ink-500">{plugin.source} · {plugin.revision}</p>{plugin.error && <p className="mt-1 text-xs text-rose-300">{plugin.error}</p>}{plugin.settings.length > 0 && <div className="mt-4 grid gap-3 md:grid-cols-2">{plugin.settings.map((field) => <label key={field.key} className="block"><span className="mb-1 block text-xs font-medium text-ink-400">{field.label}</span><input type={field.secret ? 'password' : field.type === 'number' ? 'number' : field.type === 'url' ? 'url' : 'text'} value={pluginValues[plugin.id]?.[field.key] || ''} placeholder={field.secret ? 'Saved secret is hidden' : ''} onChange={(e) => setPluginValues((current) => ({ ...current, [plugin.id]: { ...current[plugin.id], [field.key]: e.target.value } }))} className="w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500/60" /></label>)}</div>}{plugin.settings.length > 0 && <div className="mt-3 flex items-center gap-3"><button onClick={() => void handlePluginSettings(plugin)} className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-ink-950">Save plugin settings</button>{pluginSettingsStatus[plugin.id] && <span className="text-xs text-amber-300">{pluginSettingsStatus[plugin.id]}</span>}</div>}</div>)}{!plugins.length && <p className="text-sm text-ink-500">No plugins installed.</p>}</div>
           </div>
         </div>
       )}

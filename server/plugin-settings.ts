@@ -44,8 +44,9 @@ export function savePluginSettings(pluginId: string, settings: Record<string, { 
 
 /** Safe for host UI: secret values deliberately have no readable value. */
 export function listPluginSettings(pluginId: string) {
-  return db.prepare(`SELECT setting_key AS key, is_secret AS isSecret, updated_at AS updatedAt
-    FROM plugin_settings WHERE plugin_id = ? ORDER BY setting_key`).all(pluginId) as { key: string; isSecret: number; updatedAt: string }[];
+  return db.prepare(`SELECT setting_key AS key, CASE WHEN is_secret = 1 THEN NULL ELSE value END AS value,
+    is_secret AS isSecret, updated_at AS updatedAt
+    FROM plugin_settings WHERE plugin_id = ? ORDER BY setting_key`).all(pluginId) as { key: string; value: string | null; isSecret: number; updatedAt: string }[];
 }
 
 /** Server-only values for the plugin identified by the host loader. */

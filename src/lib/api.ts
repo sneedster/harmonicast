@@ -134,6 +134,14 @@ export async function installPlugin(source: string, revision: string): Promise<{
   return request('/api/plugins/install', { method: 'POST', body: JSON.stringify({ source, revision }) });
 }
 
+export interface PluginSettingValue { key: string; value: string | null; isSecret: number; updatedAt: string; }
+export async function getPluginSettings(id: string): Promise<{ settings: PluginSettingValue[]; secretsAvailable: boolean }> {
+  return request(`/api/plugins/${encodeURIComponent(id)}/settings`);
+}
+export async function savePluginSettings(id: string, settings: Record<string, { value: string; secret: boolean }>): Promise<void> {
+  await request(`/api/plugins/${encodeURIComponent(id)}/settings`, { method: 'PUT', body: JSON.stringify({ settings }) });
+}
+
 export async function saveConnection(conn: {
   baseUrl: string; username: string; password: string; serverName?: string;
 }): Promise<void> {
