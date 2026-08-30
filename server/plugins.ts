@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, normalize, relative, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import type { Router } from 'express';
@@ -100,7 +99,11 @@ export async function installPlugin(source: string, revision: string) {
   const archive = Buffer.from(await response.arrayBuffer());
   if (archive.length === 0 || archive.length > 100 * 1024 * 1024) throw new Error('Plugin archive is invalid or too large');
   const checksum = createHash('sha256').update(archive).digest('hex');
-  const staging = await mkdtemp(join(tmpdir(), 'harmonicast-plugin-'));
+  // Stage beside the final plugin directory: `rename` is atomic only within a
+  // filesystem, and Docker commonly puts /tmp and the persistent data volume
+  // on different mounts.
+  await mkdir(PLUGINS_DIR, { recursive: true });
+  const staging = await mkdtemp(join(PLUGINS_DIR, '.staging-'));
   try {
     const archivePath = join(staging, 'plugin.tar.gz');
     await writeFile(archivePath, archive, { mode: 0o600 });
@@ -111,7 +114,6 @@ export async function installPlugin(source: string, revision: string) {
     const manifest = JSON.parse(await readFile(join(extracted, 'harmonicast-plugin.json'), 'utf8')) as unknown;
     if (!isManifest(manifest)) throw new Error('Plugin manifest is invalid');
     await run('npm', ['ci', '--omit=dev', '--ignore-scripts'], extracted);
-    await mkdir(PLUGINS_DIR, { recursive: true });
     const destination = join(PLUGINS_DIR, manifest.id);
     const replacement = join(PLUGINS_DIR, `${manifest.id}.replacement`);
     await rm(replacement, { recursive: true, force: true });
