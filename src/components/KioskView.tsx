@@ -22,6 +22,11 @@ export function KioskView({ onExit }: { onExit: () => void }) {
   async function loadPicks() { setLoadingPicks(true); try { setShelves((await discoverLibrary()).shelves); } catch (error) { setMessage(error instanceof Error ? error.message : "Couldn't load picks."); } finally { setLoadingPicks(false); } }
   useEffect(() => { void loadPicks(); }, []);
   useEffect(() => {
+    const clearLaunchState = () => setOpeningMusicSource(false);
+    window.addEventListener('pageshow', clearLaunchState);
+    return () => window.removeEventListener('pageshow', clearLaunchState);
+  }, []);
+  useEffect(() => {
     const timer = window.setTimeout(() => setAttractMode(true), 75_000);
     return () => window.clearTimeout(timer);
   }, [activity]);
