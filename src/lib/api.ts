@@ -124,6 +124,14 @@ export async function launchMusicSourceExtension(id: string, query: string, mode
   });
 }
 
+export interface MusicSourceRecording { id: string; title: string; artist: string; album: string | null; year: string | null; durationMs: number | null; disambiguation: string | null; }
+export async function getMusicSourceRecordings(id: string, requestId: string): Promise<{ recordings: MusicSourceRecording[]; artist?: { id: string; name: string; nextOffset: number } }> {
+  return request(`/api/plugins/${encodeURIComponent(id)}/requests/${encodeURIComponent(requestId)}/recordings`, { method: 'POST' });
+}
+export async function acquireMusicSourceRecording(id: string, requestId: string, recording: MusicSourceRecording): Promise<void> {
+  await request(`/api/plugins/${encodeURIComponent(id)}/requests/${encodeURIComponent(requestId)}/acquire`, { method: 'POST', body: JSON.stringify({ recordingId: recording.id, artist: recording.artist, title: recording.title, durationMs: recording.durationMs }) });
+}
+
 export interface InstalledPlugin {
   id: string; displayName: string; source: string; revision: string; checksum: string;
   enabled: boolean; status: 'loaded' | 'disabled' | 'error'; error?: string;
