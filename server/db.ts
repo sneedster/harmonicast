@@ -113,6 +113,22 @@ export function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_queue_position ON queue(position);
 
+    CREATE TABLE IF NOT EXISTS extension_requests (
+      id TEXT PRIMARY KEY,
+      extension_id TEXT NOT NULL,
+      requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      requester_email TEXT NOT NULL DEFAULT '',
+      query TEXT NOT NULL,
+      status TEXT NOT NULL,
+      message TEXT,
+      plex_track_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_extension_requests_requester ON extension_requests(requester_id, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS now_playing (
       id INTEGER PRIMARY KEY DEFAULT 1,
       song_id TEXT,
@@ -224,4 +240,5 @@ export function initDb() {
     )
   `);
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_song_id ON queue(song_id)');
+  db.exec("DELETE FROM extension_requests WHERE expires_at <= datetime('now')");
 }

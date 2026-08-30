@@ -32,6 +32,7 @@ import {
   plexHeaders, ratePlexTrack, savePersistedPlexSource, scrobblePlexTrack, searchPlexTracks,
 } from './plex.js';
 import type { PlexSong } from './plex.js';
+import { createExtensionRequest, extensionTokenIsValid, getExtensionRequest, getMusicSourceExtension, updateExtensionRequest } from './extensions.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -612,6 +613,76 @@ app.post('/api/subsonic', requireAuth, async (req, res) => {
 });
 
 // ── Queue ─────────────────────────────────────────────────────────────
+
+// ── Connected music-source extensions ─────────────────────────────────
+
+app.get('/api/extensions/music-sources', requireAuth, async (_req, res) => {
+  const extension = getMusicSourceExtension();
+  if (!extension) return res.json({ extension: null });
+  try {
+    const health = await fetch(`${extension.baseUrl}/health`, { signal: AbortSignal.timeout(3_000) });
+    const body = await health.json().catch(() => null) as { available?: unknown } | null;
+    res.json({ extension: { id: extension.id, displayName: extension.displayName, available: health.ok && body?.available === true } });
+  } catch {
+    res.json({ extension: { id: extension.id, displayName: extension.displayName, available: false } });
+  }
+});
+
+app.post('/api/extensions/music-sources/:id/launch', requireAuth, (req, res) => {
+  const extension = getMusicSourceExtension();
+  if (!extension || req.params.id !== extension.id) return res.status(404).json({ error: 'Music-source extension is unavailable' });
+  const query = typeof req.body?.query === 'string' ? req.body.query.trim().replace(/\s+/g, ' ') : '';
+  if (!query || query.length > 200) return res.status(400).json({ error: 'A search query is required' });
+  const publicBase = (process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+  const launch = createExtensionRequest(extension, req.user, query, `${publicBase}/api/extensions/music-sources/callback`);
+  const launchUrl = new URL('/v1/launch', extension.baseUrl);
+  launchUrl.searchParams.set('token', launch.token);
+  res.status(201).json({ requestId: launch.id, launchUrl: launchUrl.toString() });
+});
+
+app.get('/api/extensions/music-sources/requests/:id', requireAuth, (req, res) => {
+  const request = getExtensionRequest(req.params.id);
+  if (!request || request.requester_id !== req.user.id) return res.status(404).json({ error: 'Extension request not found' });
+  res.json({ id: request.id, query: request.query, status: request.status, message: request.message, plexTrackId: request.plex_track_id });
+});
+
+app.post('/api/extensions/music-sources/callback', async (req, res) => {
+  const extension = getMusicSourceExtension();
+  if (!extension || !extensionTokenIsValid(extension, req.header('X-Harmonicast-Extension-Secret'))) {
+    return res.status(401).json({ error: 'Invalid extension credentials' });
+  }
+  const requestId = typeof req.body?.requestId === 'string' ? req.body.requestId : '';
+  const status = typeof req.body?.status === 'string' ? req.body.status : '';
+  const message = typeof req.body?.message === 'string' ? req.body.message.slice(0, 500) : null;
+  const plexTrackId = typeof req.body?.plexTrackId === 'string' ? req.body.plexTrackId : null;
+  if (!requestId || !['resolving', 'acquiring', 'waiting_for_plex', 'failed', 'fulfilled'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid extension callback' });
+  }
+  const request = getExtensionRequest(requestId);
+  if (!request || request.extension_id !== extension.id) return res.status(404).json({ error: 'Extension request not found' });
+  if (request.status === 'fulfilled') return res.json({ ok: true, idempotent: true });
+  if (status !== 'fulfilled') {
+    updateExtensionRequest(requestId, status as 'resolving' | 'acquiring' | 'waiting_for_plex' | 'failed', message, null);
+    return res.json({ ok: true });
+  }
+  if (!plexTrackId) return res.status(400).json({ error: 'A fulfilled request requires plexTrackId' });
+  const source = getActivePlexSource();
+  if (!source) return res.status(409).json({ error: 'Plex source is unavailable' });
+  try {
+    const song = await getPlexTrack(source, plexTrackId);
+    try {
+      addToQueue({ song, userId: request.requester_id, userEmail: request.requester_email, isManual: true, queueKind: 'acquisition' });
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'This song is already in the queue') throw error;
+    }
+    updateExtensionRequest(requestId, 'fulfilled', message || 'Ready — queued next', song.id);
+    broadcastQueue();
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Extension fulfillment failed:', error);
+    res.status(422).json({ error: 'The extension did not return an eligible Plex track' });
+  }
+});
 
 app.get('/api/queue', requireAuth, (req, res) => {
   const rows = fetchQueue();

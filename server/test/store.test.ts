@@ -68,6 +68,24 @@ test('manual requests alternate users and stay ahead of auto queue items', () =>
   assert.equal(dequeueNext()?.song_id, 'bob-1');
 });
 
+test('ready acquisitions take the next-song lane and alternate their requesters', () => {
+  resetDatabase();
+  const alice = createUser('alice@example.test');
+  const bob = createUser('bob@example.test');
+  setCooldownMinutes(0);
+  setMaxRequestsPerUser(5);
+
+  addToQueue({ song: song('request-1'), userId: alice, userEmail: 'alice@example.test' });
+  addToQueue({ song: song('acquired-alice-1'), userId: alice, userEmail: 'alice@example.test', queueKind: 'acquisition' });
+  addToQueue({ song: song('acquired-alice-2'), userId: alice, userEmail: 'alice@example.test', queueKind: 'acquisition' });
+  addToQueue({ song: song('acquired-bob-1'), userId: bob, userEmail: 'bob@example.test', queueKind: 'acquisition' });
+  addToQueue({ song: song('auto-1'), userId: null, userEmail: 'Automatic', isManual: false });
+
+  assert.deepEqual(fetchQueue().map((row: { song_id: string }) => row.song_id), [
+    'acquired-alice-1', 'acquired-bob-1', 'acquired-alice-2', 'request-1', 'auto-1',
+  ]);
+});
+
 test('active player session has exactly one current token', () => {
   resetDatabase();
   setActivePlayerSession('first-player');

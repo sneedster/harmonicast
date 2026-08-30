@@ -154,20 +154,28 @@ export function addToQueue({ song, userId, userEmail, isManual = true, queueKind
 }
 
 function reorderRoundRobin() {
-  const manual = db.prepare(`
+  const reorderManualLane = (queueKind: string, startPosition: number) => {
+    const manual = db.prepare(`
     SELECT id, added_by, ROW_NUMBER() OVER (PARTITION BY added_by ORDER BY position) as user_seq
-    FROM queue WHERE is_manual = 1
+    FROM queue WHERE is_manual = 1 AND queue_kind = ?
     ORDER BY user_seq, added_by
-  `).all();
+    `).all(queueKind);
 
-  let pos = 1;
-  const maxSeq = manual.length > 0 ? Math.max(...manual.map(r => r.user_seq)) : 0;
-  for (let seq = 1; seq <= maxSeq; seq++) {
-    for (const row of manual.filter(r => r.user_seq === seq).sort((a, b) => a.added_by - b.added_by)) {
-      db.prepare('UPDATE queue SET position = ? WHERE id = ?').run(pos, row.id);
-      pos++;
+    let pos = startPosition;
+    const maxSeq = manual.length > 0 ? Math.max(...manual.map(r => r.user_seq)) : 0;
+    for (let seq = 1; seq <= maxSeq; seq++) {
+      for (const row of manual.filter(r => r.user_seq === seq).sort((a, b) => a.added_by - b.added_by)) {
+        db.prepare('UPDATE queue SET position = ? WHERE id = ?').run(pos, row.id);
+        pos++;
+      }
     }
-  }
+    return pos;
+  };
+
+  // Acquired songs become ready asynchronously. They get the next-song lane,
+  // while still alternating fairly when more than one listener has one ready.
+  let pos = reorderManualLane('acquisition', 1);
+  pos = reorderManualLane('request', pos);
 
   const auto = db.prepare('SELECT id FROM queue WHERE is_manual = 0 ORDER BY position').all();
   for (const row of auto) {
