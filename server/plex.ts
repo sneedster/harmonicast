@@ -295,6 +295,27 @@ export async function searchPlexTracks(
   return [...new Map(songs.map((song) => [song.id, song])).values()].slice(0, 40);
 }
 
+/** Return an exact artist match and a bounded catalog suitable for album browsing. */
+export async function browsePlexArtist(source: PlexSource, query: string, fetcher: PlexFetch = fetch): Promise<{ name: string; songs: PlexSong[] } | null> {
+  const search = query.trim();
+  if (!search) return null;
+  const params = new URLSearchParams({ query: search, type: '8', limit: '8' });
+  const [machineIdentifier, container] = await Promise.all([
+    plexSourceMachineIdentifier(source, fetcher),
+    plexServerJson(source, `/library/sections/${source.libraryKey}/search?${params}`, fetcher),
+  ]);
+  const normalized = (value: string) => value.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const artist = metadataArray(container).find((item) => (item.type === 'artist' || item.type === 8)
+    && typeof item.title === 'string' && normalized(item.title) === normalized(search));
+  const ratingKey = typeof artist?.ratingKey === 'string' || typeof artist?.ratingKey === 'number' ? String(artist.ratingKey) : '';
+  if (!ratingKey || typeof artist?.title !== 'string') return null;
+  const tracks = await plexServerJson(source, `/library/metadata/${ratingKey}/allLeaves?type=10&limit=300`, fetcher);
+  return { name: artist.title, songs: metadataArray(tracks).flatMap((metadata) => {
+    const song = mapPlexSong(metadata, machineIdentifier);
+    return song ? [song] : [];
+  }) };
+}
+
 /** Fetch a bounded random page of tracks from the configured Music library. */
 export async function getPlexRandomTracks(
   source: PlexSource,

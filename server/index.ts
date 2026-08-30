@@ -29,7 +29,7 @@ import {
   beginPlexSetup, buildPlexAuthUrl, canAccessConfiguredPlexLibrary, clearPlexSetup, connectOwnedPlexServer,
   createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexRecentlyAddedTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack, getPlexArtistDiscovery,
   getPlexSetup, getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listOwnedPlexServers, listPlexMusicLibraries,
-  plexHeaders, ratePlexTrack, savePersistedPlexSource, scrobblePlexTrack, searchPlexTracks,
+  plexHeaders, ratePlexTrack, savePersistedPlexSource, scrobblePlexTrack, searchPlexTracks, browsePlexArtist,
 } from './plex.js';
 import type { PlexSong } from './plex.js';
 import { createPluginExtensionRequest, getExtensionRequest, updateExtensionRequest } from './extensions.js';
@@ -682,10 +682,11 @@ app.post('/api/extensions/music-sources/:id/launch', requireAuth, (req, res) => 
   const plugin = plugins.find((item) => item.status === 'loaded' && item.manifest.id === req.params.id && item.manifest.capabilities?.includes('music-source'));
   const query = typeof req.body?.query === 'string' ? req.body.query.trim().replace(/\s+/g, ' ') : '';
   const mode = req.body?.mode === 'artist' ? 'artist' : 'search';
+  const returnTo = typeof req.body?.returnTo === 'string' && req.body.returnTo.startsWith('/kiosk') ? req.body.returnTo : '/kiosk';
   if (!query || query.length > 200) return res.status(400).json({ error: 'A search query is required' });
   if (plugin) {
     const request = createPluginExtensionRequest(plugin.manifest.id, req.user, query, mode);
-    return res.status(201).json({ requestId: request.id, launchUrl: `/api/plugins/${encodeURIComponent(plugin.manifest.id)}/kiosk?requestId=${encodeURIComponent(request.id)}` });
+    return res.status(201).json({ requestId: request.id, launchUrl: `/api/plugins/${encodeURIComponent(plugin.manifest.id)}/kiosk?requestId=${encodeURIComponent(request.id)}&returnTo=${encodeURIComponent(returnTo)}` });
   }
   res.status(404).json({ error: 'Music-source plugin is unavailable' });
 });
@@ -1032,6 +1033,16 @@ app.get('/api/search', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Search failed:', err);
     res.status(502).json({ error: 'Could not search the music library' });
+  }
+});
+
+app.get('/api/search/artist', requireAuth, async (req, res) => {
+  const plexSource = getActivePlexSource();
+  if (!plexSource) return res.json({ artist: null });
+  try { res.json({ artist: await browsePlexArtist(plexSource, String(req.query.q || '')) }); }
+  catch (err) {
+    console.error('Plex artist browse failed:', err);
+    res.status(502).json({ error: 'Could not browse the Plex artist' });
   }
 });
 

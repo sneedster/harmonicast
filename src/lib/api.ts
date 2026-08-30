@@ -96,6 +96,11 @@ export async function searchLibrary(query: string): Promise<Song[]> {
   return request(`/api/search?q=${encodeURIComponent(query)}`);
 }
 
+export async function browseLibraryArtist(query: string): Promise<{ name: string; songs: Song[] } | null> {
+  const result = await request<{ artist: { name: string; songs: Song[] } | null }>(`/api/search/artist?q=${encodeURIComponent(query)}`);
+  return result.artist;
+}
+
 /** A small rotating set for visual kiosk browsing; search covers the library. */
 export interface DiscoveryShelf { id: string; title: string; subtitle: string; songs: Song[]; }
 export async function discoverLibrary(): Promise<{ shelves: DiscoveryShelf[] }> {
@@ -113,9 +118,9 @@ export async function getMusicSourceExtension(): Promise<MusicSourceExtensionSta
   return result.extension;
 }
 
-export async function launchMusicSourceExtension(id: string, query: string, mode: 'search' | 'artist' = 'search'): Promise<{ requestId: string; launchUrl: string }> {
+export async function launchMusicSourceExtension(id: string, query: string, mode: 'search' | 'artist' = 'search', returnTo?: string): Promise<{ requestId: string; launchUrl: string }> {
   return request(`/api/extensions/music-sources/${encodeURIComponent(id)}/launch`, {
-    method: 'POST', body: JSON.stringify({ query, mode }),
+    method: 'POST', body: JSON.stringify({ query, mode, returnTo }),
   });
 }
 
