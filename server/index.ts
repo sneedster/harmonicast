@@ -684,6 +684,28 @@ app.post('/api/extensions/music-sources/callback', async (req, res) => {
   }
 });
 
+app.post('/api/extensions/music-sources/lookup', async (req, res) => {
+  const extension = getMusicSourceExtension();
+  if (!extension || !extensionTokenIsValid(extension, req.header('X-Harmonicast-Extension-Secret'))) {
+    return res.status(401).json({ error: 'Invalid extension credentials' });
+  }
+  const requestId = typeof req.body?.requestId === 'string' ? req.body.requestId : '';
+  const query = typeof req.body?.query === 'string' ? req.body.query.trim() : '';
+  const request = getExtensionRequest(requestId);
+  if (!request || request.extension_id !== extension.id || !query || query.length > 200) {
+    return res.status(400).json({ error: 'Invalid extension lookup' });
+  }
+  const source = getActivePlexSource();
+  if (!source) return res.status(409).json({ error: 'Plex source is unavailable' });
+  try {
+    const songs = await searchPlexTracks(source, query);
+    res.json({ songs: songs.slice(0, 10) });
+  } catch (error) {
+    console.error('Extension Plex lookup failed:', error);
+    res.status(502).json({ error: 'Could not search the Plex music library' });
+  }
+});
+
 app.get('/api/queue', requireAuth, (req, res) => {
   const rows = fetchQueue();
   res.json(rows.map(r => ({
