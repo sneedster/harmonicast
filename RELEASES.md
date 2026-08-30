@@ -6,8 +6,8 @@ an image back to source.
 
 | Channel | Version / tag | Source | Notes |
 | --- | --- | --- | --- |
-| Docker | `mjstrong/harmonicast:1.0.17` | Release commit | Harmonicast server and web release; also published as `latest` and an immutable `main-<commit>` tag. |
-| Android | GitHub release `v1.0.15` / APK `1.0.15` (code 16) | Release commit | Signed Android client with a persistent owner-only Take control action. |
+| Docker | `mjstrong/harmonicast:1.0.22` | Release commit | Harmonicast server and web release; also published as `latest` and an immutable `main-<commit>` tag. |
+| Android | GitHub release `v1.0.21` / APK `1.0.21` (code 22) | Release commit | Signed Android client with Android Auto playback and browsing fixes. |
 
 ## Release rules
 

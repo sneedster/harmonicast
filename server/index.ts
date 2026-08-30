@@ -35,7 +35,9 @@ import type { PlexSong } from './plex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
-const SERVER_VERSION = process.env.HARMONICAST_VERSION || '1.0.18';
+// Release images set this during `docker build`; a source checkout should not
+// pretend to be a published release.
+const SERVER_VERSION = process.env.HARMONICAST_VERSION || 'development';
 
 initDb();
 // Retain the legacy Subsonic environment fallback for upgrades. A normal

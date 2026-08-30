@@ -11,7 +11,7 @@ import { QueueView } from '@/components/QueueView';
 import { NowPlayingView } from '@/components/NowPlayingView';
 import { SettingsView } from '@/components/SettingsView';
 import { KioskView } from '@/components/KioskView';
-import { claimPlayer, getConnection, getPlayerStatus, getMe, signOut } from '@/lib/api';
+import { claimPlayer, getConnection, getPlayerStatus, getMe, getServerVersion, signOut } from '@/lib/api';
 
 type Tab = 'nowplaying' | 'search' | 'queue' | 'settings';
 
@@ -83,10 +83,15 @@ function JukeboxApp({
   const [tab, setTab] = useState<Tab>('nowplaying');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchRequest, setSearchRequest] = useState(0);
+  const [serverVersion, setServerVersion] = useState<string | null>(null);
   const openSearch = (query: string) => { setSearchQuery(query); setSearchRequest((value) => value + 1); setTab('search'); };
   const isKiosk = window.location.pathname.replace(/\/+$/, '') === '/kiosk';
   const lastSongIdRef = useRef<string | null>(null);
   const switchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    getServerVersion().then(setServerVersion).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const songId = current?.id ?? null;
@@ -114,7 +119,10 @@ function JukeboxApp({
             <Disc3 className={`h-5 w-5 text-amber-400 ${isPlaying ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
           </div>
           <div>
-            <h1 className="text-base font-semibold leading-none text-white">Harmonicast</h1>
+            <div className="flex items-baseline gap-2">
+              <h1 className="text-base font-semibold leading-none text-white">Harmonicast</h1>
+              {serverVersion && <span className="text-[10px] font-medium text-ink-500">v{serverVersion}</span>}
+            </div>
             <p className="mt-0.5 text-[11px] text-ink-500">
               {connection.serverName || new URL(connection.baseUrl).hostname}
             </p>

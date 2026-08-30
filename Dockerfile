@@ -11,8 +11,10 @@ FROM node:20-alpine
 WORKDIR /app
 
 ARG VCS_REF=unknown
+ARG HARMONICAST_VERSION=development
 LABEL org.opencontainers.image.source="https://github.com/sneedster/harmonicast" \
-      org.opencontainers.image.revision="$VCS_REF"
+      org.opencontainers.image.revision="$VCS_REF" \
+      org.opencontainers.image.version="$HARMONICAST_VERSION"
 
 # Install server dependencies
 COPY server/package.json server/package-lock.json ./server/
@@ -30,6 +32,7 @@ RUN apk add --no-cache su-exec && mkdir -p /app/data && chown -R node:node /app
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV DATA_DIR=/app/data
+ENV HARMONICAST_VERSION=$HARMONICAST_VERSION
 
 EXPOSE 3001
 
