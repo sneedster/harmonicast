@@ -1,90 +1,81 @@
-# Connected music-source extensions: v1 plan
+# Connected music-source plugins: v1 plan
 
 ## Purpose
 
-Harmonicast can offer an external music-source extension only after a completed
-Plex search returns zero tracks. Extensions are independently deployed services
-that resolve a requested recording into a track in Harmonicast's configured
-primary Plex library.
+Harmonicast supports optional, private server plugins that can acquire a song
+after a completed Plex search has returned zero tracks. The public project
+ships the loader and plugin contract only; provider-specific code, credentials,
+and source repositories remain private. The first private plugin will use an
+operator's existing MusicGrabber service.
 
-The first private implementation will talk to an operator's existing
-MusicGrabber service. MusicGrabber-specific code, credentials, sources, and
-deployment instructions are deliberately out of scope for this public
-repository.
+## Trust and installation boundary
 
-## Boundaries
+- A plugin is trusted server-side code. Installing one is equivalent to giving
+  its publisher access to Harmonicast's process and local server data.
+- Only the Harmonicast host can install, update, enable, or remove a plugin.
+- Settings accepts a source URL and immutable Git revision or release tag. It
+  never accepts a floating branch as an installed revision.
+- Harmonicast installs plugin source under persistent app data and records the
+  source, resolved revision, package metadata, and checksum.
+- Repository credentials are deployment-only, read-only container secrets;
+  they never enter Settings, browser requests, SQLite, or logs.
+- Plugins are loaded only at server startup. Install/update reports that a
+  restart is required, avoiding hot-loading privileged code into a live app.
 
-- Harmonicast distributes a generic, documented extension protocol and no
-  extension implementation.
-- An extension is a separate network service. It is not dynamically linked,
-  loaded into Harmonicast's server process, or bundled in the Harmonicast image.
-- Harmonicast never sends its Plex owner token, SQLite access, or a browser
-  session token to an extension.
-- Extension secrets are deployment environment values. Harmonicast Settings
-  displays only non-sensitive availability and health information.
-- v1 extensions fulfill requests only by returning a verified track ID from
-  the configured primary Plex library. Direct playback from another media
-  server is not part of v1.
+## Plugin contract
+
+- A plugin contains a manifest: stable id, display name, API version, server
+  entry point, and declared non-secret configuration schema.
+- Harmonicast imports enabled plugins from its local extension directory at
+  startup. Invalid manifests, duplicate ids, or incompatible API versions
+  disable only that plugin and never prevent the base server from starting.
+- A music-source plugin receives a narrow host API: its data directory,
+  lifecycle updates for its own request, primary-library lookup, and verified
+  fulfillment into the acquisition queue. It never receives raw SQLite access,
+  the Plex owner token, or a browser session token.
+- Plugin kiosk pages are served under Harmonicast's own origin and use the
+  caller's normal authenticated session. A plugin verifies request ownership
+  through the host API before showing or changing a request.
 
 ## User experience
 
 1. A completed kiosk Plex search has no tracks.
-2. If a configured extension reports healthy, the kiosk offers **Search
-   connected music sources**. Otherwise it shows the normal no-results state.
-3. Harmonicast creates a short-lived, single-use launch token bound to the
-   requester and normalized query, then opens the extension's kiosk flow.
-4. The extension resolves ambiguous recordings and performs its own fulfillment
-   work. Harmonicast does not expose its provider-specific UI or credentials.
-5. The extension reports lifecycle states and, only when ready, a verified Plex
-   track ID.
-6. A fulfilled track enters the priority acquisition lane immediately after the
-   current track. Multiple ready acquired tracks use round-robin fairness by
-   requesting user. A request reserves no position while it is unfinished.
+2. If an enabled plugin is healthy, the kiosk offers **Search connected music
+   sources**. Otherwise it presents the normal no-results state.
+3. Harmonicast creates a durable request and opens the plugin's in-origin
+   kiosk page.
+4. The plugin resolves the guest's MusicBrainz choice and performs acquisition.
+   The guest makes that single choice; there is no second confirmation or
+   provider candidate picker.
+5. The plugin reports lifecycle states and fulfills only when the song exists
+   in Harmonicast's configured Plex library.
+6. A fulfilled track enters the priority acquisition lane immediately after
+   the current track. Multiple ready acquisitions alternate by requester.
 
-## Protocol milestones
+## Installation flow
 
-### Public Harmonicast
-
-- Define a versioned extension manifest and strict allow-list configuration.
-- Add authenticated endpoints to list configured extension availability and
-  create launch sessions.
-- Persist extension request state, requester identity, timestamps, lifecycle
-  state, and final Plex track ID. Expire audit data on a bounded retention
-  schedule.
-- Add an idempotent, scoped callback endpoint for extension status updates and
-  fulfillment. Validate that a returned track belongs to the configured Plex
-  library before it can enter the queue.
-- Add the priority acquisition lane to queue ordering without disturbing normal
-  manual/auto queue behavior.
-- Add the kiosk no-result affordance, launch state, and progress/error states.
-- Document the protocol, security requirements, and a mock extension for
-  third-party developers.
-
-### Private adapter
-
-- Live in its own private repository and image.
-- Resolve a guest query through MusicBrainz; the guest makes the sole choice
-  when multiple recordings are plausible.
-- Submit the selected canonical artist/title as a single-track automatic
-  acquisition request to the operator's MusicGrabber service.
-- Poll its job/import lifecycle, wait for Plex indexing, match the imported
-  track, and send only the Plex track ID and allowed status fields back to
-  Harmonicast.
+1. The host enters a repository/archive URL and pinned release tag or commit
+   in Settings, then confirms the trust warning.
+2. Harmonicast downloads the exact revision using its deployment-only source
+   credential when needed, validates the manifest, installs production
+   dependencies, and atomically moves the prepared directory into its plugin
+   store.
+3. Settings displays installed source, revision, checksum, and restart
+   requirement. A failed installation leaves the active plugin unchanged.
+4. On restart, Harmonicast validates and loads enabled plugins. Health and
+   non-sensitive status are host-visible; guests see nothing unless a healthy
+   plugin applies to an empty search.
 
 ## Acceptance criteria
 
-- With no configured or unhealthy extension, a zero-result kiosk search makes
-  no external request and shows no extension action.
-- A healthy extension receives only a single-use launch token and the minimum
-  requester/query context; browser and Plex credentials remain private.
-- A restart of either service does not lose a submitted request or queue an
-  unverified track.
-- Duplicate and slow external requests are safe: each request waits for its own
-  fulfillment and joins the priority lane only after it is ready.
-- Callback retries are idempotent; an extension cannot fulfill another
-  request, a different user's request, or an arbitrary Plex track.
-- Public docs contain no MusicGrabber-specific implementation, endpoint,
-  credential, or source guidance.
-- A mock extension proves the protocol and remains the public example for
-  extension authors.
-
+- An unconfigured or unhealthy plugin causes no external activity and shows no
+  kiosk action.
+- Plugin source is pinned and a failed install cannot replace a known-good
+  plugin.
+- Repository and provider credentials never enter Settings, browser requests,
+  SQLite, logs, or manifests.
+- A plugin cannot inspect another plugin's requests or fulfill an arbitrary
+  Plex track.
+- Restarting Harmonicast or a plugin preserves active acquisition progress and
+  the existing priority and round-robin queue guarantees.
+- Public docs contain no MusicGrabber-specific guidance or credentials.
