@@ -124,7 +124,7 @@ Then build a signed, versioned APK. The result is written to the ignored
 `android/releases/` directory.
 
 ```bash
-VERSION_NAME=1.0.20 VERSION_CODE=21 ./android/build-release.sh
+VERSION_NAME=1.0.21 VERSION_CODE=22 ./android/build-release.sh
 ```
 
 This runs the required server, web, Docker image, and Compose checks before

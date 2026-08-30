@@ -37,12 +37,12 @@ import java.util.concurrent.atomic.AtomicReference
 class HarmonicastMediaService : MediaLibraryService() {
     private lateinit var player: ExoPlayer
     private var mediaLibrarySession: MediaLibrarySession? = null
-    private var lastPublishedBrowserQueueIds: List<String>? = null
     private lateinit var api: Api
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private var webSocket: okhttp3.WebSocket? = null
     private val currentIsAuto = AtomicReference(false)
+    private val androidAutoControllers = mutableSetOf<MediaSession.ControllerInfo>()
     private var positionSaveJob: kotlinx.coroutines.Job? = null
     private var previousMediaItem: MediaItem? = null
 
@@ -55,7 +55,6 @@ class HarmonicastMediaService : MediaLibraryService() {
         const val CLAIM_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.CLAIM_PLAYBACK"
         private val PLAY_SIMILAR_COMMAND = SessionCommand(COMMAND_PLAY_SIMILAR, Bundle())
         private val CLEAR_QUEUE_COMMAND = SessionCommand(COMMAND_CLEAR_QUEUE, Bundle())
-        private val CLAIM_PLAYBACK_COMMAND = SessionCommand(CLAIM_PLAYBACK_ACTION, Bundle())
     }
 
     @OptIn(UnstableApi::class)
@@ -145,7 +144,56 @@ class HarmonicastMediaService : MediaLibraryService() {
                 controller: MediaSession.ControllerInfo
             ): ConnectionResult {
                 Log.d("HarmonicastMedia", "onConnect from: ${controller.packageName}")
-                return ConnectionResult.AcceptedResultBuilder(session).build()
+
+                // The car is the authoritative playback endpoint while it is
+                // connected. Claim immediately instead of leaving a phone or
+                // browser session in control and waiting for a manual action.
+                if (isAndroidAutoController(controller)) {
+                    androidAutoControllers.add(controller)
+                    claimAndroidAutoPlayback()
+                }
+
+                // Android Auto is a MediaBrowser controller. The default
+                // connection result does not grant the library commands it
+                // uses to load the root, browse the request queue, or return
+                // search results. Keep this explicit: a normal phone
+                // MediaController happens to work with the defaults, which
+                // otherwise makes an Auto regression easy to miss.
+                val availableSessionCommands = ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                    .add(SessionCommand.COMMAND_CODE_LIBRARY_SEARCH)
+                    .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_CHILDREN)
+                    .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_ITEM)
+                    .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_LIBRARY_ROOT)
+                    .add(PLAY_SIMILAR_COMMAND)
+                    .add(CLEAR_QUEUE_COMMAND)
+                    .build()
+
+                val availablePlayerCommands = ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
+                    .add(Player.COMMAND_PLAY_PAUSE)
+                    .add(Player.COMMAND_STOP)
+                    .add(Player.COMMAND_SEEK_TO_NEXT)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .add(Player.COMMAND_GET_METADATA)
+                    .add(Player.COMMAND_GET_TIMELINE)
+                    .add(Player.COMMAND_GET_CURRENT_MEDIA_ITEM)
+                    .build()
+
+                return ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailableSessionCommands(availableSessionCommands)
+                    .setAvailablePlayerCommands(availablePlayerCommands)
+                    .build()
+            }
+
+            override fun onDisconnected(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo,
+            ) {
+                if (isAndroidAutoController(controller)) {
+                    androidAutoControllers.remove(controller)
+                }
+                super.onDisconnected(session, controller)
             }
 
             override fun onGetLibraryRoot(
@@ -325,6 +373,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                                 val result = JSONObject(api.json("queue/similar", "POST", JSONObject()))
                                 val added = result.optInt("added", 0)
                                 updateCustomLayout(added > 0)
+                                refreshAndroidAutoQueue(refreshBrowser = true)
                                 Log.d("HarmonicastMedia", "Queued $added Track Radio songs from Android Auto")
                                 SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putInt("added", added) })
                             }
@@ -332,6 +381,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                                 Log.d("HarmonicastMedia", "Android Auto requested queue clear")
                                 api.json("queue", "DELETE", JSONObject())
                                 updateCustomLayout(false)
+                                refreshAndroidAutoQueue(refreshBrowser = true)
                                 SessionResult(SessionResult.RESULT_SUCCESS)
                             }
                             CLAIM_PLAYBACK_ACTION -> {
@@ -432,7 +482,12 @@ class HarmonicastMediaService : MediaLibraryService() {
                         try {
                             val statusJson = api.json("player/status")
                             val isActive = JSONObject(statusJson).optBoolean("isActivePlayer", false)
-                            if (isActive) {
+                            if (androidAutoControllers.isNotEmpty() && !isActive) {
+                                // Another client just claimed playback. A
+                                // connected Android Auto host always wins it
+                                // back, then recreates its local timeline.
+                                claimAndroidAutoPlayback()
+                            } else if (isActive) {
                                 resumeSharedPlayback()
                             } else {
                                 Log.d("HarmonicastMedia", "Another device took over playback — pausing")
@@ -450,26 +505,37 @@ class HarmonicastMediaService : MediaLibraryService() {
         })
     }
 
-    /**
-     * Android Auto has two independent queue surfaces: the browsable Request
-     * queue and its player “Up next” screen. The latter reads ExoPlayer's
-     * timeline, so both need to be updated when the shared queue changes.
-     */
-    private fun refreshAndroidAutoQueue() {
+    private fun isAndroidAutoController(controller: MediaSession.ControllerInfo) =
+        controller.packageName == "com.google.android.projection.gearhead"
+
+    private fun claimAndroidAutoPlayback() {
+        scope.launch {
+            try {
+                Log.d("HarmonicastMedia", "Android Auto connected — claiming playback")
+                api.json("player/claim", "POST", JSONObject())
+                resumeSharedPlayback()
+            } catch (e: Exception) {
+                Log.e("HarmonicastMedia", "Android Auto could not claim playback", e)
+            }
+        }
+    }
+
+    /** Refresh Android Auto's stable browsable Request queue state. */
+    private fun refreshAndroidAutoQueue(refreshBrowser: Boolean = false) {
         scope.launch {
             try {
                 val songs = fetchQueueSongs()
-                val queueIds = songs.map { it.id }
                 updateCustomLayout(songs.any { it.isRadio })
-                // DHU returns the user to the top every time its browsed
-                // children are invalidated. Only notify it when the actual
-                // visible queue has changed; position-only/state broadcasts
-                // still synchronize the player timeline below.
-                if (queueIds != lastPublishedBrowserQueueIds) {
-                    lastPublishedBrowserQueueIds = queueIds
+                // Do not invalidate the browsed Request queue here. DHU
+                // reloads the current browse screen on every invalidation,
+                // which prevents scrolling while a live queue is changing.
+                // Its player “Up next” surface is independent and is kept
+                // current by the timeline update below. Explicit queue actions
+                // originating in Auto request one refresh so its cached
+                // browser list promptly reflects a deliberate add or clear.
+                if (refreshBrowser) {
                     mediaLibrarySession?.notifyChildrenChanged(QUEUE_ID, songs.size, null)
                 }
-                synchronizePlayerTimeline(songs)
             } catch (e: Exception) {
                 Log.e("HarmonicastMedia", "Failed to refresh Android Auto queue", e)
             }
@@ -525,8 +591,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             .toLong()
             .coerceAtLeast(0L)
         if (player.currentMediaItem?.mediaId != song.id) {
-            val queue = fetchQueueSongs().filterNot { it.id == song.id }
-            player.setMediaItems(listOf(createMediaItem(song)) + queue.map(::createMediaItem), 0, positionMs)
+            player.setMediaItem(createMediaItem(song), positionMs)
             player.prepare()
         } else {
             player.seekTo(positionMs)
@@ -540,32 +605,13 @@ class HarmonicastMediaService : MediaLibraryService() {
         }
     }
 
-    private fun synchronizePlayerTimeline(queue: List<Song>) {
-        val current = player.currentMediaItem ?: return
-        // A browsed queue item can be selected directly by Android Auto.
-        // The server removes it as it becomes now playing, but never present a
-        // transient duplicate in Auto's Up next list while that update wins.
-        val desiredItems = listOf(current) + queue
-            .filterNot { it.id == current.mediaId }
-            .map(::createMediaItem)
-        val currentIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
-        val desiredIds = desiredItems.map { it.mediaId }
-        if (player.currentMediaItemIndex == 0 && currentIds == desiredIds) return
-
-        val position = player.currentPosition
-        val wasPlaying = player.isPlaying
-        player.setMediaItems(desiredItems, 0, position)
-        player.prepare()
-        if (wasPlaying) player.play()
-    }
-
     private fun customLayout(radioQueueActive: Boolean) = listOf(
         CommandButton.Builder(if (radioQueueActive) CommandButton.ICON_CHECK_CIRCLE_FILLED else CommandButton.ICON_RADIO)
             .setSessionCommand(PLAY_SIMILAR_COMMAND)
             .setDisplayName(if (radioQueueActive) "Radio queue ready" else "Queue Track Radio")
             .setSlots(CommandButton.SLOT_OVERFLOW)
             .build(),
-        CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+        CommandButton.Builder(CommandButton.ICON_QUEUE_REMOVE)
             .setSessionCommand(CLEAR_QUEUE_COMMAND)
             .setDisplayName("Clear upcoming queue")
             .setSlots(CommandButton.SLOT_OVERFLOW)
@@ -740,13 +786,12 @@ class HarmonicastMediaService : MediaLibraryService() {
                         "scrobble", "POST",
                         JSONObject().put("id", song.id).put("submission", false)
                     )
-                    // `/queue/dequeue` broadcasts before its HTTP response.
-                    // Fetch the completed queue here and install the selected
-                    // next song plus all remaining entries in one operation,
-                    // so that earlier broadcast cannot collapse Auto's
-                    // timeline to a single item.
-                    val timeline = listOf(createMediaItem(song)) + fetchQueueSongs().map(::createMediaItem)
-                    player.setMediaItems(timeline, 0, 0)
+                    // Keep the Media3 timeline to one current item. Its
+                    // legacy Android Auto Queue screen otherwise jumps to the
+                    // active item whenever Media3 republishes playback state.
+                    // The shared Request queue remains the authoritative list
+                    // of upcoming songs, and advance() loads its next song.
+                    player.setMediaItem(createMediaItem(song), 0)
                     player.prepare()
                     player.play()
                 } else {
