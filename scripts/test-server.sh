@@ -10,9 +10,9 @@ docker run --rm \
   -w /tmp \
   node:20-alpine \
   sh -ceu '
-    mkdir /tmp/resonance
-    tar -C /src --exclude=server/node_modules -cf - server | tar -C /tmp/resonance -xf -
-    cd /tmp/resonance/server
+    mkdir /tmp/harmonicast
+    tar -C /src --exclude=server/node_modules -cf - server | tar -C /tmp/harmonicast -xf -
+    cd /tmp/harmonicast/server
     npm ci
     npm test
   '

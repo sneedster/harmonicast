@@ -45,8 +45,8 @@ to web or Android clients.
 
 1. Copy `.env.example` to `.env`.
 2. Set `PUBLIC_URL` to the exact URL users will open, without a trailing slash.
-   For example: `https://resonance.example.com`.
-3. Keep `RESONANCE_IMAGE_TAG=1.0.17` for a pinned release, or change it to
+   For example: `https://harmonicast.example.com`.
+3. Keep `HARMONICAST_IMAGE_TAG=1.0.18` for a pinned release, or change it to
    `latest` if you intentionally want new releases automatically.
 4. Start it:
 
@@ -58,7 +58,7 @@ to web or Android clients.
 5. Open Harmonicast and sign in with Plex. On a new installation, choose an
    owned Plex Media Server and one Music library.
 
-The named `resonance-data` volume holds the SQLite database. Do not remove it
+The named `harmonicast-data` volume holds the SQLite database. Do not remove it
 unless you intentionally want to reset the installation and repeat Plex setup.
 
 ### Unraid
@@ -66,7 +66,7 @@ unless you intentionally want to reset the installation and repeat Plex setup.
 Import [`unraid/harmonicast.xml`](unraid/harmonicast.xml), or create a container
 with these settings:
 
-- Image: `mjstrong/harmonicast:1.0.17` (or `latest`)
+- Image: `mjstrong/harmonicast:1.0.18` (or `latest`)
 - Port: container `3001` mapped to your chosen host port
 - Volume: `/app/data` mapped to an Unraid appdata directory
 - Variable: `PUBLIC_URL` set to the exact browser-facing URL
@@ -124,21 +124,21 @@ Then build a signed, versioned APK. The result is written to the ignored
 `android/releases/` directory.
 
 ```bash
-VERSION_NAME=1.0.15 VERSION_CODE=16 ./android/build-release.sh
+VERSION_NAME=1.0.18 VERSION_CODE=19 ./android/build-release.sh
 ```
 
 This runs the required server, web, Docker image, and Compose checks before
 signing. To upgrade an installed copy, increase both the point version and
 `VERSION_CODE`, then keep the same keystore. Do not distribute an APK if you
-have lost the keystore. `RESONANCE_SKIP_RELEASE_CHECKS=1` is reserved for
+have lost the keystore. `HARMONICAST_SKIP_RELEASE_CHECKS=1` is reserved for
 local troubleshooting; do not use it for a published APK.
 
 ## Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `RESONANCE_PORT` | `3001` | Docker host port |
-| `RESONANCE_IMAGE_TAG` | `latest` | Docker image tag; pin after testing |
+| `HARMONICAST_PORT` | `3001` | Docker host port |
+| `HARMONICAST_IMAGE_TAG` | `latest` | Docker image tag; pin after testing |
 | `PUBLIC_URL` | none | Exact URL used for Plex sign-in return |
 | `PLEX_CLIENT_IDENTIFIER` | generated | Optional stable Plex client ID; generated and persisted when omitted |
 
@@ -169,6 +169,10 @@ Useful local checks:
 ./scripts/release-check.sh
 ./android/build-debug.sh
 ```
+
+Before publishing an Android release, install the signed APK on a physical
+device, take over a track already playing in the web app, and verify audible
+playback plus Play/Pause and Next for at least 10 seconds.
 
 `npm test` runs the server suite in the same Node 20 Alpine runtime as the
 production image. It needs Docker but does not modify the checkout or require

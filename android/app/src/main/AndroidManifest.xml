@@ -10,7 +10,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Resonance"
+        android:theme="@style/Theme.Harmonicast"
         android:usesCleartextTraffic="true">
 
         <activity
@@ -34,7 +34,7 @@
             android:exported="false" />
 
         <service
-            android:name=".ResonanceMediaService"
+            android:name=".HarmonicastMediaService"
             android:enabled="true"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">

@@ -171,7 +171,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
             ) : (
               <button
                 onClick={() => {
-                  const me = sessions.find(s => s.token === localStorage.getItem('resonance_token'));
+                  const me = sessions.find(s => s.token === localStorage.getItem('harmonicast_token'));
                   setDeviceNameInput(me?.deviceName ?? '');
                   setEditingName(true);
                 }}

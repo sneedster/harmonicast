@@ -31,7 +31,7 @@
   discovery views. Metadata is fetched only when opened.
 - Completed: Android Auto queue controls supported by the platform: Track
   Radio, active Radio-queue feedback, and Clear upcoming queue.
-- Deferred: playback-device visibility in Plex. Resonance remains a shared
+- Deferred: playback-device visibility in Plex. Harmonicast remains a shared
   proxy player; do not simulate per-guest Plex clients until Plex offers a
   reliable supported path for proxy/headless player sessions.
 - Completed: weighted auto-queue selection using Plex ratings, play history,

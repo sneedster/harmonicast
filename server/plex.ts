@@ -59,7 +59,7 @@ export interface PlexSong {
   album: string;
   duration: number;
   coverArt: string;
-  // These are shared Plex-account fields. Resonance intentionally does not
+  // These are shared Plex-account fields. Harmonicast intentionally does not
   // maintain a second per-user stats model.
   userRating: number | null;
   viewCount: number;
@@ -233,7 +233,7 @@ function mapPlexSong(metadata: Record<string, unknown>, machineIdentifier: strin
     artist: typeof metadata.grandparentTitle === 'string' ? metadata.grandparentTitle
       : typeof metadata.originalTitle === 'string' ? metadata.originalTitle : 'Unknown artist',
     album: typeof metadata.parentTitle === 'string' ? metadata.parentTitle : '',
-    // Plex reports milliseconds; Resonance has always exposed seconds.
+    // Plex reports milliseconds; Harmonicast exposes seconds.
     duration: Math.max(0, Math.round(Number(metadata.duration ?? 0) / 1000)),
     coverArt: sourceId(machineIdentifier, ratingKey),
     userRating: Number.isFinite(Number(metadata.userRating)) ? Number(metadata.userRating) : null,
@@ -623,7 +623,7 @@ export function buildPlexAuthUrl(pin: Pick<PlexPin, 'code'>, forwardUrl: string)
   return `https://app.plex.tv/auth#?${params.toString()}`;
 }
 
-/** Validate a Plex access token and return the minimum identity Resonance needs. */
+/** Validate a Plex access token and return the minimum identity Harmonicast needs. */
 export async function getPlexAccount(token: string, fetcher: PlexFetch = fetch): Promise<PlexAccount> {
   if (!token) throw new Error('Plex access token is required');
   const response = await fetcher(`${PLEX_API_BASE_URL}/api/v2/user`, {

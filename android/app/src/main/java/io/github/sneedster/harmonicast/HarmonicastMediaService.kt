@@ -34,7 +34,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicReference
 
-class ResonanceMediaService : MediaLibraryService() {
+class HarmonicastMediaService : MediaLibraryService() {
     private lateinit var player: ExoPlayer
     private var mediaLibrarySession: MediaLibrarySession? = null
     private var lastPublishedBrowserQueueIds: List<String>? = null
@@ -47,13 +47,15 @@ class ResonanceMediaService : MediaLibraryService() {
     private var previousMediaItem: MediaItem? = null
 
     companion object {
-        private const val ROOT_ID = "resonance:root"
-        private const val PLAY_RANDOM_ID = "resonance:play-random"
-        private const val QUEUE_ID = "resonance:queue"
-        private const val COMMAND_PLAY_SIMILAR = "android.resonance.PLAY_SIMILAR"
-        private const val COMMAND_CLEAR_QUEUE = "android.resonance.CLEAR_QUEUE"
+        private const val ROOT_ID = "harmonicast:root"
+        private const val PLAY_RANDOM_ID = "harmonicast:play-random"
+        private const val QUEUE_ID = "harmonicast:queue"
+        private const val COMMAND_PLAY_SIMILAR = "io.github.sneedster.harmonicast.PLAY_SIMILAR"
+        private const val COMMAND_CLEAR_QUEUE = "io.github.sneedster.harmonicast.CLEAR_QUEUE"
+        const val CLAIM_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.CLAIM_PLAYBACK"
         private val PLAY_SIMILAR_COMMAND = SessionCommand(COMMAND_PLAY_SIMILAR, Bundle())
         private val CLEAR_QUEUE_COMMAND = SessionCommand(COMMAND_CLEAR_QUEUE, Bundle())
+        private val CLAIM_PLAYBACK_COMMAND = SessionCommand(CLAIM_PLAYBACK_ACTION, Bundle())
     }
 
     @OptIn(UnstableApi::class)
@@ -69,12 +71,12 @@ class ResonanceMediaService : MediaLibraryService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
-        api = Api(getSharedPreferences("resonance", Context.MODE_PRIVATE))
+        api = Api(getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
 
         exoPlayer.addListener(object : Player.Listener {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 Log.e(
-                    "ResonanceMedia",
+                    "HarmonicastMedia",
                     "Playback failed (${error.errorCodeName}): ${error.message ?: "no message"}",
                     error,
                 )
@@ -133,7 +135,7 @@ class ResonanceMediaService : MediaLibraryService() {
         }
         player = exoPlayer
 
-        Log.d("ResonanceMedia", "Service created, base: ${api.base}, token length: ${api.token.length}")
+        Log.d("HarmonicastMedia", "Service created, base: ${api.base}, token length: ${api.token.length}")
 
         connectWebSocket()
 
@@ -142,33 +144,8 @@ class ResonanceMediaService : MediaLibraryService() {
                 session: MediaSession,
                 controller: MediaSession.ControllerInfo
             ): ConnectionResult {
-                Log.d("ResonanceMedia", "onConnect from: ${controller.packageName}")
-
-                val availableSessionCommands = ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
-                    .add(SessionCommand.COMMAND_CODE_LIBRARY_SEARCH)
-                    .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_CHILDREN)
-                    .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_ITEM)
-                    .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_LIBRARY_ROOT)
-                    .add(PLAY_SIMILAR_COMMAND)
-                    .add(CLEAR_QUEUE_COMMAND)
-                    .build()
-
-                val availablePlayerCommands = ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
-                    .add(Player.COMMAND_PLAY_PAUSE)
-                    .add(Player.COMMAND_STOP)
-                    .add(Player.COMMAND_SEEK_TO_NEXT)
-                    .add(Player.COMMAND_SEEK_TO_PREVIOUS)
-                    .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-                    .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-                    .add(Player.COMMAND_GET_METADATA)
-                    .add(Player.COMMAND_GET_TIMELINE)
-                    .add(Player.COMMAND_GET_CURRENT_MEDIA_ITEM)
-                    .build()
-
-                return ConnectionResult.AcceptedResultBuilder(session)
-                    .setAvailableSessionCommands(availableSessionCommands)
-                    .setAvailablePlayerCommands(availablePlayerCommands)
-                    .build()
+                Log.d("HarmonicastMedia", "onConnect from: ${controller.packageName}")
+                return ConnectionResult.AcceptedResultBuilder(session).build()
             }
 
             override fun onGetLibraryRoot(
@@ -182,8 +159,8 @@ class ResonanceMediaService : MediaLibraryService() {
                         MediaMetadata.Builder()
                             .setIsBrowsable(true)
                             .setIsPlayable(false)
-                            .setTitle("Resonance")
-                            .setDisplayTitle("Resonance")
+                            .setTitle("Harmonicast")
+                            .setDisplayTitle("Harmonicast")
                             .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST)
                             .build()
                     )
@@ -203,7 +180,7 @@ class ResonanceMediaService : MediaLibraryService() {
                     val items = listOf(
                         MediaItem.Builder().setMediaId(PLAY_RANDOM_ID).setMediaMetadata(
                             MediaMetadata.Builder().setTitle("Play random music").setDisplayTitle("Play random music")
-                                .setSubtitle("Start the shared Resonance queue").setIsPlayable(true).setIsBrowsable(false)
+                                .setSubtitle("Start the shared Harmonicast queue").setIsPlayable(true).setIsBrowsable(false)
                                 .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).build()
                         ).build(),
                         MediaItem.Builder().setMediaId(QUEUE_ID).setMediaMetadata(
@@ -220,7 +197,7 @@ class ResonanceMediaService : MediaLibraryService() {
                             val items = fetchQueueSongs().map(::createMediaItem)
                             LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                         } catch (e: Exception) {
-                            Log.e("ResonanceMedia", "Get children failed", e)
+                            Log.e("HarmonicastMedia", "Get children failed", e)
                             LibraryResult.ofError(SessionError.ERROR_SESSION_AUTHENTICATION_EXPIRED)
                         }
                     }
@@ -241,7 +218,7 @@ class ResonanceMediaService : MediaLibraryService() {
                                 MediaMetadata.Builder()
                                     .setIsBrowsable(true)
                                     .setIsPlayable(false)
-                                    .setTitle("Resonance")
+                                    .setTitle("Harmonicast")
                                     .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST)
                                     .build()
                             )
@@ -269,7 +246,7 @@ class ResonanceMediaService : MediaLibraryService() {
                             LibraryResult.ofItem(createMediaItem(song), null)
                         }
                     } catch (e: Exception) {
-                        Log.e("ResonanceMedia", "onGetItem failed", e)
+                        Log.e("HarmonicastMedia", "onGetItem failed", e)
                         LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                     }
                 }
@@ -280,7 +257,7 @@ class ResonanceMediaService : MediaLibraryService() {
                 controller: MediaSession.ControllerInfo,
                 mediaItems: MutableList<MediaItem>
             ): ListenableFuture<MutableList<MediaItem>> {
-                Log.d("ResonanceMedia", "onAddMediaItems: ${mediaItems.size} items")
+                Log.d("HarmonicastMedia", "onAddMediaItems: ${mediaItems.size} items")
                 return scope.future {
                     // Android Auto often sends only a media ID when a user
                     // chooses an item from a browsed queue. Resolve it back
@@ -344,23 +321,29 @@ class ResonanceMediaService : MediaLibraryService() {
                     try {
                         when (customCommand.customAction) {
                             COMMAND_PLAY_SIMILAR -> {
-                                Log.d("ResonanceMedia", "Android Auto requested Track Radio queue")
+                                Log.d("HarmonicastMedia", "Android Auto requested Track Radio queue")
                                 val result = JSONObject(api.json("queue/similar", "POST", JSONObject()))
                                 val added = result.optInt("added", 0)
                                 updateCustomLayout(added > 0)
-                                Log.d("ResonanceMedia", "Queued $added Track Radio songs from Android Auto")
+                                Log.d("HarmonicastMedia", "Queued $added Track Radio songs from Android Auto")
                                 SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putInt("added", added) })
                             }
                             COMMAND_CLEAR_QUEUE -> {
-                                Log.d("ResonanceMedia", "Android Auto requested queue clear")
+                                Log.d("HarmonicastMedia", "Android Auto requested queue clear")
                                 api.json("queue", "DELETE", JSONObject())
                                 updateCustomLayout(false)
+                                SessionResult(SessionResult.RESULT_SUCCESS)
+                            }
+                            CLAIM_PLAYBACK_ACTION -> {
+                                Log.d("HarmonicastMedia", "Phone requested playback takeover")
+                                api.json("player/claim", "POST", JSONObject())
+                                resumeSharedPlayback()
                                 SessionResult(SessionResult.RESULT_SUCCESS)
                             }
                             else -> SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
                         }
                     } catch (e: Exception) {
-                        Log.e("ResonanceMedia", "Android Auto custom command failed", e)
+                        Log.e("HarmonicastMedia", "Android Auto custom command failed", e)
                         SessionResult(SessionResult.RESULT_ERROR_UNKNOWN)
                     }
                 }
@@ -372,15 +355,15 @@ class ResonanceMediaService : MediaLibraryService() {
                 query: String,
                 params: LibraryParams?
             ): ListenableFuture<LibraryResult<Void>> {
-                Log.d("ResonanceMedia", "onSearch for: $query")
+                Log.d("HarmonicastMedia", "onSearch for: $query")
                 scope.launch {
                     try {
                         val searchJson = api.json("search?q=" + java.net.URLEncoder.encode(query, "UTF-8"))
                         val array = JSONArray(searchJson)
-                        Log.d("ResonanceMedia", "Search results found: ${array.length()}")
+                        Log.d("HarmonicastMedia", "Search results found: ${array.length()}")
                         session.notifySearchResultChanged(browser, query, array.length(), params)
                     } catch (e: Exception) {
-                        Log.e("ResonanceMedia", "Search failed", e)
+                        Log.e("HarmonicastMedia", "Search failed", e)
                         session.notifySearchResultChanged(browser, query, 0, params)
                     }
                 }
@@ -395,7 +378,7 @@ class ResonanceMediaService : MediaLibraryService() {
                 pageSize: Int,
                 params: LibraryParams?
             ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-                Log.d("ResonanceMedia", "onGetSearchResult for: $query")
+                Log.d("HarmonicastMedia", "onGetSearchResult for: $query")
                 return scope.future {
                     try {
                         val searchJson = api.json("search?q=" + java.net.URLEncoder.encode(query, "UTF-8"))
@@ -406,10 +389,10 @@ class ResonanceMediaService : MediaLibraryService() {
                             val song = Song(o.optString("id"), o.optString("title"), o.optString("artist"), o.optString("album"), o.optInt("duration"), o.optString("coverArt"))
                             items.add(createMediaItem(song))
                         }
-                        Log.d("ResonanceMedia", "Returning ${items.size} search items")
+                        Log.d("HarmonicastMedia", "Returning ${items.size} search items")
                         LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                     } catch (e: Exception) {
-                        Log.e("ResonanceMedia", "Get search result failed", e)
+                        Log.e("HarmonicastMedia", "Get search result failed", e)
                         LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                     }
                 }
@@ -429,7 +412,7 @@ class ResonanceMediaService : MediaLibraryService() {
             setCustomLayout(customLayout(false))
         }.build()
 
-        Log.d("ResonanceMedia", "Session built successfully")
+        Log.d("HarmonicastMedia", "Session built successfully")
     }
 
     private fun connectWebSocket() {
@@ -439,7 +422,7 @@ class ResonanceMediaService : MediaLibraryService() {
             try {
                 val msg = JSONObject(text)
                 val type = msg.optString("type")
-                Log.d("ResonanceMedia", "WS message: $type")
+                Log.d("HarmonicastMedia", "WS message: $type")
                 if (type == "force_skip") {
                     advance("skip")
                 } else if (type == "queue") {
@@ -449,18 +432,20 @@ class ResonanceMediaService : MediaLibraryService() {
                         try {
                             val statusJson = api.json("player/status")
                             val isActive = JSONObject(statusJson).optBoolean("isActivePlayer", false)
-                            if (!isActive) {
-                                Log.d("ResonanceMedia", "Another device took over playback — pausing")
+                            if (isActive) {
+                                resumeSharedPlayback()
+                            } else {
+                                Log.d("HarmonicastMedia", "Another device took over playback — pausing")
                                 player.pause()
                                 stopPositionSaving()
                             }
                         } catch (e: Exception) {
-                            Log.e("ResonanceMedia", "Failed to check player status after session change", e)
+                            Log.e("HarmonicastMedia", "Failed to check player status after session change", e)
                         }
                     }
                 }
             } catch (e: Exception) {
-                Log.e("ResonanceMedia", "Failed to parse WS message", e)
+                Log.e("HarmonicastMedia", "Failed to parse WS message", e)
             }
         })
     }
@@ -486,7 +471,7 @@ class ResonanceMediaService : MediaLibraryService() {
                 }
                 synchronizePlayerTimeline(songs)
             } catch (e: Exception) {
-                Log.e("ResonanceMedia", "Failed to refresh Android Auto queue", e)
+                Log.e("HarmonicastMedia", "Failed to refresh Android Auto queue", e)
             }
         }
     }
@@ -512,8 +497,47 @@ class ResonanceMediaService : MediaLibraryService() {
             item.optInt("duration"), item.optString("coverArt"),
         )
     } catch (e: Exception) {
-        Log.w("ResonanceMedia", "Could not resolve Plex metadata for $id", e)
+        Log.w("HarmonicastMedia", "Could not resolve Plex metadata for $id", e)
         null
+    }
+
+    /**
+     * A player claim switches the server's active session, but it does not
+     * transfer the old device's ExoPlayer timeline. Recreate that timeline on
+     * the newly active device from the shared now-playing state so Media3 has
+     * an actual stream to control.
+     */
+    private suspend fun resumeSharedPlayback() {
+        val state = JSONObject(api.json("now-playing"))
+        val item = state.optJSONObject("song") ?: return
+        val song = Song(
+            item.optString("id"),
+            item.optString("title"),
+            item.optString("artist"),
+            item.optString("album"),
+            item.optInt("duration"),
+            item.optString("coverArt"),
+        )
+        if (song.id.isBlank()) return
+
+        currentIsAuto.set(state.optBoolean("isAutoQueue", false))
+        val positionMs = (state.optDouble("playbackPosition", 0.0) * 1_000)
+            .toLong()
+            .coerceAtLeast(0L)
+        if (player.currentMediaItem?.mediaId != song.id) {
+            val queue = fetchQueueSongs().filterNot { it.id == song.id }
+            player.setMediaItems(listOf(createMediaItem(song)) + queue.map(::createMediaItem), 0, positionMs)
+            player.prepare()
+        } else {
+            player.seekTo(positionMs)
+        }
+
+        if (state.optBoolean("isPlaying", false)) {
+            Log.d("HarmonicastMedia", "Resuming shared playback on this device")
+            player.play()
+        } else {
+            player.pause()
+        }
     }
 
     private fun synchronizePlayerTimeline(queue: List<Song>) {
@@ -555,7 +579,7 @@ class ResonanceMediaService : MediaLibraryService() {
     /**
      * The first item in the player timeline is already out of the server
      * queue. When ExoPlayer advances to its next item automatically, remove
-     * that matching head from Resonance, record the completed play, and let
+     * that matching head from Harmonicast, record the completed play, and let
      * the resulting queue broadcast refresh the timeline again.
      */
     private fun consumeAutomaticQueueTransition(previous: MediaItem, current: MediaItem) {
@@ -577,12 +601,12 @@ class ResonanceMediaService : MediaLibraryService() {
                 val response = JSONObject(api.json("queue/dequeue", "POST", JSONObject()))
                 val dequeued = response.optJSONObject("song")
                 if (dequeued?.optString("id") != current.mediaId) {
-                    Log.w("ResonanceMedia", "Automatic transition did not match the shared queue head")
+                    Log.w("HarmonicastMedia", "Automatic transition did not match the shared queue head")
                 }
                 currentIsAuto.set(!response.optBoolean("isManual", true))
                 syncCurrentPlaybackState(player.isPlaying)
             } catch (e: Exception) {
-                Log.e("ResonanceMedia", "Failed to consume Android Auto queue transition", e)
+                Log.e("HarmonicastMedia", "Failed to consume Android Auto queue transition", e)
             }
         }
     }
@@ -600,10 +624,6 @@ class ResonanceMediaService : MediaLibraryService() {
         val isAuto = currentIsAuto.get()
         scope.launch {
             try {
-                // The server deliberately clears the active session on a
-                // restart. A device that is already playing must reclaim it
-                // before it can restore the shared now-playing state.
-                if (isPlaying) api.json("player/claim", "POST", JSONObject())
                 api.json(
                     "now-playing", "POST",
                     JSONObject()
@@ -617,7 +637,7 @@ class ResonanceMediaService : MediaLibraryService() {
                         .put("isAutoQueue", isAuto)
                 )
             } catch (e: Exception) {
-                Log.e("ResonanceMedia", "Failed to sync play state", e)
+                Log.e("HarmonicastMedia", "Failed to sync play state", e)
             }
         }
     }
@@ -627,7 +647,7 @@ class ResonanceMediaService : MediaLibraryService() {
         positionSaveJob = scope.launch {
             while (true) {
                 kotlinx.coroutines.delay(2000)
-                // ExoPlayer reports milliseconds; the Resonance API stores
+                // ExoPlayer reports milliseconds; the Harmonicast API stores
                 // seconds so browser and Android hosts can resume consistently.
                 val positionSeconds = player.currentPosition / 1000.0
                 if (positionSeconds >= 0) {
@@ -637,7 +657,7 @@ class ResonanceMediaService : MediaLibraryService() {
                             JSONObject().put("position", positionSeconds)
                         )
                     } catch (e: Exception) {
-                        Log.e("ResonanceMedia", "Failed to save position", e)
+                        Log.e("HarmonicastMedia", "Failed to save position", e)
                     }
                 }
             }
@@ -738,7 +758,7 @@ class ResonanceMediaService : MediaLibraryService() {
                     player.stop()
                 }
             } catch (e: Exception) {
-                Log.e("ResonanceMedia", "advance failed", e)
+                Log.e("HarmonicastMedia", "advance failed", e)
             }
         }
     }
@@ -754,7 +774,7 @@ class ResonanceMediaService : MediaLibraryService() {
             next.optString("album"), next.optInt("duration"), next.optString("coverArt"),
         ))
     } catch (e: Exception) {
-        Log.e("ResonanceMedia", "Failed to start random playback", e)
+        Log.e("HarmonicastMedia", "Failed to start random playback", e)
         null
     }
 

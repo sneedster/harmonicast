@@ -1,20 +1,20 @@
 import type { Song } from '@/types';
 
-// API client for the self-hosted Resonance server.
+// API client for the self-hosted Harmonicast server.
 // All requests go to the same origin (the server serves both API and static files).
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 function getToken(): string | null {
-  return localStorage.getItem('resonance_token');
+  return localStorage.getItem('harmonicast_token');
 }
 
 export function setToken(token: string): void {
-  localStorage.setItem('resonance_token', token);
+  localStorage.setItem('harmonicast_token', token);
 }
 
 export function clearToken(): void {
-  localStorage.removeItem('resonance_token');
+  localStorage.removeItem('harmonicast_token');
 }
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {

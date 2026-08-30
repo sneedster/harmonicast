@@ -24,7 +24,7 @@ such as ratings and completed plays.
 ## Data stored by a Harmonicast server
 
 The server stores its data in its local SQLite database (normally the
-`resonance-data` Docker volume). Depending on how it is used, that database can
+`harmonicast-data` Docker volume). Depending on how it is used, that database can
 contain:
 
 - Plex account identifiers, email addresses, and optional display names for

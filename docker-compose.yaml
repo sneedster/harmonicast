@@ -1,19 +1,19 @@
 services:
-  resonance:
-    image: mjstrong/harmonicast:${RESONANCE_IMAGE_TAG:-latest}
-    container_name: resonance
+  harmonicast:
+    image: mjstrong/harmonicast:${HARMONICAST_IMAGE_TAG:-latest}
+    container_name: harmonicast
     ports:
-      - "${RESONANCE_PORT:-3001}:3001"
+      - "${HARMONICAST_PORT:-3001}:3001"
     env_file:
-      - ${RESONANCE_ENV_FILE:-.env}
+      - ${HARMONICAST_ENV_FILE:-.env}
     environment:
       DATA_DIR: /app/data
       PORT: 3001
     volumes:
-      - resonance-data:/app/data
+      - harmonicast-data:/app/data
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
 volumes:
-  resonance-data:
+  harmonicast-data:

@@ -21,19 +21,19 @@ class Api(private val prefs: android.content.SharedPreferences) {
     
     fun setBase(value: String) {
         prefs.edit().putString("base", value.trimEnd('/')).commit()
-        android.util.Log.d("ResonanceApi", "Base URL saved: $value")
+        android.util.Log.d("HarmonicastApi", "Base URL saved: $value")
     }
     
     fun setToken(value: String) {
         prefs.edit().putString("token", value).commit()
-        android.util.Log.d("ResonanceApi", "Token saved, length: ${value.length}")
+        android.util.Log.d("HarmonicastApi", "Token saved, length: ${value.length}")
     }
     
     // Using a more standard request building
     private fun buildRequest(path: String, method: String = "GET", body: JSONObject? = null): Request {
         val t = prefs.getString("token", "") ?: ""
         val b = prefs.getString("base", "") ?: ""
-        android.util.Log.d("ResonanceApi", "buildRequest path: $path, token length: ${t.length}")
+        android.util.Log.d("HarmonicastApi", "buildRequest path: $path, token length: ${t.length}")
         val url = if (b.isEmpty()) "" else "$b/api/$path"
         val builder = Request.Builder().url(url).header("Authorization", "Bearer $t")
         if (method != "GET") {
@@ -50,7 +50,7 @@ class Api(private val prefs: android.content.SharedPreferences) {
             if (!response.isSuccessful) {
                 val message = runCatching { JSONObject(value).optString("error") }
                     .getOrDefault("Request failed (${response.code})")
-                android.util.Log.e("ResonanceApi", "$method /api/$path failed (${response.code}): $message")
+                android.util.Log.e("HarmonicastApi", "$method /api/$path failed (${response.code}): $message")
                 throw IllegalStateException(message.ifBlank { "Request failed (${response.code})" })
             }
             value

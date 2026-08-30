@@ -22,8 +22,10 @@ android {
         applicationId = "io.github.sneedster.harmonicast"
         minSdk = 26
         targetSdk = 35
-        versionCode = providers.gradleProperty("versionCode").orElse("1").get().toInt()
-        versionName = providers.gradleProperty("versionName").orElse("1.0.0").get()
+        // Keep the release version in source so F-Droid builds the metadata's
+        // declared APK without relying on the local release helper.
+        versionCode = providers.gradleProperty("versionCode").orElse("19").get().toInt()
+        versionName = providers.gradleProperty("versionName").orElse("1.0.18").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

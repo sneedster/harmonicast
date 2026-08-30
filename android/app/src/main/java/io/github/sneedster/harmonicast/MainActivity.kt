@@ -24,6 +24,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.*
@@ -57,9 +58,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 
-// Playback control is delegated to ResonanceMediaService via MediaController.
+// Playback control is delegated to HarmonicastMediaService via MediaController.
 // The ViewModel only reads state for display and forwards user commands.
-class ResonanceViewModel : ViewModel() {
+class HarmonicastViewModel : ViewModel() {
     private lateinit var context: Context
     private lateinit var api: Api
     private var socket: okhttp3.WebSocket? = null
@@ -88,13 +89,29 @@ class ResonanceViewModel : ViewModel() {
     fun initialize(appContext: Context) {
         if (::api.isInitialized) return
         context = appContext
-        api = Api(context.getSharedPreferences("resonance", Context.MODE_PRIVATE))
+        api = Api(context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
         savedBaseUrl = api.base
-        
-        val sessionToken = SessionToken(context, ComponentName(context, ResonanceMediaService::class.java))
+
+        // Start our own MediaLibraryService while the activity is visible.
+        // MediaController normally binds a service token itself, but on recent
+        // Pixels that bind can remain pending when the service has never been
+        // started. A live service gives the controller a session immediately.
+        try {
+            context.startService(Intent(context, HarmonicastMediaService::class.java))
+        } catch (e: Exception) {
+            android.util.Log.e("Harmonicast", "Playback service startup failed", e)
+            error = "Playback service could not start"
+        }
+
+        val sessionToken = SessionToken(context, ComponentName(context, HarmonicastMediaService::class.java))
         val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
         controllerFuture.addListener({
-            controller = controllerFuture.get()
+            try {
+                controller = controllerFuture.get()
+            } catch (e: Exception) {
+                android.util.Log.e("Harmonicast", "Playback service connection failed", e)
+                error = "Playback service could not start"
+            }
         }, MoreExecutors.directExecutor())
         
         ready = api.base.isNotBlank() && api.token.isNotBlank()
@@ -109,7 +126,7 @@ class ResonanceViewModel : ViewModel() {
     fun authUrl(): String = "${api.base}/api/auth/plex?mobile_redirect=harmonicast%3A%2F%2Fauth"
     
     fun receiveAuth(uri: Uri) {
-        android.util.Log.d("ResonanceAuth", "receiveAuth called with: $uri")
+        android.util.Log.d("HarmonicastAuth", "receiveAuth called with: $uri")
         val token = uri.fragment?.split("&")?.firstOrNull { it.startsWith("auth_token=") }?.removePrefix("auth_token=") 
             ?: uri.getQueryParameter("auth_token") 
             ?: uri.getQueryParameter("token")
@@ -354,7 +371,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         authUri = intent?.data
         setContent {
-            val vm: ResonanceViewModel = viewModel()
+            val vm: HarmonicastViewModel = viewModel()
             LaunchedEffect(Unit) { vm.initialize(applicationContext) }
             LaunchedEffect(authUri) { authUri?.let(vm::receiveAuth) }
             LaunchedEffect(vm.ready) {
@@ -363,7 +380,7 @@ class MainActivity : ComponentActivity() {
                     vm.refresh()
                 }
             }
-            ResonanceApp(vm)
+            HarmonicastApp(vm)
         }
     }
 
@@ -373,22 +390,22 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun ResonanceApp(vm: ResonanceViewModel) {
+@Composable private fun HarmonicastApp(vm: HarmonicastViewModel) {
     MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xffd0a2ff))) {
         if (!vm.ready) Login(vm) else Home(vm)
     }
 }
 
-@Composable private fun Login(vm: ResonanceViewModel) {
+@Composable private fun Login(vm: HarmonicastViewModel) {
     var server by remember(vm.savedBaseUrl) { mutableStateOf(vm.serverUrl()) }
     val context = LocalContext.current
     Box(Modifier.fillMaxSize().padding(28.dp), Alignment.Center) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Harmonicast", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
             Text("Connect to your self-hosted jukebox.")
-            OutlinedTextField(server, { server = it }, label = { Text("Server URL") }, placeholder = { Text("https://resonance.example.com") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(server, { server = it }, label = { Text("Server URL") }, placeholder = { Text("https://harmonicast.example.com") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Button(onClick = { vm.setServer(server); CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(vm.authUrl())) }, enabled = server.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Login, null)
+                Icon(Icons.AutoMirrored.Filled.Login, null)
                 Spacer(Modifier.width(8.dp))
                 Text("Sign in with Plex")
             }
@@ -398,7 +415,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun Home(vm: ResonanceViewModel) {
+@Composable private fun Home(vm: HarmonicastViewModel) {
     var tab by remember { mutableIntStateOf(0) }
     if (!vm.configured) {
         PlexMusicSetup(vm)
@@ -410,6 +427,10 @@ class MainActivity : ComponentActivity() {
                 title = {
                     Column {
                         Text("Harmonicast")
+                        Text(
+                            "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
                         if (vm.plexSourceLabel.isNotBlank()) {
                             Text(vm.plexSourceLabel, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
@@ -459,7 +480,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun PlexMusicSetup(vm: ResonanceViewModel) {
+@Composable private fun PlexMusicSetup(vm: HarmonicastViewModel) {
     Box(Modifier.fillMaxSize().padding(28.dp), Alignment.Center) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (!vm.needsPlexSetup) {
@@ -493,7 +514,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun Now(vm: ResonanceViewModel, onSearch: (String) -> Unit) {
+@Composable private fun Now(vm: HarmonicastViewModel, onSearch: (String) -> Unit) {
     val song = vm.nowPlaying.song
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
         val artworkSize = minOf((maxWidth - 12.dp).coerceAtLeast(180.dp), maxHeight * 0.5f)
@@ -585,16 +606,9 @@ class MainActivity : ComponentActivity() {
                     },
                 )
             }
-            TextButton(onClick = { onSearch(song.artist) }) { Text(song.artist, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (song.album.isNotBlank()) TextButton(onClick = { onSearch(song.album) }) { Text(song.album, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            val rating = song.rating ?: 0
-            val filledStars = (rating / 2).coerceIn(0, 5)
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                repeat(5) { index -> Icon(if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder, if (index == 0) "Plex rating $rating out of 10" else null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp)) }
-            }
             if (duration > 0f) {
                 Column(Modifier.fillMaxWidth()) {
+                    Text("Playback", style = MaterialTheme.typography.labelMedium)
                     Slider(
                         value = scrubPosition.coerceIn(0f, duration),
                         onValueChange = {
@@ -613,6 +627,14 @@ class MainActivity : ComponentActivity() {
                         Text(formatDuration(duration.toInt()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            }
+            TextButton(onClick = { onSearch(song.artist) }) { Text(song.artist, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (song.album.isNotBlank()) TextButton(onClick = { onSearch(song.album) }) { Text(song.album, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            val rating = song.rating ?: 0
+            val filledStars = (rating / 2).coerceIn(0, 5)
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                repeat(5) { index -> Icon(if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder, if (index == 0) "Plex rating $rating out of 10" else null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp)) }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.ThumbDown, "Vote down") }
@@ -643,7 +665,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun ArtistDiscoveryPage(vm: ResonanceViewModel, song: Song, close: () -> Unit) {
+@Composable private fun ArtistDiscoveryPage(vm: HarmonicastViewModel, song: Song, close: () -> Unit) {
     val listState = rememberLazyListState()
     LazyColumn(
         state = listState,
@@ -718,7 +740,7 @@ private fun formatDuration(totalSeconds: Int): String {
     return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
-@Composable private fun Queue(vm: ResonanceViewModel) {
+@Composable private fun Queue(vm: HarmonicastViewModel) {
     var confirmClear by remember { mutableStateOf(false) }
     if (confirmClear) {
         AlertDialog(
@@ -752,7 +774,7 @@ private fun formatDuration(totalSeconds: Int): String {
     }
 }
 
-@Composable private fun Search(vm: ResonanceViewModel) {
+@Composable private fun Search(vm: HarmonicastViewModel) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(vm.query, { vm.query = it }, label = { Text("Search music") }, singleLine = true, modifier = Modifier.weight(1f))
@@ -764,7 +786,7 @@ private fun formatDuration(totalSeconds: Int): String {
     }
 }
 
-@Composable private fun SongRow(vm: ResonanceViewModel, song: Song, add: Boolean) {
+@Composable private fun SongRow(vm: HarmonicastViewModel, song: Song, add: Boolean) {
     ListItem(
         modifier = Modifier.clickable(enabled = !add && vm.isActivePlayer) { vm.playQueued(song) },
         headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -778,7 +800,7 @@ private fun formatDuration(totalSeconds: Int): String {
     HorizontalDivider()
 }
 
-@Composable private fun Cover(vm: ResonanceViewModel, song: Song, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
+@Composable private fun Cover(vm: HarmonicastViewModel, song: Song, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
     val url = if (song.coverArt.isBlank()) null else "${vm.serverUrl()}/api/cover-art/${URLEncoder.encode(song.coverArt, "UTF-8")}?size=300&token=${URLEncoder.encode(vm.mediaToken(), "UTF-8")}"
     val shape = RoundedCornerShape(if (size >= 180.dp) 24.dp else 12.dp)
     val coverModifier = Modifier.size(size).clip(shape).then(modifier)

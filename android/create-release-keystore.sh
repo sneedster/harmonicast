@@ -15,8 +15,8 @@ if [[ -e "$keystore_file" || -e "$properties_file" ]]; then
   exit 1
 fi
 
-read -r -p "Certificate name [Resonance]: " certificate_name
-certificate_name="${certificate_name:-Resonance}"
+read -r -p "Certificate name [Harmonicast]: " certificate_name
+certificate_name="${certificate_name:-Harmonicast}"
 read -r -s -p "Keystore password: " store_password
 echo
 read -r -s -p "Repeat keystore password: " store_password_repeat
@@ -29,7 +29,7 @@ fi
 "$keytool_bin" -genkeypair \
   -keystore "$keystore_file" \
   -storetype PKCS12 \
-  -alias resonance \
+  -alias harmonicast \
   -keyalg RSA \
   -keysize 4096 \
   -validity 10000 \
@@ -38,7 +38,7 @@ fi
   -keypass "$store_password"
 
 umask 077
-printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=resonance\nkeyPassword=%s\n' \
+printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=harmonicast\nkeyPassword=%s\n' \
   "$store_password" "$store_password" > "$properties_file"
 chmod 600 "$keystore_file" "$properties_file"
 

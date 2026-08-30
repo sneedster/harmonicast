@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'resonance-store-test-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'harmonicast-store-test-'));
 
 const { db, initDb } = await import('../db.js');
 const {

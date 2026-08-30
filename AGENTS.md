@@ -1,4 +1,4 @@
-# Resonance workspace guidance
+# Harmonicast workspace guidance
 
 ## Android builds
 

@@ -18,7 +18,7 @@ class SetupActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val api = Api(getSharedPreferences("resonance", MODE_PRIVATE))
+        val api = Api(getSharedPreferences("harmonicast", MODE_PRIVATE))
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -65,7 +65,7 @@ class SetupActivity : AppCompatActivity() {
 
             lifecycleScope.launch {
                 try {
-                    val apiWithCreds = Api(getSharedPreferences("resonance", MODE_PRIVATE))
+                    val apiWithCreds = Api(getSharedPreferences("harmonicast", MODE_PRIVATE))
                     apiWithCreds.setBase(base)
                     apiWithCreds.setToken(token)
 

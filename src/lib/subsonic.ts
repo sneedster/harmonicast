@@ -71,7 +71,7 @@ export async function scrobble(conn: Connection, id: string, submission: boolean
 }
 
 function authQuery(): string {
-  const token = localStorage.getItem('resonance_token');
+  const token = localStorage.getItem('harmonicast_token');
   return token ? `&token=${encodeURIComponent(token)}` : '';
 }
 

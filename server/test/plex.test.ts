@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import type { PlexFetch, PlexSource } from '../plex.js';
 
-const dataDir = mkdtempSync(join(tmpdir(), 'resonance-plex-test-'));
+const dataDir = mkdtempSync(join(tmpdir(), 'harmonicast-plex-test-'));
 process.env.DATA_DIR = dataDir;
 const { initDb } = await import('../db.js');
 const {

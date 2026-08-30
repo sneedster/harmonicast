@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-if [[ "${RESONANCE_SKIP_RELEASE_CHECKS:-0}" != "1" ]]; then
+if [[ "${HARMONICAST_SKIP_RELEASE_CHECKS:-0}" != "1" ]]; then
   "$script_dir/../scripts/release-check.sh"
 fi
 
@@ -23,8 +23,8 @@ if [[ ! -f "$script_dir/signing.properties" || ! -f "$script_dir/release.keystor
   exit 1
 fi
 
-version_name="${VERSION_NAME:-1.0.0}"
-version_code="${VERSION_CODE:-1}"
+version_name="${VERSION_NAME:-1.0.18}"
+version_code="${VERSION_CODE:-19}"
 if [[ ! "$version_name" =~ ^[0-9A-Za-z._-]+$ || ! "$version_code" =~ ^[1-9][0-9]*$ ]]; then
   echo "VERSION_NAME must use letters, numbers, dots, underscores, or dashes; VERSION_CODE must be a positive integer." >&2
   exit 1

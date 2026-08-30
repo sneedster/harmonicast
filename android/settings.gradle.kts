@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ResonanceAndroid"
+rootProject.name = "HarmonicastAndroid"
 include(":app")

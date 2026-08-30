@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || join(__dirname, '..', 'data');
 mkdirSync(DATA_DIR, { recursive: true });
-const DB_PATH = join(DATA_DIR, 'resonance.db');
+const DB_PATH = join(DATA_DIR, 'harmonicast.db');
 
 export const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');

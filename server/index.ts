@@ -35,7 +35,7 @@ import type { PlexSong } from './plex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
-const SERVER_VERSION = process.env.RESONANCE_VERSION || '1.0.0';
+const SERVER_VERSION = process.env.HARMONICAST_VERSION || '1.0.18';
 
 initDb();
 // Retain the legacy Subsonic environment fallback for upgrades. A normal
@@ -294,9 +294,7 @@ app.get('/api/auth/plex', async (req, res) => {
   const requestedMobileRedirect = req.query.mobile_redirect;
   const mobileRedirect = requestedMobileRedirect === 'harmonicast://auth'
     ? 'harmonicast://auth'
-    : requestedMobileRedirect === 'resonance://auth'
-      ? 'resonance://auth'
-      : null;
+    : null;
   // Keep web return paths deliberately narrow: this state value is later used
   // in a redirect after Plex authentication, so arbitrary URLs are unsafe.
   const webRedirect = req.query.return_to === '/kiosk' ? '/kiosk' : null;
@@ -330,7 +328,7 @@ app.get('/api/auth/plex/callback', async (req, res) => {
     const isFirstUser = userCount() === 0;
     const plexSource = getActivePlexSource();
 
-    // Once a source is selected, Plex library sharing—not a Resonance email
+    // Once a source is selected, Plex library sharing—not a Harmonicast email
     // allowlist—decides whether a guest may sign in.
     if (plexSource && !isFirstUser && !(await canAccessConfiguredPlexLibrary(claimedPin.authToken))) {
       return res.redirect('/?auth_error=not_shared');
@@ -359,7 +357,7 @@ app.get('/api/auth/plex/callback', async (req, res) => {
 
     const token = createSession(user.id, parseDeviceName(req.headers['user-agent']));
     const target = pendingState.redirect || '/';
-    if (target === 'resonance://auth' || target === 'harmonicast://auth') {
+    if (target === 'harmonicast://auth') {
       return res.redirect(`${target}?auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
     }
     return res.redirect(`${target}#auth_token=${token}&auth_email=${encodeURIComponent(user.email)}`);
@@ -490,7 +488,7 @@ app.post('/api/connection', requireAuth, async (req, res) => {
     return res.status(403).json({ error: 'Only the host can change the music server connection' });
   }
   if (getActivePlexSource()) {
-    return res.status(409).json({ error: 'Plex is configured through Resonance setup' });
+    return res.status(409).json({ error: 'Plex is configured through Harmonicast setup' });
   }
 
   const { baseUrl, username, password, serverName } = req.body;
@@ -1081,7 +1079,7 @@ try {
 }
 
 const server = app.listen(PORT, () => {
-  console.log(`Resonance server running on port ${PORT}`);
+  console.log(`Harmonicast server running on port ${PORT}`);
 });
 
 initWebSocket(server);

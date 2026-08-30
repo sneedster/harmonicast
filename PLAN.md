@@ -1,4 +1,4 @@
-# Resonance release contract
+# Harmonicast release contract
 
 ## Deployment
 

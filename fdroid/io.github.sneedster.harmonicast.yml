@@ -12,9 +12,9 @@ AntiFeatures:
   NonFreeNet:
     en-US: Requires a Plex account and service to access a Music library.
 Builds:
-  - versionName: 1.0.17
-    versionCode: 18
-    commit: d38e060fcfe29ba289a9dd7471116aaec6e9008c
+  - versionName: 1.0.18
+    versionCode: 19
+    commit: v1.0.18
     subdir: android
     gradle:
       - yes

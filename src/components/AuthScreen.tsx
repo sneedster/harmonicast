@@ -20,7 +20,7 @@ export function AuthScreen({ onAuth }: { onAuth: (email: string) => void }) {
     const email = hash.get('auth_email');
 
     if (token && email) {
-      localStorage.setItem('resonance_token', token);
+      localStorage.setItem('harmonicast_token', token);
       window.history.replaceState({}, '', returnPath);
       onAuth(email);
       return;
