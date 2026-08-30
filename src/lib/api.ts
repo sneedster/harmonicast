@@ -113,9 +113,9 @@ export async function getMusicSourceExtension(): Promise<MusicSourceExtensionSta
   return result.extension;
 }
 
-export async function launchMusicSourceExtension(id: string, query: string): Promise<{ requestId: string; launchUrl: string }> {
+export async function launchMusicSourceExtension(id: string, query: string, mode: 'search' | 'artist' = 'search'): Promise<{ requestId: string; launchUrl: string }> {
   return request(`/api/extensions/music-sources/${encodeURIComponent(id)}/launch`, {
-    method: 'POST', body: JSON.stringify({ query }),
+    method: 'POST', body: JSON.stringify({ query, mode }),
   });
 }
 

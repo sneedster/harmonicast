@@ -65,7 +65,7 @@ const plugins = await loadPlugins((manifest) => ({
     getRequest(requestId, requesterId) {
       const request = getExtensionRequest(requestId);
       if (!request || request.extension_id !== manifest.id || request.requester_id !== requesterId) return null;
-      return { id: request.id, query: request.query, status: request.status as MusicSourceStatus, message: request.message };
+      return { id: request.id, query: request.query, mode: request.mode, status: request.status as MusicSourceStatus, message: request.message };
     },
     updateRequest(requestId, status, message) {
       const request = getExtensionRequest(requestId);
@@ -681,9 +681,10 @@ app.get('/api/extensions/music-sources', requireAuth, async (_req, res) => {
 app.post('/api/extensions/music-sources/:id/launch', requireAuth, (req, res) => {
   const plugin = plugins.find((item) => item.status === 'loaded' && item.manifest.id === req.params.id && item.manifest.capabilities?.includes('music-source'));
   const query = typeof req.body?.query === 'string' ? req.body.query.trim().replace(/\s+/g, ' ') : '';
+  const mode = req.body?.mode === 'artist' ? 'artist' : 'search';
   if (!query || query.length > 200) return res.status(400).json({ error: 'A search query is required' });
   if (plugin) {
-    const request = createPluginExtensionRequest(plugin.manifest.id, req.user, query);
+    const request = createPluginExtensionRequest(plugin.manifest.id, req.user, query, mode);
     return res.status(201).json({ requestId: request.id, launchUrl: `/api/plugins/${encodeURIComponent(plugin.manifest.id)}/kiosk?requestId=${encodeURIComponent(request.id)}` });
   }
   res.status(404).json({ error: 'Music-source plugin is unavailable' });

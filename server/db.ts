@@ -119,6 +119,7 @@ export function initDb() {
       requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       requester_email TEXT NOT NULL DEFAULT '',
       query TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'search',
       status TEXT NOT NULL,
       message TEXT,
       plex_track_id TEXT,
@@ -229,6 +230,11 @@ export function initDb() {
   if (!queueColumns.some((column) => column.name === 'queue_kind')) {
     db.exec("ALTER TABLE queue ADD COLUMN queue_kind TEXT NOT NULL DEFAULT 'request'");
     db.exec("UPDATE queue SET queue_kind = 'jukebox' WHERE is_manual = 0");
+  }
+
+  const extensionRequestColumns = db.prepare("PRAGMA table_info(extension_requests)").all() as { name: string }[];
+  if (!extensionRequestColumns.some((column) => column.name === 'mode')) {
+    db.exec("ALTER TABLE extension_requests ADD COLUMN mode TEXT NOT NULL DEFAULT 'search'");
   }
 
   // Older releases only checked for an existing queue entry in application
