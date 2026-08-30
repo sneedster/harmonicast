@@ -102,6 +102,23 @@ export async function discoverLibrary(): Promise<{ shelves: DiscoveryShelf[] }> 
   return request('/api/discover');
 }
 
+export interface MusicSourceExtensionStatus {
+  id: string;
+  displayName: string;
+  available: boolean;
+}
+
+export async function getMusicSourceExtension(): Promise<MusicSourceExtensionStatus | null> {
+  const result = await request<{ extension: MusicSourceExtensionStatus | null }>('/api/extensions/music-sources');
+  return result.extension;
+}
+
+export async function launchMusicSourceExtension(id: string, query: string): Promise<{ requestId: string; launchUrl: string }> {
+  return request(`/api/extensions/music-sources/${encodeURIComponent(id)}/launch`, {
+    method: 'POST', body: JSON.stringify({ query }),
+  });
+}
+
 export async function saveConnection(conn: {
   baseUrl: string; username: string; password: string; serverName?: string;
 }): Promise<void> {

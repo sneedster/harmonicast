@@ -1,10 +1,10 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { Settings, Clock, Users, Loader2, Check, MonitorSpeaker, Pencil, Server, Smartphone } from 'lucide-react';
+import { Settings, Clock, Users, Loader2, Check, MonitorSpeaker, Pencil, Server, Smartphone, PlugZap } from 'lucide-react';
 import { usePlayer } from '@/hooks/usePlayer';
 import { AndroidAppDownload } from '@/components/AndroidAppDownload';
 import {
   updateSettings, claimPlayer, listSessions, setDeviceName as setSessionDeviceName,
-  getPlexSource, getServerVersion, type PlexSourceInfo, type SessionDevice,
+  getMusicSourceExtension, getPlexSource, getServerVersion, type MusicSourceExtensionStatus, type PlexSourceInfo, type SessionDevice,
 } from '@/lib/api';
 
 export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
@@ -20,6 +20,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   const [savingName, setSavingName] = useState(false);
   const [plexSource, setPlexSource] = useState<PlexSourceInfo | null>(null);
   const [serverVersion, setServerVersion] = useState<string | null>(null);
+  const [musicSourceExtension, setMusicSourceExtension] = useState<MusicSourceExtensionStatus | null>(null);
 
   useEffect(() => { setCooldown(cooldownMinutes); }, [cooldownMinutes]);
   useEffect(() => { setMaxReq(maxRequestsPerUser); }, [maxRequestsPerUser]);
@@ -35,6 +36,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   }, [isHostUser]);
 
   useEffect(() => { getServerVersion().then(setServerVersion).catch(() => {}); }, []);
+  useEffect(() => { if (isHostUser) getMusicSourceExtension().then(setMusicSourceExtension).catch(() => {}); }, [isHostUser]);
 
   const activeDevice = sessions.find(s => s.isActivePlayer);
 
@@ -199,6 +201,18 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
               </div>
             ))}
             <p className="mt-4 text-xs leading-relaxed text-ink-500">Plex controls guest access: share this Music library in Plex, then guests can sign in to Harmonicast. The owner token stays in local Harmonicast data and is never shown to clients.</p>
+          </div>
+        </div>
+      )}
+
+      {isHostUser && (
+        <div>
+          <div className="mb-6 flex items-center gap-2">
+            <PlugZap className="h-5 w-5 text-amber-400" />
+            <h2 className="text-lg font-semibold text-white">Connected Music Sources</h2>
+          </div>
+          <div className="rounded-2xl border border-ink-800 bg-ink-900/80 p-6">
+            {musicSourceExtension?.available ? <><p className="text-sm font-medium text-white">{musicSourceExtension.displayName} is available</p><p className="mt-2 text-xs leading-relaxed text-ink-500">Guests can use it only after a library search returns no tracks. It is configured outside Harmonicast.</p></> : <><p className="text-sm font-medium text-white">No connected source is available</p><p className="mt-2 text-xs leading-relaxed text-ink-500">Extensions are optional. See the administrator documentation to connect a compatible private source.</p></>}
           </div>
         </div>
       )}
