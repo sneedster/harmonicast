@@ -137,7 +137,7 @@ test('Plex search expands matching album results into playable tracks', async ()
       const type = new URL(url).searchParams.get('type');
       return response({ MediaContainer: { Metadata: type === '9' ? [{ type: 'album', ratingKey: '301', title: 'Album Match' }] : [] } });
     }
-    if (pathname === '/library/metadata/301/allLeaves') return response({ MediaContainer: { Metadata: [{
+    if (pathname === '/library/metadata/301/children') return response({ MediaContainer: { Metadata: [{
       type: 'track', ratingKey: '101', title: 'Album Track', grandparentTitle: 'Artist', parentTitle: 'Album Match', duration: 180_000,
     }] } });
     return new Response('missing', { status: 404 });
@@ -147,7 +147,7 @@ test('Plex search expands matching album results into playable tracks', async ()
   assert.deepEqual(songs.map((song) => song.title), ['Album Track']);
   const albumSearch = requestedUrls.map((url) => new URL(url)).find((url) => url.pathname === '/library/sections/5/search' && url.searchParams.get('type') === '9');
   assert.ok(albumSearch);
-  assert.ok(requestedUrls.some((url) => new URL(url).pathname === '/library/metadata/301/allLeaves'));
+  assert.ok(requestedUrls.some((url) => new URL(url).pathname === '/library/metadata/301/children'));
 });
 
 test('artist discovery includes album context without failing when related artists are unavailable', async () => {

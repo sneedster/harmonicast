@@ -266,14 +266,22 @@ export async function searchPlexTracks(
     plexServerJson(source, `/library/sections/${source.libraryKey}/search?${artistParams}`, fetcher),
     plexServerJson(source, `/library/sections/${source.libraryKey}/search?${albumParams}`, fetcher),
   ]);
-  const collectionRatingKeys = [...metadataArray(artistContainer), ...metadataArray(albumContainer)]
-    .filter((metadata) => metadata.type === 'artist' || metadata.type === 8 || metadata.type === 'album' || metadata.type === 9)
-    .map((metadata) => String(metadata.ratingKey ?? ''))
-    .filter(Boolean);
+  const collectionMatches = [
+    ...metadataArray(artistContainer)
+      .filter((metadata) => metadata.type === 'artist' || metadata.type === 8)
+      .map((metadata) => ({ ratingKey: String(metadata.ratingKey ?? ''), kind: 'artist' as const })),
+    ...metadataArray(albumContainer)
+      .filter((metadata) => metadata.type === 'album' || metadata.type === 9)
+      .map((metadata) => ({ ratingKey: String(metadata.ratingKey ?? ''), kind: 'album' as const })),
+  ].filter((match) => Boolean(match.ratingKey));
   const collectionTrackContainers = await Promise.all(
-    collectionRatingKeys.map((ratingKey) => plexServerJson(
+    collectionMatches.map(({ ratingKey, kind }) => plexServerJson(
       source,
-      `/library/metadata/${ratingKey}/allLeaves?type=10&limit=40`,
+      // Plex exposes an album's playable tracks through /children. Artist
+      // results remain hierarchical, so /allLeaves is the appropriate route.
+      kind === 'album'
+        ? `/library/metadata/${ratingKey}/children?type=10&limit=40`
+        : `/library/metadata/${ratingKey}/allLeaves?type=10&limit=40`,
       fetcher,
     )),
   );

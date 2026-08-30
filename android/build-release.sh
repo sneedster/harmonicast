@@ -23,8 +23,8 @@ if [[ ! -f "$script_dir/signing.properties" || ! -f "$script_dir/release.keystor
   exit 1
 fi
 
-version_name="${VERSION_NAME:-1.0.19}"
-version_code="${VERSION_CODE:-20}"
+version_name="${VERSION_NAME:-1.0.20}"
+version_code="${VERSION_CODE:-21}"
 if [[ ! "$version_name" =~ ^[0-9A-Za-z._-]+$ || ! "$version_code" =~ ^[1-9][0-9]*$ ]]; then
   echo "VERSION_NAME must use letters, numbers, dots, underscores, or dashes; VERSION_CODE must be a positive integer." >&2
   exit 1
