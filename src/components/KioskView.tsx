@@ -61,6 +61,10 @@ export function KioskView({ onExit }: { onExit: () => void }) {
     setOpeningMusicSource(true);
     try {
       const { launchUrl } = await launchMusicSourceExtension(musicSourceExtension.id, query.trim());
+      // The launch request is complete at this point.  Do not retain a busy
+      // state while relying on a browser navigation that may be cancelled,
+      // restored from cache, or opened externally by a kiosk browser.
+      setOpeningMusicSource(false);
       window.location.assign(launchUrl);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Connected music sources are unavailable.');

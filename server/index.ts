@@ -77,7 +77,10 @@ const plugins = await loadPlugins((manifest) => ({
       if (!request || request.extension_id !== manifest.id) throw new Error('Unknown plugin request');
       const source = getActivePlexSource();
       if (!source) throw new Error('Plex source is unavailable');
-      return (await searchPlexTracks(source, query)).slice(0, 10).map((song) => ({ id: song.id, title: song.title, artist: song.artist, album: song.album, duration: song.duration }));
+      // Return the full bounded Plex search result.  A newly indexed track can
+      // otherwise be pushed beyond the first ten results by an artist's older
+      // catalog and never reach an acquisition plugin for verification.
+      return (await searchPlexTracks(source, query)).map((song) => ({ id: song.id, title: song.title, artist: song.artist, album: song.album, duration: song.duration }));
     },
     async fulfill(requestId, plexTrackId, message) {
       const request = getExtensionRequest(requestId);
