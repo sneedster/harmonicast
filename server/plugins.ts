@@ -29,6 +29,7 @@ export interface PluginHost {
     getRequest(requestId: string, requesterId: number): { id: string; query: string; status: MusicSourceStatus; message: string | null } | null;
     updateRequest(requestId: string, status: Exclude<MusicSourceStatus, 'fulfilled'>, message: string): void;
     searchPrimaryLibrary(requestId: string, query: string): Promise<{ id: string; title: string; artist: string; album: string; duration: number }[]>;
+    recentPrimaryLibraryTracks(requestId: string): Promise<{ id: string; title: string; artist: string; album: string; duration: number }[]>;
     fulfill(requestId: string, plexTrackId: string, message: string): Promise<void>;
   };
 }

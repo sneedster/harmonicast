@@ -61,7 +61,7 @@ export function KioskView({ onExit }: { onExit: () => void }) {
     if (!musicSourceExtension || !query.trim()) return;
     setOpeningMusicSource(true);
     try {
-      const returnTo = `/kiosk?tab=search&query=${encodeURIComponent(query.trim())}`;
+      const returnTo = `/kiosk?tab=search&query=${encodeURIComponent(query.trim())}${kioskHost ? '&host=1' : ''}`;
       const { launchUrl } = await launchMusicSourceExtension(musicSourceExtension.id, artist, mode, returnTo);
       // The launch request is complete at this point.  Do not retain a busy
       // state while relying on a browser navigation that may be cancelled,

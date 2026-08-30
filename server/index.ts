@@ -82,6 +82,13 @@ const plugins = await loadPlugins((manifest) => ({
       // catalog and never reach an acquisition plugin for verification.
       return (await searchPlexTracks(source, query)).map((song) => ({ id: song.id, title: song.title, artist: song.artist, album: song.album, duration: song.duration }));
     },
+    async recentPrimaryLibraryTracks(requestId) {
+      const request = getExtensionRequest(requestId);
+      if (!request || request.extension_id !== manifest.id) throw new Error('Unknown plugin request');
+      const source = getActivePlexSource();
+      if (!source) throw new Error('Plex source is unavailable');
+      return (await getPlexRecentlyAddedTracks(source, 100)).map((song) => ({ id: song.id, title: song.title, artist: song.artist, album: song.album, duration: song.duration }));
+    },
     async fulfill(requestId, plexTrackId, message) {
       const request = getExtensionRequest(requestId);
       if (!request || request.extension_id !== manifest.id) throw new Error('Unknown plugin request');
