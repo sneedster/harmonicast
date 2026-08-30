@@ -141,9 +141,21 @@ local troubleshooting; do not use it for a published APK.
 | `HARMONICAST_IMAGE_TAG` | `latest` | Docker image tag; pin after testing |
 | `PUBLIC_URL` | none | Exact URL used for Plex sign-in return |
 | `PLEX_CLIENT_IDENTIFIER` | generated | Optional stable Plex client ID; generated and persisted when omitted |
+| `HARMONICAST_PLUGIN_SOURCE_TOKEN` | none | Read-only GitHub token used only to download private plugin repositories |
+| `HARMONICAST_PLUGIN_SETTINGS_KEY` | none | Base64-encoded 32-byte key required to save plugin secret fields in Settings |
 
 No Plex URL, Plex token, Music library key, or administrator email belongs in
 the environment for a normal first-time setup.
+
+### Plugins
+
+Hosts can install trusted plugins from **Settings → Plugins** by entering a
+GitHub repository URL and an immutable tag or commit. A private repository may
+use `HARMONICAST_PLUGIN_SOURCE_TOKEN`; it is never exposed in Settings. To
+allow write-only plugin API keys and other secrets in Settings, provide a
+base64-encoded 32-byte `HARMONICAST_PLUGIN_SETTINGS_KEY`. Restart Harmonicast
+after installing a plugin or saving its settings. Plugin authors should follow
+the [loadable plugin format](docs/extensions/PLUGIN_FORMAT.md).
 
 ## Development
 

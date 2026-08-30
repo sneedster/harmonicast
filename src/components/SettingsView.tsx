@@ -98,7 +98,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
   async function handlePluginSettings(plugin: InstalledPlugin) {
     const values = pluginValues[plugin.id] || {};
     const settings = Object.fromEntries(plugin.settings.filter((field) => !field.secret || values[field.key]).map((field) => [field.key, { value: values[field.key] || '', secret: Boolean(field.secret) }]));
-    try { await savePluginSettings(plugin.id, settings); setPluginSettingsStatus((current) => ({ ...current, [plugin.id]: 'Saved' })); }
+    try { await savePluginSettings(plugin.id, settings); setPluginSettingsStatus((current) => ({ ...current, [plugin.id]: 'Saved. Restart Harmonicast to apply changes.' })); }
     catch (error) { setPluginSettingsStatus((current) => ({ ...current, [plugin.id]: error instanceof Error ? error.message : 'Could not save settings' })); }
   }
 

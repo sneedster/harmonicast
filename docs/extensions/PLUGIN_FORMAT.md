@@ -43,6 +43,9 @@ Supported setting types are `text`, `url`, `password`, `boolean`, and `number`.
 Mark secrets with `"secret": true`; Harmonicast renders them as write-only
 password fields and does not return their values to clients.
 
+Plugin settings are read when Harmonicast starts. The host must restart
+Harmonicast after saving configuration changes.
+
 ## Entry module
 
 The entry module must use ESM and export a default factory function:
