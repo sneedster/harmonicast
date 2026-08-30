@@ -710,16 +710,19 @@ app.get('/api/now-playing', requireAuth, async (req, res) => {
   // Plex remains the canonical shared rating store, so hydrate that one field
   // for the now-playing view without making Plex availability block playback.
   let rating = null;
+  let duration = np.duration || 0;
   const plexSource = getActivePlexSource();
   if (plexSource && np.song_id.startsWith('plex:')) {
     try {
-      rating = (await getPlexTrack(plexSource, np.song_id)).userRating;
+      const track = await getPlexTrack(plexSource, np.song_id);
+      rating = track.userRating;
+      duration = duration || track.duration;
     } catch (err) {
       console.warn('Could not load now-playing Plex rating:', err.message);
     }
   }
   res.json({
-    song: { id: np.song_id, title: np.title, artist: np.artist, album: np.album, duration: np.duration, coverArt: np.cover_art, rating },
+    song: { id: np.song_id, title: np.title, artist: np.artist, album: np.album, duration, coverArt: np.cover_art, rating },
     isPlaying: !!np.is_playing,
     isAutoQueue: !!np.is_auto_queue,
     playbackPosition: np.playback_position || 0,

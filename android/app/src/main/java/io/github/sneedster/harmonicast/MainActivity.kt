@@ -606,9 +606,9 @@ class MainActivity : ComponentActivity() {
                     },
                 )
             }
-            if (duration > 0f) {
-                Column(Modifier.fillMaxWidth()) {
-                    Text("Playback", style = MaterialTheme.typography.labelMedium)
+            Column(Modifier.fillMaxWidth()) {
+                Text("Playback", style = MaterialTheme.typography.labelMedium)
+                if (duration > 0f) {
                     Slider(
                         value = scrubPosition.coerceIn(0f, duration),
                         onValueChange = {
@@ -625,6 +625,12 @@ class MainActivity : ComponentActivity() {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(formatDuration(scrubPosition.toInt()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(formatDuration(duration.toInt()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(formatDuration(vm.playbackPosition.toInt()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Loading duration…", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

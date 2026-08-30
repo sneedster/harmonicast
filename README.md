@@ -46,7 +46,7 @@ to web or Android clients.
 1. Copy `.env.example` to `.env`.
 2. Set `PUBLIC_URL` to the exact URL users will open, without a trailing slash.
    For example: `https://harmonicast.example.com`.
-3. Keep `HARMONICAST_IMAGE_TAG=1.0.18` for a pinned release, or change it to
+3. Keep `HARMONICAST_IMAGE_TAG=1.0.19` for a pinned release, or change it to
    `latest` if you intentionally want new releases automatically.
 4. Start it:
 
@@ -66,7 +66,7 @@ unless you intentionally want to reset the installation and repeat Plex setup.
 Import [`unraid/harmonicast.xml`](unraid/harmonicast.xml), or create a container
 with these settings:
 
-- Image: `mjstrong/harmonicast:1.0.18` (or `latest`)
+- Image: `mjstrong/harmonicast:1.0.19` (or `latest`)
 - Port: container `3001` mapped to your chosen host port
 - Volume: `/app/data` mapped to an Unraid appdata directory
 - Variable: `PUBLIC_URL` set to the exact browser-facing URL
@@ -124,7 +124,7 @@ Then build a signed, versioned APK. The result is written to the ignored
 `android/releases/` directory.
 
 ```bash
-VERSION_NAME=1.0.18 VERSION_CODE=19 ./android/build-release.sh
+VERSION_NAME=1.0.19 VERSION_CODE=20 ./android/build-release.sh
 ```
 
 This runs the required server, web, Docker image, and Compose checks before
