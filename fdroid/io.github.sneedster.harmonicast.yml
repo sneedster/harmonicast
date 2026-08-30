@@ -1,5 +1,6 @@
-# Submission metadata for the F-Droid main repository. Copy this file to
-# fdroiddata/metadata/ after creating and pushing the F-Droid release tag.
+AntiFeatures:
+  NonFreeNet:
+    en-US: Requires a Plex account and service to access a Music library.
 Categories:
   - Multimedia
 License: AGPL-3.0-or-later
@@ -8,9 +9,6 @@ IssueTracker: https://github.com/sneedster/harmonicast/issues
 Changelog: https://github.com/sneedster/harmonicast/releases
 RepoType: git
 Repo: https://github.com/sneedster/harmonicast.git
-AntiFeatures:
-  NonFreeNet:
-    en-US: Requires a Plex account and service to access a Music library.
 Builds:
   - versionName: 1.0.20
     versionCode: 21
@@ -18,6 +16,9 @@ Builds:
     subdir: android
     gradle:
       - yes
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
 
 AutoUpdateMode: None
 UpdateCheckMode: None
+CurrentVersion: 1.0.20
+CurrentVersionCode: 21
