@@ -129,6 +129,15 @@ export function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_extension_requests_requester ON extension_requests(requester_id, created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS plugin_settings (
+      plugin_id TEXT NOT NULL,
+      setting_key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      is_secret INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (plugin_id, setting_key)
+    );
+
     CREATE TABLE IF NOT EXISTS now_playing (
       id INTEGER PRIMARY KEY DEFAULT 1,
       song_id TEXT,

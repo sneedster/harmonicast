@@ -33,6 +33,7 @@ import {
 } from './plex.js';
 import type { PlexSong } from './plex.js';
 import { createExtensionRequest, extensionTokenIsValid, getExtensionRequest, getMusicSourceExtension, updateExtensionRequest } from './extensions.js';
+import { listPluginSettings, pluginSecretsAreAvailable, savePluginSettings } from './plugin-settings.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -968,6 +969,31 @@ app.put('/api/settings', requireAuth, (req, res) => {
     setMaxRequestsPerUser(Math.round(n));
   }
   res.json({ ok: true });
+});
+
+app.get('/api/plugins/:id/settings', requireAuth, (req, res) => {
+  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can view plugin settings' });
+  res.json({ settings: listPluginSettings(req.params.id), secretsAvailable: pluginSecretsAreAvailable() });
+});
+
+app.put('/api/plugins/:id/settings', requireAuth, (req, res) => {
+  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can change plugin settings' });
+  const values = req.body?.settings;
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return res.status(400).json({ error: 'settings must be an object' });
+  const settings: Record<string, { value: string; secret: boolean }> = {};
+  for (const [key, raw] of Object.entries(values)) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return res.status(400).json({ error: 'Invalid plugin setting' });
+    const value = (raw as { value?: unknown }).value;
+    const secret = (raw as { secret?: unknown }).secret;
+    if (typeof value !== 'string' || typeof secret !== 'boolean' || value.length > 4_000) return res.status(400).json({ error: 'Invalid plugin setting' });
+    settings[key] = { value, secret };
+  }
+  try {
+    savePluginSettings(req.params.id, settings);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Could not save plugin settings' });
+  }
 });
 
 app.post('/api/jukebox', requireAuth, requireActivePlayer, async (req, res) => {
