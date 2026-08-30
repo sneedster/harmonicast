@@ -120,10 +120,17 @@ export async function installPlugin(source: string, revision: string) {
     entries.push({ id: manifest.id, directory: manifest.id, enabled: true, source, revision, checksum });
     const previous = join(PLUGINS_DIR, `${manifest.id}.previous`);
     await rm(previous, { recursive: true, force: true });
-    if (existsSync(destination)) await rename(destination, previous);
-    await rename(replacement, destination);
-    writeRegistry(entries);
-    await rm(previous, { recursive: true, force: true });
+    const hadPrevious = existsSync(destination);
+    try {
+      if (hadPrevious) await rename(destination, previous);
+      await rename(replacement, destination);
+      writeRegistry(entries);
+      await rm(previous, { recursive: true, force: true });
+    } catch (error) {
+      await rm(destination, { recursive: true, force: true });
+      if (hadPrevious && existsSync(previous)) await rename(previous, destination);
+      throw error;
+    }
     return { id: manifest.id, displayName: manifest.displayName, revision, checksum };
   } finally {
     await rm(staging, { recursive: true, force: true });
