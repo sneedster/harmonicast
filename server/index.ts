@@ -34,6 +34,7 @@ import {
 import type { PlexSong } from './plex.js';
 import { createExtensionRequest, extensionTokenIsValid, getExtensionRequest, getMusicSourceExtension, updateExtensionRequest } from './extensions.js';
 import { listPluginSettings, pluginSecretsAreAvailable, savePluginSettings } from './plugin-settings.js';
+import { loadPlugins } from './plugins.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -47,6 +48,7 @@ initDb();
 autoConfigureFromEnv();
 purgeExpiredSessions();
 cleanupStaleState();
+const plugins = await loadPlugins();
 
 const app = express();
 
@@ -974,6 +976,13 @@ app.put('/api/settings', requireAuth, (req, res) => {
 app.get('/api/plugins/:id/settings', requireAuth, (req, res) => {
   if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can view plugin settings' });
   res.json({ settings: listPluginSettings(req.params.id), secretsAvailable: pluginSecretsAreAvailable() });
+});
+
+app.get('/api/plugins', requireAuth, (req, res) => {
+  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can inspect plugins' });
+  res.json({ plugins: plugins.map(({ manifest, source, revision, checksum, enabled, status, error }) => ({
+    id: manifest.id, displayName: manifest.displayName, settings: manifest.settings || [], source, revision, checksum, enabled, status, error,
+  })) });
 });
 
 app.put('/api/plugins/:id/settings', requireAuth, (req, res) => {

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.DATA_DIR || join(__dirname, '..', 'data');
+export const DATA_DIR = process.env.DATA_DIR || join(__dirname, '..', 'data');
 mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = join(DATA_DIR, 'harmonicast.db');
 
