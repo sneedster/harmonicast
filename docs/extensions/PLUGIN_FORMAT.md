@@ -57,10 +57,13 @@ export default function createPlugin({ dataDir, settings }) {
 At startup Harmonicast calls the factory with a plugin-specific persistent
 `dataDir` and server-only `settings`. A factory may return an Express-compatible
 `router`; Harmonicast mounts it at `/api/plugins/<plugin-id>` behind normal
-Harmonicast authentication. The music-source lifecycle host API is the next
-contract milestone; do not rely on undeclared server internals or direct SQLite
-access. Keeping factory initialization small makes upgrades and failed plugin
-isolation safe.
+Harmonicast authentication.
+
+Music-source plugins additionally receive `musicSource`, which can read an
+owned request, update safe lifecycle status, search the selected primary Plex
+library, and fulfill that request with a verified Plex track ID. These methods
+are scoped to the plugin's own request ids and do not expose SQLite or Plex
+tokens. Keep factory initialization small so failed plugins remain isolated.
 
 ## Installation
 

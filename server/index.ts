@@ -34,7 +34,7 @@ import {
 import type { PlexSong } from './plex.js';
 import { createExtensionRequest, extensionTokenIsValid, getExtensionRequest, getMusicSourceExtension, updateExtensionRequest } from './extensions.js';
 import { getPluginSettings, listPluginSettings, pluginSecretsAreAvailable, savePluginSettings } from './plugin-settings.js';
-import { installPlugin, loadPlugins } from './plugins.js';
+import { installPlugin, loadPlugins, type MusicSourceStatus } from './plugins.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -58,7 +58,41 @@ const PUBLIC_URL = process.env.PUBLIC_URL?.trim().replace(/\/+$/, '') || null;
 app.use(cors(PUBLIC_URL ? { origin: PUBLIC_URL } : { origin: false }));
 app.use(express.json({ limit: '256kb' }));
 app.use(authMiddleware);
-const plugins = await loadPlugins((manifest) => ({ dataDir: join(DATA_DIR, 'plugins', manifest.id, 'data'), settings: getPluginSettings(manifest.id) }));
+const plugins = await loadPlugins((manifest) => ({
+  dataDir: join(DATA_DIR, 'plugins', manifest.id, 'data'),
+  settings: getPluginSettings(manifest.id),
+  musicSource: {
+    getRequest(requestId, requesterId) {
+      const request = getExtensionRequest(requestId);
+      if (!request || request.extension_id !== manifest.id || request.requester_id !== requesterId) return null;
+      return { id: request.id, query: request.query, status: request.status as MusicSourceStatus, message: request.message };
+    },
+    updateRequest(requestId, status, message) {
+      const request = getExtensionRequest(requestId);
+      if (!request || request.extension_id !== manifest.id) throw new Error('Unknown plugin request');
+      updateExtensionRequest(requestId, status, message.slice(0, 500), null);
+    },
+    async searchPrimaryLibrary(requestId, query) {
+      const request = getExtensionRequest(requestId);
+      if (!request || request.extension_id !== manifest.id) throw new Error('Unknown plugin request');
+      const source = getActivePlexSource();
+      if (!source) throw new Error('Plex source is unavailable');
+      return (await searchPlexTracks(source, query)).slice(0, 10).map((song) => ({ id: song.id, title: song.title, artist: song.artist, album: song.album, duration: song.duration }));
+    },
+    async fulfill(requestId, plexTrackId, message) {
+      const request = getExtensionRequest(requestId);
+      if (!request || request.extension_id !== manifest.id) throw new Error('Unknown plugin request');
+      if (request.status === 'fulfilled') return;
+      const source = getActivePlexSource();
+      if (!source) throw new Error('Plex source is unavailable');
+      const song = await getPlexTrack(source, plexTrackId);
+      try { addToQueue({ song, userId: request.requester_id, userEmail: request.requester_email, isManual: true, queueKind: 'acquisition' }); }
+      catch (error) { if (!(error instanceof Error) || error.message !== 'This song is already in the queue') throw error; }
+      updateExtensionRequest(requestId, 'fulfilled', message.slice(0, 500), song.id);
+      broadcastQueue();
+    },
+  },
+}));
 for (const plugin of plugins) {
   if (plugin.status === 'loaded' && plugin.instance?.router) app.use(`/api/plugins/${plugin.manifest.id}`, requireAuth, plugin.instance.router);
 }

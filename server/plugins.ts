@@ -21,7 +21,17 @@ export interface PluginManifest {
 }
 
 interface RegistryEntry { id: string; directory: string; enabled: boolean; source: string; revision: string; checksum: string; }
-export interface PluginHost { dataDir: string; settings: Record<string, string>; }
+export type MusicSourceStatus = 'resolving' | 'acquiring' | 'waiting_for_plex' | 'failed' | 'fulfilled';
+export interface PluginHost {
+  dataDir: string;
+  settings: Record<string, string>;
+  musicSource?: {
+    getRequest(requestId: string, requesterId: number): { id: string; query: string; status: MusicSourceStatus; message: string | null } | null;
+    updateRequest(requestId: string, status: Exclude<MusicSourceStatus, 'fulfilled'>, message: string): void;
+    searchPrimaryLibrary(requestId: string, query: string): Promise<{ id: string; title: string; artist: string; album: string; duration: number }[]>;
+    fulfill(requestId: string, plexTrackId: string, message: string): Promise<void>;
+  };
+}
 export interface PluginInstance { router?: Router; health?: () => Promise<boolean>; }
 export interface LoadedPlugin { manifest: PluginManifest; source: string; revision: string; checksum: string; enabled: boolean; status: 'loaded' | 'disabled' | 'error'; error?: string; instance?: PluginInstance; }
 
