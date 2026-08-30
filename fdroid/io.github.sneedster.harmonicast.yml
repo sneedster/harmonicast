@@ -24,7 +24,7 @@ Builds:
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-UpdateCheckData:
+UpdateCheckData: 
   android/app/build.gradle.kts|versionCode.*orElse\("([0-9]+)"\)|.|versionName.*orElse\("([0-9.]+)"\)
 CurrentVersion: 1.0.20
 CurrentVersionCode: 21
