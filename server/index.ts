@@ -94,7 +94,15 @@ const plugins = await loadPlugins((manifest) => ({
   },
 }));
 for (const plugin of plugins) {
-  if (plugin.status === 'loaded' && plugin.instance?.router) app.use(`/api/plugins/${plugin.manifest.id}`, requireAuth, plugin.instance.router);
+  if (plugin.status === 'loaded' && plugin.instance?.router) {
+    const router = plugin.instance.router;
+    app.use(`/api/plugins/${plugin.manifest.id}`, (req, res, next) => {
+      // Full-page navigation cannot attach the SPA bearer token. Permit only
+      // the static kiosk shell; its follow-up API requests remain authenticated.
+      if (req.method === 'GET' && req.path === '/kiosk') return router(req, res, next);
+      return requireAuth(req, res, () => router(req, res, next));
+    });
+  }
 }
 
 function requireActivePlayer(req, res, next) {
