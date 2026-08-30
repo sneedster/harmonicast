@@ -25,7 +25,9 @@ operator's existing MusicGrabber service.
 ## Plugin contract
 
 - A plugin contains a manifest: stable id, display name, API version, server
-  entry point, and declared non-secret configuration schema.
+  entry point, and declared configuration schema. The schema can define normal
+  fields (URLs, switches, labels, and limits) plus explicitly marked secret
+  fields such as API keys.
 - Harmonicast imports enabled plugins from its local extension directory at
   startup. Invalid manifests, duplicate ids, or incompatible API versions
   disable only that plugin and never prevent the base server from starting.
@@ -36,6 +38,21 @@ operator's existing MusicGrabber service.
 - Plugin kiosk pages are served under Harmonicast's own origin and use the
   caller's normal authenticated session. A plugin verifies request ownership
   through the host API before showing or changing a request.
+
+## Plugin settings
+
+- Host Settings renders each installed plugin's declared settings schema. This
+  gives every plugin a normal configuration card without Harmonicast knowing
+  anything about a provider's URLs or field names.
+- Secret fields use password inputs, are never returned to browsers after they
+  are saved, and are omitted from status, diagnostics, logs, exports, and the
+  plugin manifest.
+- Harmonicast encrypts saved secret values at rest using a deployment-provided
+  master key. A server without that key can still use plugins with ordinary
+  settings but cannot save secret fields through the UI; it is directed to use
+  a mounted deployment secret instead.
+- The host can edit, clear, and validate a plugin's settings. Validation is
+  performed by the plugin and returns only a safe success/failure message.
 
 ## User experience
 
@@ -72,8 +89,9 @@ operator's existing MusicGrabber service.
   kiosk action.
 - Plugin source is pinned and a failed install cannot replace a known-good
   plugin.
-- Repository and provider credentials never enter Settings, browser requests,
-  SQLite, logs, or manifests.
+- Repository credentials never enter Settings, browser requests, SQLite, logs,
+  or manifests. Plugin secret settings are accepted only through host-only
+  password fields, encrypted at rest, and never returned after save.
 - A plugin cannot inspect another plugin's requests or fulfill an arbitrary
   Plex track.
 - Restarting Harmonicast or a plugin preserves active acquisition progress and
