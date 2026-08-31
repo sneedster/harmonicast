@@ -14,6 +14,8 @@
 - Local signed Android release workflow, with versioned signed APK releases.
 - Touch-friendly kiosk mode with curated discovery, live search, host-aware
   entry, and idle/attract behavior.
+- Shared Plex-library sign-in via Plex's server-scoped guest access token; the
+  token is verified transiently and is never persisted.
 
 ## Release hardening
 

@@ -3,7 +3,7 @@
 ## Deployment
 
 - Docker images are published to `mjstrong/harmonicast` with a numbered release
-  tag, `latest`, and an immutable `main-<commit>` tag.
+  tag and `latest`. The image OCI labels record the source revision and version.
 - `docker-compose.yaml` is pull-only: it never contains `build:`.
 - `/app/data` is the sole persistent application-data path. It contains the
   SQLite database, selected Plex source, and owner Plex token.
@@ -19,8 +19,9 @@ explicitly skipped for local troubleshooting.
 
 ## Publishing checks
 
-1. The versioned Docker tag, `latest`, and immutable commit tag resolve to the
-   same published digest.
+1. The versioned Docker tag and `latest` resolve to the same published digest;
+   the matching GitHub release tag resolves to the source commit, and the
+   container header displays the numbered version.
 2. A signed APK increments both version name and version code.
 3. README, `.env.example`, Compose, and the Unraid template agree on port
    `3001`, persistent path `/app/data`, and `PUBLIC_URL`.
@@ -28,8 +29,8 @@ explicitly skipped for local troubleshooting.
 ## Artifact tracking
 
 - Every Docker release that changes server or web code gets a new numbered
-  tag, `latest`, and `main-<source-commit>` tag. Its OCI revision label must
-  match that source commit.
+  tag and `latest`. Build it with `./scripts/build-release-image.sh <version>`
+  so its OCI revision/version labels and in-app header match that source commit.
 - Android releases advance only when the Android client changes. Each signed
   APK records its source tag through the matching GitHub release.
 - `RELEASES.md` is the human-readable ledger of the currently published

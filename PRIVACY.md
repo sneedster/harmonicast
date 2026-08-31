@@ -37,7 +37,10 @@ contain:
 
 During first-run setup, the server retains the signing-in owner's Plex access
 token. After a source is selected, it retains that owner's token locally to
-access the configured library. Plex access tokens are never sent from the
+access the configured library. When a shared user signs in, the server may obtain
+that user's Plex server-scoped token from the owner's Plex sharing metadata to
+verify access to the selected library. It uses that token only in memory for the
+sign-in check and does not store it. Plex access tokens are never sent from the
 Harmonicast server to web or Android clients. Server operators should protect the
 database volume, use HTTPS outside a trusted local network, and limit access to
 people who are authorised to use the Plex library.
