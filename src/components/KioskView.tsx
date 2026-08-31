@@ -1,113 +1,907 @@
-import { useEffect, useRef, useState } from 'react';
-import { Disc3, ListMusic, Loader2, Pause, Play, RefreshCw, Search, SkipForward, X } from 'lucide-react';
-import type { Song } from '@/types';
-import { acquireMusicSourceRecording, browseLibraryArtist, discoverLibrary, getMusicSourceAlbums, getMusicSourceExtension, getMusicSourceRecordings, getMusicSourceReleaseTracks, launchMusicSourceExtension, searchLibrary, type DiscoveryShelf, type MusicSourceAlbum, type MusicSourceExtensionStatus, type MusicSourceRecording } from '@/lib/api';
-import { CoverArt } from '@/components/CoverArt';
-import { usePlayer } from '@/hooks/usePlayer';
+import { useEffect, useRef, useState } from "react";
+import {
+  Disc3,
+  ListMusic,
+  Loader2,
+  Pause,
+  Play,
+  RefreshCw,
+  Search,
+  SkipForward,
+  X,
+} from "lucide-react";
+import type { Song } from "@/types";
+import {
+  acquireMusicSourceRecording,
+  browseLibraryArtist,
+  discoverLibrary,
+  getMusicSourceAlbums,
+  getMusicSourceExtension,
+  getMusicSourceRecordings,
+  getMusicSourceReleaseTracks,
+  launchMusicSourceExtension,
+  searchLibrary,
+  type DiscoveryShelf,
+  type MusicSourceAlbum,
+  type MusicSourceExtensionStatus,
+  type MusicSourceRecording,
+} from "@/lib/api";
+import { CoverArt } from "@/components/CoverArt";
+import { usePlayer } from "@/hooks/usePlayer";
 
-type Page = 'home' | 'picks' | 'search' | 'queue';
+type Page = "home" | "picks" | "search" | "queue";
 const pages: { id: Page; label: string; icon: typeof Disc3 }[] = [
-  { id: 'home', label: 'Now playing', icon: Disc3 }, { id: 'picks', label: "Tonight's picks", icon: RefreshCw },
-  { id: 'search', label: 'Find music', icon: Search }, { id: 'queue', label: 'Queue', icon: ListMusic },
+  { id: "home", label: "Now playing", icon: Disc3 },
+  { id: "picks", label: "Tonight's picks", icon: RefreshCw },
+  { id: "search", label: "Find music", icon: Search },
+  { id: "queue", label: "Queue", icon: ListMusic },
 ];
 
 export function KioskView({ onExit }: { onExit: () => void }) {
-  const { current, isPlaying, isHost, queue, enqueue, next, startRandomPlayback, togglePlay } = usePlayer();
-  const kioskHost = isHost && new URLSearchParams(window.location.search).get('host') === '1';
-  const [page, setPage] = useState<Page>(() => new URLSearchParams(window.location.search).get('tab') === 'search' ? 'search' : 'home'); const [shelves, setShelves] = useState<DiscoveryShelf[]>([]); const [loadingPicks, setLoadingPicks] = useState(true);
-  const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('query') || ''); const [results, setResults] = useState<Song[]>([]); const [artistBrowse, setArtistBrowse] = useState<{ name: string; songs: Song[] } | null>(null); const [searching, setSearching] = useState(false); const [message, setMessage] = useState<string | null>(null); const [musicSourceExtension, setMusicSourceExtension] = useState<MusicSourceExtensionStatus | null>(null); const [openingMusicSource, setOpeningMusicSource] = useState(false); const [musicSourceDialog, setMusicSourceDialog] = useState<{ id: string; requestId: string } | null>(null); const [sourceRecordings, setSourceRecordings] = useState<MusicSourceRecording[]>([]); const [sourceAlbums, setSourceAlbums] = useState<MusicSourceAlbum[]>([]); const [sourceArtist, setSourceArtist] = useState<{ id: string; name: string } | null>(null); const [sourceLoading, setSourceLoading] = useState(false); const [sourceMessage, setSourceMessage] = useState<string | null>(null);
-  const touchStart = useRef<number | null>(null); const searchRequest = useRef(0);
-  const [attractMode, setAttractMode] = useState(false); const [activity, setActivity] = useState(0);
-  const wakeKiosk = () => { setAttractMode(false); setActivity((value) => value + 1); };
-  async function loadPicks() { setLoadingPicks(true); try { setShelves((await discoverLibrary()).shelves); } catch (error) { setMessage(error instanceof Error ? error.message : "Couldn't load picks."); } finally { setLoadingPicks(false); } }
-  useEffect(() => { void loadPicks(); }, []);
+  const {
+    current,
+    isPlaying,
+    isHost,
+    queue,
+    enqueue,
+    next,
+    startRandomPlayback,
+    togglePlay,
+  } = usePlayer();
+  const kioskHost =
+    isHost && new URLSearchParams(window.location.search).get("host") === "1";
+  const [page, setPage] = useState<Page>(() =>
+    new URLSearchParams(window.location.search).get("tab") === "search"
+      ? "search"
+      : "home",
+  );
+  const [shelves, setShelves] = useState<DiscoveryShelf[]>([]);
+  const [loadingPicks, setLoadingPicks] = useState(true);
+  const [query, setQuery] = useState(
+    () => new URLSearchParams(window.location.search).get("query") || "",
+  );
+  const [results, setResults] = useState<Song[]>([]);
+  const [artistBrowse, setArtistBrowse] = useState<{
+    name: string;
+    songs: Song[];
+  } | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [musicSourceExtension, setMusicSourceExtension] =
+    useState<MusicSourceExtensionStatus | null>(null);
+  const [openingMusicSource, setOpeningMusicSource] = useState(false);
+  const [musicSourceDialog, setMusicSourceDialog] = useState<{
+    id: string;
+    requestId: string;
+  } | null>(null);
+  const [sourceRecordings, setSourceRecordings] = useState<
+    MusicSourceRecording[]
+  >([]);
+  const [sourceAlbums, setSourceAlbums] = useState<MusicSourceAlbum[]>([]);
+  const [sourceArtist, setSourceArtist] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [sourceViewingTracks, setSourceViewingTracks] = useState(false);
+  const [sourceHasMoreAlbums, setSourceHasMoreAlbums] = useState(false);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceMessage, setSourceMessage] = useState<string | null>(null);
+  const touchStart = useRef<number | null>(null);
+  const searchRequest = useRef(0);
+  const [attractMode, setAttractMode] = useState(false);
+  const [activity, setActivity] = useState(0);
+  const wakeKiosk = () => {
+    setAttractMode(false);
+    setActivity((value) => value + 1);
+  };
+  async function loadPicks() {
+    setLoadingPicks(true);
+    try {
+      setShelves((await discoverLibrary()).shelves);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Couldn't load picks.",
+      );
+    } finally {
+      setLoadingPicks(false);
+    }
+  }
+  useEffect(() => {
+    void loadPicks();
+  }, []);
   useEffect(() => {
     const clearLaunchState = () => setOpeningMusicSource(false);
-    window.addEventListener('pageshow', clearLaunchState);
-    return () => window.removeEventListener('pageshow', clearLaunchState);
+    window.addEventListener("pageshow", clearLaunchState);
+    return () => window.removeEventListener("pageshow", clearLaunchState);
   }, []);
-  useEffect(() => { if (!musicSourceDialog) return; setSourceLoading(true); setSourceMessage(null); setSourceAlbums([]); void getMusicSourceRecordings(musicSourceDialog.id, musicSourceDialog.requestId).then(async (result) => { if (result.artist) { setSourceArtist(result.artist); setSourceRecordings([]); setSourceAlbums(await getMusicSourceAlbums(musicSourceDialog.id, musicSourceDialog.requestId, result.artist.id)); } else setSourceRecordings(result.recordings); }).catch((error) => setSourceMessage(error instanceof Error ? error.message : 'Connected music sources are unavailable.')).finally(() => setSourceLoading(false)); }, [musicSourceDialog]);
+  useEffect(() => {
+    if (!musicSourceDialog) return;
+    setSourceLoading(true);
+    setSourceMessage(null);
+    setSourceAlbums([]);
+    setSourceViewingTracks(false);
+    void getMusicSourceRecordings(
+      musicSourceDialog.id,
+      musicSourceDialog.requestId,
+    )
+      .then(async (result) => {
+        if (result.artist) {
+          setSourceArtist(result.artist);
+          setSourceRecordings([]);
+          const albums = await getMusicSourceAlbums(
+            musicSourceDialog.id,
+            musicSourceDialog.requestId,
+            result.artist.id,
+          );
+          setSourceAlbums(albums.albums);
+          setSourceHasMoreAlbums(albums.albums.length === 25);
+        } else setSourceRecordings(result.recordings);
+      })
+      .catch((error) =>
+        setSourceMessage(
+          error instanceof Error
+            ? error.message
+            : "Connected music sources are unavailable.",
+        ),
+      )
+      .finally(() => setSourceLoading(false));
+  }, [musicSourceDialog]);
   useEffect(() => {
     const timer = window.setTimeout(() => setAttractMode(true), 75_000);
     return () => window.clearTimeout(timer);
   }, [activity]);
-  async function requestSong(song: Song) { try { await enqueue(song); setMessage(`Added ${song.title}`); window.setTimeout(() => setMessage(null), 2000); } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not add that track.'); } }
+  async function requestSong(song: Song) {
+    try {
+      await enqueue(song);
+      setMessage(`Added ${song.title}`);
+      window.setTimeout(() => setMessage(null), 2000);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Could not add that track.",
+      );
+    }
+  }
   useEffect(() => {
     const term = query.trim();
     const request = ++searchRequest.current;
-    if (!term) { setResults([]); setArtistBrowse(null); setMusicSourceExtension(null); setSearching(false); return; }
+    if (!term) {
+      setResults([]);
+      setArtistBrowse(null);
+      setMusicSourceExtension(null);
+      setSearching(false);
+      return;
+    }
     const timer = window.setTimeout(() => {
       setSearching(true);
-      void Promise.all([searchLibrary(term), browseLibraryArtist(term).catch(() => null)]).then(async ([songs, artist]) => {
-        if (request !== searchRequest.current) return;
-        setResults(songs);
-        setArtistBrowse(artist);
-        if (songs.length === 0 || artist) {
-          try {
-            const extension = await getMusicSourceExtension();
-            if (request === searchRequest.current) setMusicSourceExtension(extension?.available ? extension : null);
-          } catch { if (request === searchRequest.current) setMusicSourceExtension(null); }
-        } else {
-          setMusicSourceExtension(null);
-        }
-      }).catch((error) => {
-        if (request === searchRequest.current) setMessage(error instanceof Error ? error.message : 'Search failed.');
-      }).finally(() => {
-        if (request === searchRequest.current) setSearching(false);
-      });
+      void Promise.all([
+        searchLibrary(term),
+        browseLibraryArtist(term).catch(() => null),
+      ])
+        .then(async ([songs, artist]) => {
+          if (request !== searchRequest.current) return;
+          setResults(songs);
+          setArtistBrowse(artist);
+          if (songs.length === 0 || artist) {
+            try {
+              const extension = await getMusicSourceExtension();
+              if (request === searchRequest.current)
+                setMusicSourceExtension(
+                  extension?.available ? extension : null,
+                );
+            } catch {
+              if (request === searchRequest.current)
+                setMusicSourceExtension(null);
+            }
+          } else {
+            setMusicSourceExtension(null);
+          }
+        })
+        .catch((error) => {
+          if (request === searchRequest.current)
+            setMessage(
+              error instanceof Error ? error.message : "Search failed.",
+            );
+        })
+        .finally(() => {
+          if (request === searchRequest.current) setSearching(false);
+        });
     }, 240);
     return () => window.clearTimeout(timer);
   }, [query]);
-  async function searchConnectedSources(mode: 'search' | 'artist' = 'search', artist = query.trim()) {
+  async function searchConnectedSources(
+    mode: "search" | "artist" = "search",
+    artist = query.trim(),
+  ) {
     if (!musicSourceExtension || !query.trim()) return;
     setOpeningMusicSource(true);
     try {
-      const { requestId } = await launchMusicSourceExtension(musicSourceExtension.id, artist, mode);
+      const { requestId } = await launchMusicSourceExtension(
+        musicSourceExtension.id,
+        artist,
+        mode,
+      );
       setOpeningMusicSource(false);
       setMusicSourceDialog({ id: musicSourceExtension.id, requestId });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Connected music sources are unavailable.');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Connected music sources are unavailable.",
+      );
       setOpeningMusicSource(false);
     }
   }
   async function selectSourceRecording(recording: MusicSourceRecording) {
     if (!musicSourceDialog) return;
-    setSourceLoading(true); setSourceMessage('Requesting the best available source…');
+    setSourceLoading(true);
+    setSourceMessage("Requesting the best available source…");
     try {
-      await acquireMusicSourceRecording(musicSourceDialog.id, musicSourceDialog.requestId, recording);
-      setSourceMessage('Request sent. Returning to search…');
+      await acquireMusicSourceRecording(
+        musicSourceDialog.id,
+        musicSourceDialog.requestId,
+        recording,
+      );
+      setSourceMessage("Request sent. Returning to search…");
       window.setTimeout(() => setMusicSourceDialog(null), 1800);
-    } catch (error) { setSourceMessage(error instanceof Error ? error.message : 'Could not request this recording.'); setSourceLoading(false); }
+    } catch (error) {
+      setSourceMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not request this recording.",
+      );
+      setSourceLoading(false);
+    }
   }
   async function selectSourceAlbum(album: MusicSourceAlbum) {
     if (!musicSourceDialog || !sourceArtist) return;
-    setSourceLoading(true); setSourceMessage(null);
-    try { setSourceRecordings(await getMusicSourceReleaseTracks(musicSourceDialog.id, musicSourceDialog.requestId, album.id, sourceArtist.name)); setSourceAlbums([]); }
-    catch (error) { setSourceMessage(error instanceof Error ? error.message : 'Could not load this album.'); }
-    finally { setSourceLoading(false); }
+    setSourceLoading(true);
+    setSourceMessage(null);
+    try {
+      setSourceRecordings(
+        await getMusicSourceReleaseTracks(
+          musicSourceDialog.id,
+          musicSourceDialog.requestId,
+          album.id,
+          sourceArtist.name,
+        ),
+      );
+      setSourceViewingTracks(true);
+    } catch (error) {
+      setSourceMessage(
+        error instanceof Error ? error.message : "Could not load this album.",
+      );
+    } finally {
+      setSourceLoading(false);
+    }
   }
-  function handleSwipe(endX: number) { if (touchStart.current === null) return; const delta = endX - touchStart.current; touchStart.current = null; if (Math.abs(delta) < 70) return; const index = pages.findIndex((x) => x.id === page); setPage(pages[Math.max(0, Math.min(pages.length - 1, index + (delta < 0 ? 1 : -1)))].id); }
+  async function loadMoreSourceAlbums() {
+    if (!musicSourceDialog || !sourceArtist) return;
+    setSourceLoading(true);
+    try {
+      const more = await getMusicSourceAlbums(
+        musicSourceDialog.id,
+        musicSourceDialog.requestId,
+        sourceArtist.id,
+        sourceAlbums.length,
+      );
+      setSourceAlbums((albums) => [...albums, ...more.albums]);
+      setSourceHasMoreAlbums(more.albums.length === 25);
+    } finally {
+      setSourceLoading(false);
+    }
+  }
+  function handleSwipe(endX: number) {
+    if (touchStart.current === null) return;
+    const delta = endX - touchStart.current;
+    touchStart.current = null;
+    if (Math.abs(delta) < 70) return;
+    const index = pages.findIndex((x) => x.id === page);
+    setPage(
+      pages[
+        Math.max(0, Math.min(pages.length - 1, index + (delta < 0 ? 1 : -1)))
+      ].id,
+    );
+  }
   const panelIndex = pages.findIndex((x) => x.id === page);
-  return <div className="h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_50%_-20%,_rgba(245,158,11,0.28),_transparent_42%),linear-gradient(135deg,_#07070b,_#18101c_52%,_#07070b)] text-ink-100" onPointerDownCapture={wakeKiosk} onKeyDownCapture={wakeKiosk}>
-    <header className="flex h-16 items-center justify-between border-b border-white/10 px-4 sm:h-20 sm:px-7"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-2xl bg-amber-400 text-ink-950"><Disc3 className={`h-6 w-6 ${isPlaying ? 'animate-spin' : ''}`} style={{ animationDuration: '4s' }} /></div><div><p className="text-xs font-black uppercase tracking-[0.24em] text-amber-400">The house jukebox</p><h1 className="text-lg font-black text-white sm:text-xl">Harmonicast</h1></div></div><button onClick={onExit} className="grid h-11 w-11 place-items-center rounded-full border border-ink-700 text-ink-300 hover:text-white" title="Exit kiosk"><X className="h-5 w-5" /></button></header>
-    <div className="h-[calc(100dvh-8rem)] overflow-hidden sm:h-[calc(100dvh-10rem)]" onTouchStart={(e) => { touchStart.current = e.touches[0]?.clientX ?? null; }} onTouchEnd={(e) => handleSwipe(e.changedTouches[0]?.clientX ?? 0)}><div className="flex h-full transition-transform duration-500 ease-out" style={{ width: `${pages.length * 100}%`, transform: `translateX(-${panelIndex * (100 / pages.length)}%)` }}>
-      <Panel><div className="grid h-full items-center gap-6 lg:grid-cols-[minmax(260px,.8fr)_minmax(0,1.2fr)] lg:gap-12"><div className="relative mx-auto w-full max-w-[min(58vh,520px)]"><div className="absolute -inset-6 rounded-[2.5rem] bg-amber-500/25 blur-3xl" />{current ? <CoverArt coverArt={current.coverArt} size={700} className="relative aspect-square h-auto w-full shadow-2xl shadow-black/60" rounded="rounded-[2rem]" /> : <div className="relative grid aspect-square place-items-center rounded-[2rem] border border-dashed border-ink-600 bg-ink-900 text-ink-400"><ListMusic className="h-14 w-14" /></div>}</div><div className="text-center lg:text-left"><p className="text-sm font-black uppercase tracking-[.26em] text-amber-400">{current ? (isPlaying ? 'Now playing' : 'Paused') : 'Make the first selection'}</p><h2 className="mt-4 text-4xl font-black leading-[.94] text-white sm:text-6xl">{current?.title ?? 'The room is listening'}</h2><p className="mt-4 text-xl text-ink-300 sm:text-3xl">{current?.artist ?? 'Choose a track from tonight’s picks.'}</p><p className="mt-2 text-sm text-ink-500">{current?.album}</p>{kioskHost ? <div className="mt-8 flex flex-wrap justify-center gap-3 lg:justify-start"><button onClick={current ? togglePlay : startRandomPlayback} className="flex min-h-16 items-center gap-3 rounded-2xl bg-amber-400 px-7 text-lg font-black text-ink-950">{current && isPlaying ? <Pause className="h-6 w-6" fill="currentColor" /> : <Play className="h-6 w-6" fill="currentColor" />}{current ? (isPlaying ? 'Pause' : 'Play') : 'Start the music'}</button>{current && <button onClick={next} className="flex min-h-16 items-center gap-2 rounded-2xl border border-ink-600 px-6 font-black text-white"><SkipForward className="h-5 w-5" /> Skip</button>}</div> : <p className="mt-8 inline-flex rounded-full border border-ink-700 bg-ink-900/80 px-4 py-2 text-sm font-bold text-ink-300">Kiosk guest mode · request music below</p>}</div></div></Panel>
-      <Panel><Title eyebrow="Browse the room" title="Tonight’s picks" action={<button onClick={() => void loadPicks()} className="kiosk-action"><RefreshCw className={`h-5 w-5 ${loadingPicks ? 'animate-spin' : ''}`} /> Fresh picks</button>} /><div className="mt-4 grid h-[calc(100%-5rem)] grid-cols-1 grid-rows-4 gap-4 md:grid-cols-2 md:grid-rows-2">{loadingPicks ? Array.from({ length: 8 }, (_, index) => <div key={index} className="animate-pulse rounded-2xl bg-ink-800" />) : shelves.map((shelf) => <div key={shelf.id} className="grid min-h-0 min-w-0 overflow-hidden grid-rows-[auto_auto_minmax(0,1fr)]"><p className="truncate text-sm font-black text-white">{shelf.title}</p><p className="mb-2 truncate text-xs text-ink-500">{shelf.subtitle}</p><div className="grid min-h-0 min-w-0 grid-cols-3 gap-2">{shelf.songs.slice(0, 3).map((song) => <Tile key={song.id} song={song} onPick={requestSong} compact />)}</div></div>)}</div></Panel>
-      <Panel><Title eyebrow="Any song you want" title="Find music" /><div className="mt-5 flex h-16 gap-3"><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Artist, song, or album" className="min-w-0 flex-1 rounded-2xl border border-ink-600 bg-ink-900 px-5 text-xl text-white outline-none focus:border-amber-400" /><div className="grid w-16 place-items-center rounded-2xl bg-white text-ink-950">{searching ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}</div></div>{artistBrowse ? <ArtistBrowser artist={artistBrowse} onPick={requestSong} onBrowse={musicSourceExtension ? () => void searchConnectedSources('artist', artistBrowse.name) : undefined} browsing={openingMusicSource} /> : <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">{results.slice(0, 8).map((song) => <Tile key={song.id} song={song} onPick={requestSong} />)}</div>}{query.trim() && !searching && musicSourceExtension && !results.length && <div className="mx-auto mt-6 max-w-xl rounded-2xl border border-amber-400/30 bg-amber-400/10 p-6 text-center"><p className="text-lg font-black text-white">Not in this library</p><p className="mt-2 text-sm text-ink-300">Search connected music sources for this song.</p><div className="mt-5 flex flex-wrap justify-center gap-3"><button onClick={() => void searchConnectedSources()} disabled={openingMusicSource} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-amber-400 px-5 font-black text-ink-950 disabled:opacity-60">{openingMusicSource && <Loader2 className="h-4 w-4 animate-spin" />} Search connected music sources</button></div></div>}{!results.length && !searching && !musicSourceExtension && <p className="mt-12 text-center text-xl text-ink-500">{query.trim() ? 'No matching tracks in this library.' : 'Start typing to search every track. Browse stays intentionally curated.'}</p>}</Panel>
-      <Panel><Title eyebrow="Everybody’s music" title="Up next" /><div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{queue.slice(0, 9).map((song, index) => <div key={song.id} className="flex h-20 items-center gap-4 rounded-2xl border border-white/10 bg-ink-900/70 p-3"><span className="w-5 text-center font-black text-amber-400">{index + 1}</span><CoverArt coverArt={song.coverArt} size={96} className="h-14 w-14 shrink-0" rounded="rounded-xl" /><div className="min-w-0"><p className="truncate font-black text-white">{song.title}</p><p className="truncate text-sm text-ink-400">{song.artist}</p></div></div>)}</div>{!queue.length && <p className="mt-12 text-center text-xl text-ink-500">No requests yet—be the first.</p>}{queue.length > 9 && <p className="mt-4 text-center font-bold text-amber-300">+ {queue.length - 9} more in the shared queue</p>}</Panel>
-    </div></div>
-    <nav className="grid h-16 grid-cols-4 border-t border-white/10 bg-ink-950/85 sm:h-20">{pages.map((item) => { const Icon = item.icon; const selected = item.id === page; return <button key={item.id} onClick={() => setPage(item.id)} className={`flex flex-col items-center justify-center gap-1 text-xs font-black ${selected ? 'bg-amber-400 text-ink-950' : 'text-ink-400 hover:bg-ink-800 hover:text-white'}`}><Icon className="h-5 w-5" />{item.label}</button>; })}</nav>{message && <div className="pointer-events-none fixed left-1/2 top-24 -translate-x-1/2 rounded-full bg-amber-400 px-5 py-3 text-sm font-black text-ink-950 shadow-xl" role="status">{message}</div>}
-    {attractMode && <button onClick={wakeKiosk} className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-ink-950 text-center" aria-label="Open Harmonicast kiosk"><div className="absolute inset-0 opacity-45 blur-3xl">{current && <CoverArt coverArt={current.coverArt} size={1200} className="h-full w-full scale-110 object-cover" rounded="rounded-none" />}</div><div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_20%,rgba(7,7,11,.35)_58%,rgba(7,7,11,.92)_100%)]" /><div className="relative flex h-full w-full flex-col items-center justify-center px-6 py-[max(2rem,6vh)]"><div className="relative h-[clamp(18rem,58vmin,48rem)] w-[clamp(18rem,58vmin,48rem)] max-h-[62dvh] max-w-[82vw]">{current ? <CoverArt coverArt={current.coverArt} size={1200} className="h-full w-full shadow-2xl shadow-black/70" rounded="rounded-[2.75rem]" /> : <div className="grid h-full w-full place-items-center rounded-[2.75rem] bg-ink-800"><Disc3 className="h-[20%] w-[20%] text-amber-400" /></div>}</div><p className="mt-[clamp(1.5rem,4vh,3.5rem)] text-xs font-black uppercase tracking-[0.45em] text-amber-400 sm:text-sm">Harmonicast</p><h2 className="mt-3 max-w-[18ch] text-[clamp(2.25rem,6vw,6.5rem)] font-black leading-[.9] text-white">{current?.title ?? 'Your next song is waiting'}</h2><p className="mt-4 max-w-[28ch] text-[clamp(1.125rem,2.3vw,2.5rem)] text-ink-200">{current?.artist ?? `${queue.length} tracks in the shared queue`}</p><span className="mt-[clamp(2rem,6vh,5rem)] rounded-full border border-amber-400/60 bg-amber-400/10 px-6 py-3 text-sm font-black text-amber-300 animate-pulse">Touch to browse and request</span></div></button>}
-    {musicSourceDialog && <div className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-3 backdrop-blur-sm sm:p-8"><div className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-ink-700 bg-ink-950 shadow-2xl"><div className="flex items-center justify-between border-b border-ink-700 px-5 py-4"><div><p className="text-xs font-black uppercase tracking-[.2em] text-amber-400">Connected music sources</p><h2 className="text-xl font-black text-white">{sourceAlbums.length ? `Albums by ${sourceArtist?.name}` : 'Choose the recording you meant'}</h2></div><button onClick={() => setMusicSourceDialog(null)} className="rounded-lg px-3 py-2 font-black text-ink-300 hover:bg-ink-800 hover:text-white">Close</button></div><div className="min-h-0 overflow-y-auto p-5">{sourceLoading && !sourceMessage && <p className="text-ink-300"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Looking up music…</p>}{sourceMessage && <p className="mb-4 rounded-xl bg-amber-400/10 p-4 font-bold text-amber-200">{sourceMessage}</p>}{sourceAlbums.map((album) => <button key={album.id} onClick={() => void selectSourceAlbum(album)} className="mb-3 w-full rounded-2xl border border-ink-700 bg-ink-900 p-4 text-left hover:border-amber-400"><p className="font-black text-white">{album.title}</p><p className="mt-1 text-sm text-ink-400">{[album.type, album.year].filter(Boolean).join(' · ')}</p></button>)}{!sourceLoading && !sourceMessage && !sourceAlbums.length && sourceRecordings.length === 0 && <p className="text-ink-400">No matching recordings were found.</p>}{sourceRecordings.map((recording) => <button key={recording.id} onClick={() => void selectSourceRecording(recording)} disabled={sourceLoading} className="mb-3 w-full rounded-2xl border border-ink-700 bg-ink-900 p-4 text-left hover:border-amber-400 disabled:opacity-60"><p className="font-black text-white">{recording.title}</p><p className="mt-1 text-sm text-ink-300">{recording.artist}</p><p className="mt-1 text-xs text-ink-500">{[recording.album, recording.year, recording.durationMs ? `${Math.round(recording.durationMs / 1000)} sec` : null].filter(Boolean).join(' · ')}</p></button>)}</div></div></div>}
-  </div>;
+  return (
+    <div
+      className="h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_50%_-20%,_rgba(245,158,11,0.28),_transparent_42%),linear-gradient(135deg,_#07070b,_#18101c_52%,_#07070b)] text-ink-100"
+      onPointerDownCapture={wakeKiosk}
+      onKeyDownCapture={wakeKiosk}
+    >
+      <header className="flex h-16 items-center justify-between border-b border-white/10 px-4 sm:h-20 sm:px-7">
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-amber-400 text-ink-950">
+            <Disc3
+              className={`h-6 w-6 ${isPlaying ? "animate-spin" : ""}`}
+              style={{ animationDuration: "4s" }}
+            />
+          </div>
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-amber-400">
+              The house jukebox
+            </p>
+            <h1 className="text-lg font-black text-white sm:text-xl">
+              Harmonicast
+            </h1>
+          </div>
+        </div>
+        <button
+          onClick={onExit}
+          className="grid h-11 w-11 place-items-center rounded-full border border-ink-700 text-ink-300 hover:text-white"
+          title="Exit kiosk"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </header>
+      <div
+        className="h-[calc(100dvh-8rem)] overflow-hidden sm:h-[calc(100dvh-10rem)]"
+        onTouchStart={(e) => {
+          touchStart.current = e.touches[0]?.clientX ?? null;
+        }}
+        onTouchEnd={(e) => handleSwipe(e.changedTouches[0]?.clientX ?? 0)}
+      >
+        <div
+          className="flex h-full transition-transform duration-500 ease-out"
+          style={{
+            width: `${pages.length * 100}%`,
+            transform: `translateX(-${panelIndex * (100 / pages.length)}%)`,
+          }}
+        >
+          <Panel>
+            <div className="grid h-full items-center gap-6 lg:grid-cols-[minmax(260px,.8fr)_minmax(0,1.2fr)] lg:gap-12">
+              <div className="relative mx-auto w-full max-w-[min(58vh,520px)]">
+                <div className="absolute -inset-6 rounded-[2.5rem] bg-amber-500/25 blur-3xl" />
+                {current ? (
+                  <CoverArt
+                    coverArt={current.coverArt}
+                    size={700}
+                    className="relative aspect-square h-auto w-full shadow-2xl shadow-black/60"
+                    rounded="rounded-[2rem]"
+                  />
+                ) : (
+                  <div className="relative grid aspect-square place-items-center rounded-[2rem] border border-dashed border-ink-600 bg-ink-900 text-ink-400">
+                    <ListMusic className="h-14 w-14" />
+                  </div>
+                )}
+              </div>
+              <div className="text-center lg:text-left">
+                <p className="text-sm font-black uppercase tracking-[.26em] text-amber-400">
+                  {current
+                    ? isPlaying
+                      ? "Now playing"
+                      : "Paused"
+                    : "Make the first selection"}
+                </p>
+                <h2 className="mt-4 text-4xl font-black leading-[.94] text-white sm:text-6xl">
+                  {current?.title ?? "The room is listening"}
+                </h2>
+                <p className="mt-4 text-xl text-ink-300 sm:text-3xl">
+                  {current?.artist ?? "Choose a track from tonight’s picks."}
+                </p>
+                <p className="mt-2 text-sm text-ink-500">{current?.album}</p>
+                {kioskHost ? (
+                  <div className="mt-8 flex flex-wrap justify-center gap-3 lg:justify-start">
+                    <button
+                      onClick={current ? togglePlay : startRandomPlayback}
+                      className="flex min-h-16 items-center gap-3 rounded-2xl bg-amber-400 px-7 text-lg font-black text-ink-950"
+                    >
+                      {current && isPlaying ? (
+                        <Pause className="h-6 w-6" fill="currentColor" />
+                      ) : (
+                        <Play className="h-6 w-6" fill="currentColor" />
+                      )}
+                      {current
+                        ? isPlaying
+                          ? "Pause"
+                          : "Play"
+                        : "Start the music"}
+                    </button>
+                    {current && (
+                      <button
+                        onClick={next}
+                        className="flex min-h-16 items-center gap-2 rounded-2xl border border-ink-600 px-6 font-black text-white"
+                      >
+                        <SkipForward className="h-5 w-5" /> Skip
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-8 inline-flex rounded-full border border-ink-700 bg-ink-900/80 px-4 py-2 text-sm font-bold text-ink-300">
+                    Kiosk guest mode · request music below
+                  </p>
+                )}
+              </div>
+            </div>
+          </Panel>
+          <Panel>
+            <Title
+              eyebrow="Browse the room"
+              title="Tonight’s picks"
+              action={
+                <button
+                  onClick={() => void loadPicks()}
+                  className="kiosk-action"
+                >
+                  <RefreshCw
+                    className={`h-5 w-5 ${loadingPicks ? "animate-spin" : ""}`}
+                  />{" "}
+                  Fresh picks
+                </button>
+              }
+            />
+            <div className="mt-4 grid h-[calc(100%-5rem)] grid-cols-1 grid-rows-4 gap-4 md:grid-cols-2 md:grid-rows-2">
+              {loadingPicks
+                ? Array.from({ length: 8 }, (_, index) => (
+                    <div
+                      key={index}
+                      className="animate-pulse rounded-2xl bg-ink-800"
+                    />
+                  ))
+                : shelves.map((shelf) => (
+                    <div
+                      key={shelf.id}
+                      className="grid min-h-0 min-w-0 overflow-hidden grid-rows-[auto_auto_minmax(0,1fr)]"
+                    >
+                      <p className="truncate text-sm font-black text-white">
+                        {shelf.title}
+                      </p>
+                      <p className="mb-2 truncate text-xs text-ink-500">
+                        {shelf.subtitle}
+                      </p>
+                      <div className="grid min-h-0 min-w-0 grid-cols-3 gap-2">
+                        {shelf.songs.slice(0, 3).map((song) => (
+                          <Tile
+                            key={song.id}
+                            song={song}
+                            onPick={requestSong}
+                            compact
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+            </div>
+          </Panel>
+          <Panel>
+            <Title eyebrow="Any song you want" title="Find music" />
+            <div className="mt-5 flex h-16 gap-3">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Artist, song, or album"
+                className="min-w-0 flex-1 rounded-2xl border border-ink-600 bg-ink-900 px-5 text-xl text-white outline-none focus:border-amber-400"
+              />
+              <div className="grid w-16 place-items-center rounded-2xl bg-white text-ink-950">
+                {searching ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Search className="h-5 w-5" />
+                )}
+              </div>
+            </div>
+            {artistBrowse ? (
+              <ArtistBrowser
+                artist={artistBrowse}
+                onPick={requestSong}
+                onBrowse={
+                  musicSourceExtension
+                    ? () =>
+                        void searchConnectedSources("artist", artistBrowse.name)
+                    : undefined
+                }
+                browsing={openingMusicSource}
+              />
+            ) : (
+              <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+                {results.slice(0, 8).map((song) => (
+                  <Tile key={song.id} song={song} onPick={requestSong} />
+                ))}
+              </div>
+            )}
+            {query.trim() &&
+              !searching &&
+              musicSourceExtension &&
+              !results.length && (
+                <div className="mx-auto mt-6 max-w-xl rounded-2xl border border-amber-400/30 bg-amber-400/10 p-6 text-center">
+                  <p className="text-lg font-black text-white">
+                    Not in this library
+                  </p>
+                  <p className="mt-2 text-sm text-ink-300">
+                    Search connected music sources for this song.
+                  </p>
+                  <div className="mt-5 flex flex-wrap justify-center gap-3">
+                    <button
+                      onClick={() => void searchConnectedSources()}
+                      disabled={openingMusicSource}
+                      className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-amber-400 px-5 font-black text-ink-950 disabled:opacity-60"
+                    >
+                      {openingMusicSource && (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      )}{" "}
+                      Search connected music sources
+                    </button>
+                  </div>
+                </div>
+              )}
+            {!results.length && !searching && !musicSourceExtension && (
+              <p className="mt-12 text-center text-xl text-ink-500">
+                {query.trim()
+                  ? "No matching tracks in this library."
+                  : "Start typing to search every track. Browse stays intentionally curated."}
+              </p>
+            )}
+          </Panel>
+          <Panel>
+            <Title eyebrow="Everybody’s music" title="Up next" />
+            <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {queue.slice(0, 9).map((song, index) => (
+                <div
+                  key={song.id}
+                  className="flex h-20 items-center gap-4 rounded-2xl border border-white/10 bg-ink-900/70 p-3"
+                >
+                  <span className="w-5 text-center font-black text-amber-400">
+                    {index + 1}
+                  </span>
+                  <CoverArt
+                    coverArt={song.coverArt}
+                    size={96}
+                    className="h-14 w-14 shrink-0"
+                    rounded="rounded-xl"
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate font-black text-white">
+                      {song.title}
+                    </p>
+                    <p className="truncate text-sm text-ink-400">
+                      {song.artist}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {!queue.length && (
+              <p className="mt-12 text-center text-xl text-ink-500">
+                No requests yet—be the first.
+              </p>
+            )}
+            {queue.length > 9 && (
+              <p className="mt-4 text-center font-bold text-amber-300">
+                + {queue.length - 9} more in the shared queue
+              </p>
+            )}
+          </Panel>
+        </div>
+      </div>
+      <nav className="grid h-16 grid-cols-4 border-t border-white/10 bg-ink-950/85 sm:h-20">
+        {pages.map((item) => {
+          const Icon = item.icon;
+          const selected = item.id === page;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setPage(item.id)}
+              className={`flex flex-col items-center justify-center gap-1 text-xs font-black ${selected ? "bg-amber-400 text-ink-950" : "text-ink-400 hover:bg-ink-800 hover:text-white"}`}
+            >
+              <Icon className="h-5 w-5" />
+              {item.label}
+            </button>
+          );
+        })}
+      </nav>
+      {message && (
+        <div
+          className="pointer-events-none fixed left-1/2 top-24 -translate-x-1/2 rounded-full bg-amber-400 px-5 py-3 text-sm font-black text-ink-950 shadow-xl"
+          role="status"
+        >
+          {message}
+        </div>
+      )}
+      {attractMode && (
+        <button
+          onClick={wakeKiosk}
+          className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-ink-950 text-center"
+          aria-label="Open Harmonicast kiosk"
+        >
+          <div className="absolute inset-0 opacity-45 blur-3xl">
+            {current && (
+              <CoverArt
+                coverArt={current.coverArt}
+                size={1200}
+                className="h-full w-full scale-110 object-cover"
+                rounded="rounded-none"
+              />
+            )}
+          </div>
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_20%,rgba(7,7,11,.35)_58%,rgba(7,7,11,.92)_100%)]" />
+          <div className="relative flex h-full w-full flex-col items-center justify-center px-6 py-[max(2rem,6vh)]">
+            <div className="relative h-[clamp(18rem,58vmin,48rem)] w-[clamp(18rem,58vmin,48rem)] max-h-[62dvh] max-w-[82vw]">
+              {current ? (
+                <CoverArt
+                  coverArt={current.coverArt}
+                  size={1200}
+                  className="h-full w-full shadow-2xl shadow-black/70"
+                  rounded="rounded-[2.75rem]"
+                />
+              ) : (
+                <div className="grid h-full w-full place-items-center rounded-[2.75rem] bg-ink-800">
+                  <Disc3 className="h-[20%] w-[20%] text-amber-400" />
+                </div>
+              )}
+            </div>
+            <p className="mt-[clamp(1.5rem,4vh,3.5rem)] text-xs font-black uppercase tracking-[0.45em] text-amber-400 sm:text-sm">
+              Harmonicast
+            </p>
+            <h2 className="mt-3 max-w-[18ch] text-[clamp(2.25rem,6vw,6.5rem)] font-black leading-[.9] text-white">
+              {current?.title ?? "Your next song is waiting"}
+            </h2>
+            <p className="mt-4 max-w-[28ch] text-[clamp(1.125rem,2.3vw,2.5rem)] text-ink-200">
+              {current?.artist ?? `${queue.length} tracks in the shared queue`}
+            </p>
+            <span className="mt-[clamp(2rem,6vh,5rem)] rounded-full border border-amber-400/60 bg-amber-400/10 px-6 py-3 text-sm font-black text-amber-300 animate-pulse">
+              Touch to browse and request
+            </span>
+          </div>
+        </button>
+      )}
+      {musicSourceDialog && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-3 backdrop-blur-sm sm:p-8">
+          <div className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-ink-700 bg-ink-950 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-ink-700 px-5 py-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[.2em] text-amber-400">
+                  Connected music sources
+                </p>
+                <h2 className="text-xl font-black text-white">
+                  {!sourceViewingTracks && sourceAlbums.length
+                    ? `Albums by ${sourceArtist?.name}`
+                    : "Choose the recording you meant"}
+                </h2>
+              </div>
+              <button
+                onClick={() => setMusicSourceDialog(null)}
+                className="rounded-lg px-3 py-2 font-black text-ink-300 hover:bg-ink-800 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            <div className="min-h-0 overflow-y-auto p-5">
+              {sourceLoading && !sourceMessage && (
+                <p className="text-ink-300">
+                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                  Looking up music…
+                </p>
+              )}
+              {sourceMessage && (
+                <p className="mb-4 rounded-xl bg-amber-400/10 p-4 font-bold text-amber-200">
+                  {sourceMessage}
+                </p>
+              )}
+              {sourceViewingTracks && (
+                <button onClick={() => { setSourceViewingTracks(false); setSourceRecordings([]); }} className="mb-4 font-black text-amber-300">← Back to albums</button>
+              )}
+              {!sourceViewingTracks && sourceAlbums.map((album) => (
+                <button
+                  key={album.id}
+                  onClick={() => void selectSourceAlbum(album)}
+                  className="mb-3 w-full rounded-2xl border border-ink-700 bg-ink-900 p-4 text-left hover:border-amber-400"
+                >
+                  <p className="font-black text-white">{album.title}</p>
+                  <p className="mt-1 text-sm text-ink-400">
+                    {[album.type, album.year].filter(Boolean).join(" · ")}
+                  </p>
+                </button>
+              ))}
+              {!sourceViewingTracks && sourceHasMoreAlbums && (
+                <button onClick={() => void loadMoreSourceAlbums()} disabled={sourceLoading} className="w-full rounded-xl border border-ink-700 p-3 font-black text-amber-300">Show more albums</button>
+              )}
+              {!sourceLoading &&
+                !sourceMessage &&
+                !sourceAlbums.length &&
+                sourceRecordings.length === 0 && (
+                  <p className="text-ink-400">
+                    No matching recordings were found.
+                  </p>
+                )}
+              {sourceRecordings.map((recording) => (
+                <button
+                  key={recording.id}
+                  onClick={() => void selectSourceRecording(recording)}
+                  disabled={sourceLoading}
+                  className="mb-3 w-full rounded-2xl border border-ink-700 bg-ink-900 p-4 text-left hover:border-amber-400 disabled:opacity-60"
+                >
+                  <p className="font-black text-white">{recording.title}</p>
+                  <p className="mt-1 text-sm text-ink-300">
+                    {recording.artist}
+                  </p>
+                  <p className="mt-1 text-xs text-ink-500">
+                    {[
+                      recording.album,
+                      recording.year,
+                      recording.durationMs
+                        ? `${Math.round(recording.durationMs / 1000)} sec`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
-function Panel({ children }: { children: React.ReactNode }) { return <section className="h-full shrink-0 overflow-hidden px-5 py-6 sm:px-10 sm:py-8" style={{ width: `${100 / pages.length}%` }}>{children}</section>; }
-function Title({ eyebrow, title, action }: { eyebrow: string; title: string; action?: React.ReactNode }) { return <div className="flex h-14 items-end justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[.25em] text-amber-400">{eyebrow}</p><h2 className="mt-1 text-3xl font-black text-white sm:text-4xl">{title}</h2></div>{action}</div>; }
-function ArtistBrowser({ artist, onPick, onBrowse, browsing }: { artist: { name: string; songs: Song[] }; onPick: (song: Song) => Promise<void>; onBrowse?: () => void; browsing: boolean }) {
+function Panel({ children }: { children: React.ReactNode }) {
+  return (
+    <section
+      className="h-full shrink-0 overflow-hidden px-5 py-6 sm:px-10 sm:py-8"
+      style={{ width: `${100 / pages.length}%` }}
+    >
+      {children}
+    </section>
+  );
+}
+function Title({
+  eyebrow,
+  title,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex h-14 items-end justify-between gap-4">
+      <div>
+        <p className="text-xs font-black uppercase tracking-[.25em] text-amber-400">
+          {eyebrow}
+        </p>
+        <h2 className="mt-1 text-3xl font-black text-white sm:text-4xl">
+          {title}
+        </h2>
+      </div>
+      {action}
+    </div>
+  );
+}
+function ArtistBrowser({
+  artist,
+  onPick,
+  onBrowse,
+  browsing,
+}: {
+  artist: { name: string; songs: Song[] };
+  onPick: (song: Song) => Promise<void>;
+  onBrowse?: () => void;
+  browsing: boolean;
+}) {
   const [album, setAlbum] = useState<string | null>(null);
   useEffect(() => setAlbum(null), [artist.name]);
-  const albums = [...new Map(artist.songs.map((song) => [song.album || 'Singles and unknown album', song])).values()];
-  const tracks = album ? artist.songs.filter((song) => (song.album || 'Singles and unknown album') === album) : [];
-  return <div className="mt-5"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="text-sm font-bold text-ink-400">{artist.songs.length} tracks · choose an album</p>{onBrowse && <button onClick={onBrowse} disabled={browsing} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-amber-400 px-4 text-sm font-black text-ink-950 disabled:opacity-60">{browsing && <Loader2 className="h-4 w-4 animate-spin" />} Find missing songs</button>}</div><div className="h-[calc(100%-12rem)] overflow-y-auto pr-1">{album ? <><button onClick={() => setAlbum(null)} className="mb-4 text-sm font-black text-amber-300">← All albums by {artist.name}</button><h3 className="mb-3 text-2xl font-black text-white">{album}</h3><div className="grid gap-2">{tracks.map((song, index) => <button key={song.id} onClick={() => void onPick(song)} className="flex min-h-14 items-center gap-4 rounded-xl border border-ink-700 bg-ink-900 px-4 text-left hover:border-amber-400"><span className="w-6 text-center font-black text-amber-400">{index + 1}</span><div className="min-w-0"><p className="truncate font-black text-white">{song.title}</p><p className="text-sm text-ink-400">{Math.round(song.duration / 60)}:{String(Math.round(song.duration % 60)).padStart(2, '0')}</p></div></button>)}</div></> : <div className="grid grid-cols-2 gap-4 md:grid-cols-4">{albums.map((item) => <button key={item.album} onClick={() => setAlbum(item.album || 'Singles and unknown album')} className="group min-w-0 text-left"><CoverArt coverArt={item.coverArt} size={260} className="aspect-square w-full border border-ink-700 group-hover:border-amber-400" rounded="rounded-2xl" /><span className="mt-2 block truncate font-black text-white">{item.album || 'Singles and unknown album'}</span></button>)}</div>}</div></div>;
+  const albums = [
+    ...new Map(
+      artist.songs.map((song) => [
+        song.album || "Singles and unknown album",
+        song,
+      ]),
+    ).values(),
+  ];
+  const tracks = album
+    ? artist.songs.filter(
+        (song) => (song.album || "Singles and unknown album") === album,
+      )
+    : [];
+  return (
+    <div className="mt-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-bold text-ink-400">
+          {artist.songs.length} tracks · choose an album
+        </p>
+        {onBrowse && (
+          <button
+            onClick={onBrowse}
+            disabled={browsing}
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-amber-400 px-4 text-sm font-black text-ink-950 disabled:opacity-60"
+          >
+            {browsing && <Loader2 className="h-4 w-4 animate-spin" />} Find
+            missing songs
+          </button>
+        )}
+      </div>
+      <div className="h-[calc(100%-12rem)] overflow-y-auto pr-1">
+        {album ? (
+          <>
+            <button
+              onClick={() => setAlbum(null)}
+              className="mb-4 text-sm font-black text-amber-300"
+            >
+              ← All albums by {artist.name}
+            </button>
+            <h3 className="mb-3 text-2xl font-black text-white">{album}</h3>
+            <div className="grid gap-2">
+              {tracks.map((song, index) => (
+                <button
+                  key={song.id}
+                  onClick={() => void onPick(song)}
+                  className="flex min-h-14 items-center gap-4 rounded-xl border border-ink-700 bg-ink-900 px-4 text-left hover:border-amber-400"
+                >
+                  <span className="w-6 text-center font-black text-amber-400">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate font-black text-white">
+                      {song.title}
+                    </p>
+                    <p className="text-sm text-ink-400">
+                      {Math.round(song.duration / 60)}:
+                      {String(Math.round(song.duration % 60)).padStart(2, "0")}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {albums.map((item) => (
+              <button
+                key={item.album}
+                onClick={() =>
+                  setAlbum(item.album || "Singles and unknown album")
+                }
+                className="group min-w-0 text-left"
+              >
+                <CoverArt
+                  coverArt={item.coverArt}
+                  size={260}
+                  className="aspect-square w-full border border-ink-700 group-hover:border-amber-400"
+                  rounded="rounded-2xl"
+                />
+                <span className="mt-2 block truncate font-black text-white">
+                  {item.album || "Singles and unknown album"}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
-function Tile({ song, onPick, compact = false }: { song: Song; onPick: (song: Song) => Promise<void>; compact?: boolean }) { return <button onClick={() => void onPick(song)} className={`group min-w-0 overflow-hidden text-left ${compact ? 'flex min-h-0 flex-col' : ''}`}><CoverArt coverArt={song.coverArt} size={260} className={`${compact ? 'min-h-0 flex-1' : 'aspect-square h-auto'} w-full border border-ink-700 transition group-hover:-translate-y-1 group-hover:border-amber-400`} rounded={compact ? 'rounded-xl' : 'rounded-2xl'} /><span title={song.title} className={`mt-2 block w-full min-w-0 overflow-hidden font-black text-white [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${compact ? 'text-xs leading-4' : 'text-base leading-5'}`}>{song.title}</span><span title={song.artist} className={`block w-full min-w-0 truncate text-ink-400 ${compact ? 'text-[10px]' : 'text-sm'}`}>{song.artist}</span></button>; }
+function Tile({
+  song,
+  onPick,
+  compact = false,
+}: {
+  song: Song;
+  onPick: (song: Song) => Promise<void>;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      onClick={() => void onPick(song)}
+      className={`group min-w-0 overflow-hidden text-left ${compact ? "flex min-h-0 flex-col" : ""}`}
+    >
+      <CoverArt
+        coverArt={song.coverArt}
+        size={260}
+        className={`${compact ? "min-h-0 flex-1" : "aspect-square h-auto"} w-full border border-ink-700 transition group-hover:-translate-y-1 group-hover:border-amber-400`}
+        rounded={compact ? "rounded-xl" : "rounded-2xl"}
+      />
+      <span
+        title={song.title}
+        className={`mt-2 block w-full min-w-0 overflow-hidden font-black text-white [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${compact ? "text-xs leading-4" : "text-base leading-5"}`}
+      >
+        {song.title}
+      </span>
+      <span
+        title={song.artist}
+        className={`block w-full min-w-0 truncate text-ink-400 ${compact ? "text-[10px]" : "text-sm"}`}
+      >
+        {song.artist}
+      </span>
+    </button>
+  );
+}
