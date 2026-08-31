@@ -79,7 +79,7 @@ function JukeboxApp({
   onSignOut: () => void;
   onTakeOver: () => Promise<void>;
 }) {
-  const { connection, current, isPlaying, jukeboxMode, isHost } = usePlayer();
+  const { connection, current, isPlaying, jukeboxMode, isHost, initialStateLoaded } = usePlayer();
   const [tab, setTab] = useState<Tab>('nowplaying');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchRequest, setSearchRequest] = useState(0);
@@ -87,6 +87,7 @@ function JukeboxApp({
   const openSearch = (query: string) => { setSearchQuery(query); setSearchRequest((value) => value + 1); setTab('search'); };
   const isKiosk = window.location.pathname.replace(/\/+$/, '') === '/kiosk';
   const lastSongIdRef = useRef<string | null>(null);
+  const initialSongHandledRef = useRef(false);
   const switchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -94,7 +95,15 @@ function JukeboxApp({
   }, []);
 
   useEffect(() => {
+    // Initial now-playing data arrives asynchronously after sign-in. Treat it
+    // as hydration, not as a new track that should interrupt the user's tab.
+    if (!initialStateLoaded) return;
     const songId = current?.id ?? null;
+    if (!initialSongHandledRef.current) {
+      initialSongHandledRef.current = true;
+      lastSongIdRef.current = songId;
+      return;
+    }
     if (songId !== lastSongIdRef.current) {
       lastSongIdRef.current = songId;
       if (songId) {
@@ -107,7 +116,7 @@ function JukeboxApp({
     return () => {
       if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
     };
-  }, [current?.id]);
+  }, [current?.id, initialStateLoaded]);
 
   if (isKiosk) return <KioskView onExit={() => { window.location.href = '/'; }} />;
 

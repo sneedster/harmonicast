@@ -46,6 +46,7 @@ interface PlayerContextValue {
   duration: number;
   volume: number;
   jukeboxMode: boolean;
+  initialStateLoaded: boolean;
   loadingNext: boolean;
   streamError: string | null;
   cooldownMinutes: number;
@@ -94,6 +95,7 @@ export function PlayerProvider({
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(1);
   const [jukeboxMode, setJukeboxMode] = useState(false);
+  const [initialStateLoaded, setInitialStateLoaded] = useState(false);
   const loadingNext = false;
   const [streamError, setStreamError] = useState<string | null>(null);
   const [cooldownMinutes, setCooldownMinutes] = useState(30);
@@ -316,6 +318,7 @@ export function PlayerProvider({
         setCurrentTime(pos);
         lastPosTimeRef.current = Date.now();
       }
+      setInitialStateLoaded(true);
     }
 
     void loadInitial();
@@ -576,14 +579,14 @@ export function PlayerProvider({
   const value = useMemo<PlayerContextValue>(
     () => ({
       connection, isHost, isHostUser, isActivePlayer, current, plexRating, queue, queueRows, history,
-      isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
+      isPlaying, currentTime, duration, volume, jukeboxMode, initialStateLoaded, loadingNext,
       streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
       thumbsUp, thumbsDown, queueSimilar, clearQueue, removeQueueItem, startRandomPlayback,
     }),
     [
       connection, isHost, isHostUser, isActivePlayer, current, plexRating, queue, queueRows, history,
-      isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
+      isPlaying, currentTime, duration, volume, jukeboxMode, initialStateLoaded, loadingNext,
       streamError, cooldownMinutes, maxRequestsPerUser,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
       thumbsUp, thumbsDown, queueSimilar, clearQueue, removeQueueItem, startRandomPlayback,
