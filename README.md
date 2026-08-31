@@ -74,6 +74,11 @@ with these settings:
 After updating, pull the image and recreate the container. Persistent app data
 remains in `/app/data`.
 
+Release images set the version shown in the Harmonicast header from their
+numbered Docker tag. Maintainers should build one with
+`./scripts/build-release-image.sh 1.0.37` before pushing both that tag and
+`latest`.
+
 ## Plex setup and access
 
 The first Plex account to finish setup is the Harmonicast owner. It must own the
