@@ -480,57 +480,59 @@ export function KioskView({ onExit }: { onExit: () => void }) {
                 )}
               </div>
             </div>
-            {artistBrowse ? (
-              <ArtistBrowser
-                artist={artistBrowse}
-                onPick={requestSong}
-                onBrowse={
-                  musicSourceExtension
-                    ? () =>
-                        void searchConnectedSources("artist", artistBrowse.name)
-                    : undefined
-                }
-                browsing={openingMusicSource}
-              />
-            ) : (
-              <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">
-                {results.slice(0, 8).map((song) => (
-                  <Tile key={song.id} song={song} onPick={requestSong} />
-                ))}
-              </div>
-            )}
-            {query.trim() &&
-              !searching &&
-              musicSourceExtension &&
-              !results.length && (
-                <div className="mx-auto mt-6 max-w-xl rounded-2xl border border-amber-400/30 bg-amber-400/10 p-6 text-center">
-                  <p className="text-lg font-black text-white">
-                    Not in this library
-                  </p>
-                  <p className="mt-2 text-sm text-ink-300">
-                    Search connected music sources for this song.
-                  </p>
-                  <div className="mt-5 flex flex-wrap justify-center gap-3">
-                    <button
-                      onClick={() => void searchConnectedSources()}
-                      disabled={openingMusicSource}
-                      className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-amber-400 px-5 font-black text-ink-950 disabled:opacity-60"
-                    >
-                      {openingMusicSource && (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      )}{" "}
-                      Search connected music sources
-                    </button>
-                  </div>
+            <div className="mt-5 h-[calc(100%-8.5rem)] min-h-0 overflow-y-auto pr-1">
+              {artistBrowse ? (
+                <ArtistBrowser
+                  artist={artistBrowse}
+                  onPick={requestSong}
+                  onBrowse={
+                    musicSourceExtension
+                      ? () =>
+                          void searchConnectedSources("artist", artistBrowse.name)
+                      : undefined
+                  }
+                  browsing={openingMusicSource}
+                />
+              ) : (
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                  {results.map((song) => (
+                    <Tile key={song.id} song={song} onPick={requestSong} />
+                  ))}
                 </div>
               )}
-            {!results.length && !searching && !musicSourceExtension && (
-              <p className="mt-12 text-center text-xl text-ink-500">
-                {query.trim()
-                  ? "No matching tracks in this library."
-                  : "Start typing to search every track. Browse stays intentionally curated."}
-              </p>
-            )}
+              {query.trim() &&
+                !searching &&
+                musicSourceExtension &&
+                !results.length && (
+                  <div className="mx-auto max-w-xl rounded-2xl border border-amber-400/30 bg-amber-400/10 p-6 text-center">
+                    <p className="text-lg font-black text-white">
+                      Not in this library
+                    </p>
+                    <p className="mt-2 text-sm text-ink-300">
+                      Search connected music sources for this song.
+                    </p>
+                    <div className="mt-5 flex flex-wrap justify-center gap-3">
+                      <button
+                        onClick={() => void searchConnectedSources()}
+                        disabled={openingMusicSource}
+                        className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-amber-400 px-5 font-black text-ink-950 disabled:opacity-60"
+                      >
+                        {openingMusicSource && (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        )}{" "}
+                        Search connected music sources
+                      </button>
+                    </div>
+                  </div>
+                )}
+              {!results.length && !searching && !musicSourceExtension && (
+                <p className="mt-12 text-center text-xl text-ink-500">
+                  {query.trim()
+                    ? "No matching tracks in this library."
+                    : "Start typing to search every track. Browse stays intentionally curated."}
+                </p>
+              )}
+            </div>
           </Panel>
           <Panel>
             <Title eyebrow="Everybody’s music" title="Up next" />
