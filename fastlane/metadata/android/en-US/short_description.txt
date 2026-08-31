@@ -1,0 +1,1 @@
+Self-hosted shared player for a Plex Music library
