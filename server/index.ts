@@ -391,7 +391,7 @@ app.get('/api/auth/plex/callback', async (req, res) => {
 
     // Once a source is selected, Plex library sharing—not a Harmonicast email
     // allowlist—decides whether a guest may sign in.
-    if (plexSource && !isFirstUser && !(await canAccessConfiguredPlexLibrary(claimedPin.authToken))) {
+    if (plexSource && !isFirstUser && !(await canAccessConfiguredPlexLibrary(claimedPin.authToken, account.id))) {
       return res.redirect('/?auth_error=not_shared');
     }
     if (!plexSource && !isFirstUser) {

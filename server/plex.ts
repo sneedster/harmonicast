@@ -541,12 +541,14 @@ export async function listPlexMusicLibraries(
  */
 export async function canAccessConfiguredPlexLibrary(
   userToken: string,
+  userPlexId: string,
   fetcher: PlexFetch = fetch,
 ): Promise<boolean> {
   const source = getActivePlexSource();
-  if (!source || !userToken) return false;
-  const canAccessThrough = async (baseUrl: string) => {
-    const userConnection: PlexConnection = { baseUrl, token: userToken };
+  const persistedSource = getPersistedPlexSource();
+  if (!source || !userToken || !userPlexId) return false;
+  const canAccessThrough = async (baseUrl: string, token: string) => {
+    const userConnection: PlexConnection = { baseUrl, token };
     try {
       const libraries = await listPlexMusicLibraries(userConnection, fetcher);
       if (libraries.some((library) => library.key === source.libraryKey)) return true;
@@ -573,28 +575,61 @@ export async function canAccessConfiguredPlexLibrary(
     }
   };
 
-  if (await canAccessThrough(source.baseUrl)) return true;
+  if (await canAccessThrough(source.baseUrl, userToken)) return true;
 
-  // The URL stored during owner setup may be a local or owner-specific route.
-  // Resolve this same server through the guest's Plex resources instead; Plex
-  // advertises the reachable connections for the token which is actually
-  // signing in, including shared servers.
-  const machineIdentifier = getPersistedPlexSource()?.machineIdentifier;
-  if (!machineIdentifier) return false;
+  // PIN authorization yields an account token. Plex gives every shared user a
+  // separate server-scoped token, exposed only to the server owner through
+  // sharing metadata. Use it for this admission check only; never persist or
+  // expose it to a browser.
+  if (!persistedSource) return false;
   try {
-    const server = (await listPlexServerResources(userToken, false, fetcher))
-      .find((candidate) => candidate.machineIdentifier === machineIdentifier);
-    if (!server) return false;
-    for (const candidate of [...server.connections].sort((a, b) => Number(b.local) - Number(a.local))) {
-      if (candidate.uri !== source.baseUrl && await canAccessThrough(candidate.uri)) return true;
-    }
+    const serverToken = await getSharedServerAccessToken(
+      persistedSource.machineIdentifier,
+      persistedSource.token,
+      userPlexId,
+      source.libraryKey,
+      fetcher,
+    );
+    if (serverToken && await canAccessThrough(source.baseUrl, serverToken)) return true;
   } catch (error) {
-    console.warn('Could not resolve Plex server through the guest account:', error);
+    console.warn('Could not retrieve the shared Plex server access token:', error);
   }
   return false;
 }
 
-async function listPlexServerResources(token: string, ownedOnly: boolean, fetcher: PlexFetch): Promise<PlexOwnedServer[]> {
+async function getSharedServerAccessToken(
+  machineIdentifier: string,
+  ownerToken: string,
+  userPlexId: string,
+  libraryKey: string,
+  fetcher: PlexFetch,
+): Promise<string | null> {
+  const response = await fetcher(
+    `${PLEX_API_BASE_URL}/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers`,
+    { headers: plexHeaders(undefined, ownerToken) },
+  );
+  if (!response.ok) throw new Error(`Plex shared-server request failed (${response.status})`);
+  const payload = await response.json() as Record<string, unknown>;
+  const container = payload.MediaContainer && typeof payload.MediaContainer === 'object'
+    ? payload.MediaContainer as Record<string, unknown>
+    : payload;
+  const shares = Array.isArray(container.SharedServer) ? container.SharedServer : [];
+  const share = shares.find((candidate): candidate is Record<string, unknown> =>
+    !!candidate && typeof candidate === 'object' && String(candidate.userID ?? '') === userPlexId,
+  );
+  if (!share || typeof share.accessToken !== 'string' || !share.accessToken) return null;
+  if (share.allLibraries === true || share.allLibraries === 1 || share.allLibraries === '1') return share.accessToken;
+  const sections = Array.isArray(share.Section) ? share.Section : [];
+  const includesLibrary = sections.some((candidate) =>
+    !!candidate && typeof candidate === 'object'
+    && String((candidate as Record<string, unknown>).key ?? '') === libraryKey
+    && ['1', 'true'].includes(String((candidate as Record<string, unknown>).shared ?? '')),
+  );
+  return includesLibrary ? share.accessToken : null;
+}
+
+/** List only Plex Media Servers actually owned by this Plex account. */
+export async function listOwnedPlexServers(token: string, fetcher: PlexFetch = fetch): Promise<PlexOwnedServer[]> {
   if (!token) throw new Error('Plex access token is required');
   const response = await fetcher(`${PLEX_API_BASE_URL}/api/v2/resources?includeHttps=1&includeRelay=1`, {
     headers: plexHeaders(undefined, token),
@@ -608,7 +643,7 @@ async function listPlexServerResources(token: string, ownedOnly: boolean, fetche
     const provides = typeof item.provides === 'string' ? item.provides.split(',') : [];
     const machineIdentifier = typeof item.clientIdentifier === 'string' ? item.clientIdentifier : '';
     const name = typeof item.name === 'string' ? item.name : '';
-    if ((ownedOnly && item.owned !== true) || !provides.includes('server') || !machineIdentifier || !name) return [];
+    if (item.owned !== true || !provides.includes('server') || !machineIdentifier || !name) return [];
     const connections = Array.isArray(item.connections) ? item.connections.flatMap((connection) => {
       if (!connection || typeof connection !== 'object') return [];
       const value = connection as Record<string, unknown>;
@@ -620,10 +655,6 @@ async function listPlexServerResources(token: string, ownedOnly: boolean, fetche
   });
 }
 
-/** List only Plex Media Servers actually owned by this Plex account. */
-export async function listOwnedPlexServers(token: string, fetcher: PlexFetch = fetch): Promise<PlexOwnedServer[]> {
-  return listPlexServerResources(token, true, fetcher);
-}
 
 /** Resolve a server connection using the owner token, preferring local links. */
 export async function connectOwnedPlexServer(

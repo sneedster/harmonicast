@@ -54,30 +54,28 @@ test('first-run Plex setup persists the selected server and clears its temporary
   assert.equal(getPlexSetup(), null);
 });
 
-test('shared Plex users resolve the configured server through their own Plex resources', async () => {
+test('shared Plex users are checked with their server-scoped Plex token', async () => {
   const requestedUrls: string[] = [];
-  const fetcher: PlexFetch = async (input) => {
+  const fetcher: PlexFetch = async (input, init) => {
     const url = String(input);
     requestedUrls.push(url);
     const parsed = new URL(url);
-    if (parsed.hostname === 'plex.example.test') return new Response('unauthorized', { status: 401 });
-    if (parsed.hostname === 'plex.tv' && parsed.pathname === '/api/v2/resources') {
-      return response([{
-        owned: false,
-        provides: 'server',
-        clientIdentifier: 'server-1',
-        name: 'Shared Plex',
-        connections: [{ uri: 'https://shared-plex.example.test', local: false, relay: false }],
-      }]);
-    }
-    if (parsed.hostname === 'shared-plex.example.test' && parsed.pathname === '/library/sections') {
+    const token = (init?.headers as Record<string, string> | undefined)?.['X-Plex-Token'];
+    if (parsed.hostname === 'plex.example.test' && token === 'shared-server-token') {
       return response({ MediaContainer: { Directory: [{ key: '5', title: 'Music', type: 'artist' }] } });
+    }
+    if (parsed.hostname === 'plex.example.test') return new Response('unauthorized', { status: 401 });
+    if (parsed.hostname === 'plex.tv' && parsed.pathname === '/api/servers/server-1/shared_servers') {
+      return response({ MediaContainer: { SharedServer: [{
+        userID: 'shared-user-id', accessToken: 'shared-server-token',
+        Section: [{ key: '5', shared: '1' }],
+      }] } });
     }
     return new Response('missing', { status: 404 });
   };
 
-  assert.equal(await canAccessConfiguredPlexLibrary('shared-user-token', fetcher), true);
-  assert.ok(requestedUrls.some((url) => new URL(url).hostname === 'shared-plex.example.test'));
+  assert.equal(await canAccessConfiguredPlexLibrary('shared-account-token', 'shared-user-id', fetcher), true);
+  assert.ok(requestedUrls.some((url) => new URL(url).pathname === '/api/servers/server-1/shared_servers'));
 });
 
 test('Track Radio uses Plex nearest with sonic-analysis distance and excludes its seed', async () => {
