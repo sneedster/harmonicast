@@ -66,10 +66,7 @@ test('shared Plex users are checked with their server-scoped Plex token', async 
     }
     if (parsed.hostname === 'plex.example.test') return new Response('unauthorized', { status: 401 });
     if (parsed.hostname === 'plex.tv' && parsed.pathname === '/api/servers/server-1/shared_servers') {
-      return response({ MediaContainer: { SharedServer: [{
-        userID: 'shared-user-id', accessToken: 'shared-server-token',
-        Section: [{ key: '5', shared: '1' }],
-      }] } });
+      return new Response('<?xml version="1.0"?><MediaContainer><SharedServer userID="shared-user-id" accessToken="shared-server-token"><Section key="5" shared="1" /></SharedServer></MediaContainer>');
     }
     return new Response('missing', { status: 404 });
   };

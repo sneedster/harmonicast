@@ -609,11 +609,10 @@ async function getSharedServerAccessToken(
     { headers: plexHeaders(undefined, ownerToken) },
   );
   if (!response.ok) throw new Error(`Plex shared-server request failed (${response.status})`);
-  const payload = await response.json() as Record<string, unknown>;
-  const container = payload.MediaContainer && typeof payload.MediaContainer === 'object'
-    ? payload.MediaContainer as Record<string, unknown>
-    : payload;
-  const shares = Array.isArray(container.SharedServer) ? container.SharedServer : [];
+  const body = await response.text();
+  const shares = body.trimStart().startsWith('<')
+    ? parseSharedServersXml(body)
+    : parseSharedServersJson(body);
   const share = shares.find((candidate): candidate is Record<string, unknown> =>
     !!candidate && typeof candidate === 'object' && String(candidate.userID ?? '') === userPlexId,
   );
@@ -626,6 +625,43 @@ async function getSharedServerAccessToken(
     && ['1', 'true'].includes(String((candidate as Record<string, unknown>).shared ?? '')),
   );
   return includesLibrary ? share.accessToken : null;
+}
+
+function parseSharedServersJson(body: string): Record<string, unknown>[] {
+  const payload = JSON.parse(body) as Record<string, unknown>;
+  const container = payload.MediaContainer && typeof payload.MediaContainer === 'object'
+    ? payload.MediaContainer as Record<string, unknown>
+    : payload;
+  return Array.isArray(container.SharedServer)
+    ? container.SharedServer.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    : [];
+}
+
+function parseSharedServersXml(body: string): Record<string, unknown>[] {
+  const shares: Record<string, unknown>[] = [];
+  const sharedServer = /<SharedServer\b([^>]*?)(?:\/>|>([\s\S]*?)<\/SharedServer>)/g;
+  for (const match of body.matchAll(sharedServer)) {
+    const share = xmlAttributes(match[1] ?? '');
+    const sections: Record<string, unknown>[] = [];
+    for (const section of (match[2] ?? '').matchAll(/<Section\b([^>]*?)(?:\/>|>)/g)) {
+      sections.push(xmlAttributes(section[1] ?? ''));
+    }
+    share.Section = sections;
+    shares.push(share);
+  }
+  return shares;
+}
+
+function xmlAttributes(markup: string): Record<string, unknown> {
+  const attributes: Record<string, unknown> = {};
+  for (const match of markup.matchAll(/([\w:-]+)="([^"]*)"/g)) {
+    attributes[match[1]] = match[2]
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+  }
+  return attributes;
 }
 
 /** List only Plex Media Servers actually owned by this Plex account. */
