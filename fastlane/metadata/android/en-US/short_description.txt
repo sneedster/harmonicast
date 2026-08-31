@@ -1,1 +1,1 @@
-Control your self-hosted shared Plex Music player
+Companion client for a self-hosted Harmonicast server

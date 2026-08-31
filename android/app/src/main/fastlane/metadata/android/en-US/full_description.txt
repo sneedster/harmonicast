@@ -1,9 +1,12 @@
 <p>Harmonicast is a self-hosted shared music player for your Plex Music library.</p>
 
-<p>Connect to your own Harmonicast server, sign in with Plex, search a Music
-library you are authorised to use, add requests to a shared queue, vote on
-requests, and take control of playback from your Android device or Android
-Auto.</p>
+<p>This Android app is only a companion client: it does not work by itself.
+Before using it, install and run a Harmonicast server that you control, then
+connect this app to that server.</p>
+
+<p>Once connected, sign in with Plex, search a Music library you are authorised
+to use, add requests to a shared queue, vote on requests, and take control of
+playback from your Android device or Android Auto.</p>
 
 <p>One device is the active player at a time, while everyone with access to the
 selected library can browse, queue, and vote. The active player streams music
