@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Disc3, Search, ListMusic, LogOut, Radio, User, Music2, Settings, MonitorSpeaker, Loader2, Maximize } from 'lucide-react';
 import type { Connection } from '@/types';
 import { connectionFromInfo } from '@/lib/connectionStore';
@@ -14,8 +14,6 @@ import { KioskView } from '@/components/KioskView';
 import { claimPlayer, getConnection, getPlayerStatus, getMe, getServerVersion, signOut } from '@/lib/api';
 
 type Tab = 'nowplaying' | 'search' | 'queue' | 'settings';
-
-const AUTO_SWITCH_DELAY = 8000;
 
 function DeviceModal({
   onTakeOver,
@@ -79,44 +77,17 @@ function JukeboxApp({
   onSignOut: () => void;
   onTakeOver: () => Promise<void>;
 }) {
-  const { connection, current, isPlaying, jukeboxMode, isHost, initialStateLoaded } = usePlayer();
+  const { connection, current, isPlaying, jukeboxMode, isHost } = usePlayer();
   const [tab, setTab] = useState<Tab>('nowplaying');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchRequest, setSearchRequest] = useState(0);
   const [serverVersion, setServerVersion] = useState<string | null>(null);
   const openSearch = (query: string) => { setSearchQuery(query); setSearchRequest((value) => value + 1); setTab('search'); };
   const isKiosk = window.location.pathname.replace(/\/+$/, '') === '/kiosk';
-  const lastSongIdRef = useRef<string | null>(null);
-  const initialSongHandledRef = useRef(false);
-  const switchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     getServerVersion().then(setServerVersion).catch(() => {});
   }, []);
-
-  useEffect(() => {
-    // Initial now-playing data arrives asynchronously after sign-in. Treat it
-    // as hydration, not as a new track that should interrupt the user's tab.
-    if (!initialStateLoaded) return;
-    const songId = current?.id ?? null;
-    if (!initialSongHandledRef.current) {
-      initialSongHandledRef.current = true;
-      lastSongIdRef.current = songId;
-      return;
-    }
-    if (songId !== lastSongIdRef.current) {
-      lastSongIdRef.current = songId;
-      if (songId) {
-        if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
-        switchTimerRef.current = setTimeout(() => {
-          setTab('nowplaying');
-        }, AUTO_SWITCH_DELAY);
-      }
-    }
-    return () => {
-      if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
-    };
-  }, [current?.id, initialStateLoaded]);
 
   if (isKiosk) return <KioskView onExit={() => { window.location.href = '/'; }} />;
 
