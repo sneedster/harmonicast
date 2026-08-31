@@ -545,35 +545,56 @@ export async function canAccessConfiguredPlexLibrary(
 ): Promise<boolean> {
   const source = getActivePlexSource();
   if (!source || !userToken) return false;
-  const userConnection: PlexConnection = { baseUrl: source.baseUrl, token: userToken };
-  try {
-    const libraries = await listPlexMusicLibraries(userConnection, fetcher);
-    if (libraries.some((library) => library.key === source.libraryKey)) return true;
-  } catch (error) {
-    // A direct section lookup below is still authoritative. Some Plex shares
-    // can use the library while their /library/sections directory is stale or
-    // incomplete, so a listing failure must not by itself reject the guest.
-    console.warn('Could not enumerate Plex libraries for access check:', error);
-  }
+  const canAccessThrough = async (baseUrl: string) => {
+    const userConnection: PlexConnection = { baseUrl, token: userToken };
+    try {
+      const libraries = await listPlexMusicLibraries(userConnection, fetcher);
+      if (libraries.some((library) => library.key === source.libraryKey)) return true;
+    } catch (error) {
+      // A direct section lookup below is still authoritative. Some Plex shares
+      // can use the library while their /library/sections directory is stale or
+      // incomplete, so a listing failure must not by itself reject the guest.
+      console.warn('Could not enumerate Plex libraries for access check:', error);
+    }
 
+    try {
+      // Ask Plex for one item from the configured section. A 200 response is an
+      // explicit authorization decision for this exact library and avoids
+      // treating directory-list quirks as a sharing denial.
+      await plexServerJson(
+        userConnection,
+        `/library/sections/${encodeURIComponent(source.libraryKey)}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=1`,
+        fetcher,
+      );
+      return true;
+    } catch (error) {
+      console.warn('Plex access check for configured Music library failed:', error);
+      return false;
+    }
+  };
+
+  if (await canAccessThrough(source.baseUrl)) return true;
+
+  // The URL stored during owner setup may be a local or owner-specific route.
+  // Resolve this same server through the guest's Plex resources instead; Plex
+  // advertises the reachable connections for the token which is actually
+  // signing in, including shared servers.
+  const machineIdentifier = getPersistedPlexSource()?.machineIdentifier;
+  if (!machineIdentifier) return false;
   try {
-    // Ask Plex for one item from the configured section. A 200 response is an
-    // explicit authorization decision for this exact library and avoids
-    // treating directory-list quirks as a sharing denial.
-    await plexServerJson(
-      userConnection,
-      `/library/sections/${encodeURIComponent(source.libraryKey)}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=1`,
-      fetcher,
-    );
-    return true;
+    const server = (await listPlexServerResources(userToken, false, fetcher))
+      .find((candidate) => candidate.machineIdentifier === machineIdentifier);
+    if (!server) return false;
+    for (const candidate of [...server.connections].sort((a, b) => Number(b.local) - Number(a.local))) {
+      if (candidate.uri !== source.baseUrl && await canAccessThrough(candidate.uri)) return true;
+    }
   } catch (error) {
-    console.warn('Plex access check for configured Music library failed:', error);
-    return false;
+    console.warn('Could not resolve Plex server through the guest account:', error);
   }
+  return false;
 }
 
-/** List only Plex Media Servers actually owned by this Plex account. */
-export async function listOwnedPlexServers(token: string, fetcher: PlexFetch = fetch): Promise<PlexOwnedServer[]> {
+async function listPlexServerResources(token: string, ownedOnly: boolean, fetcher: PlexFetch): Promise<PlexOwnedServer[]> {
   if (!token) throw new Error('Plex access token is required');
   const response = await fetcher(`${PLEX_API_BASE_URL}/api/v2/resources?includeHttps=1&includeRelay=1`, {
     headers: plexHeaders(undefined, token),
@@ -587,7 +608,7 @@ export async function listOwnedPlexServers(token: string, fetcher: PlexFetch = f
     const provides = typeof item.provides === 'string' ? item.provides.split(',') : [];
     const machineIdentifier = typeof item.clientIdentifier === 'string' ? item.clientIdentifier : '';
     const name = typeof item.name === 'string' ? item.name : '';
-    if (item.owned !== true || !provides.includes('server') || !machineIdentifier || !name) return [];
+    if ((ownedOnly && item.owned !== true) || !provides.includes('server') || !machineIdentifier || !name) return [];
     const connections = Array.isArray(item.connections) ? item.connections.flatMap((connection) => {
       if (!connection || typeof connection !== 'object') return [];
       const value = connection as Record<string, unknown>;
@@ -597,6 +618,11 @@ export async function listOwnedPlexServers(token: string, fetcher: PlexFetch = f
     }) : [];
     return connections.length ? [{ machineIdentifier, name, connections }] : [];
   });
+}
+
+/** List only Plex Media Servers actually owned by this Plex account. */
+export async function listOwnedPlexServers(token: string, fetcher: PlexFetch = fetch): Promise<PlexOwnedServer[]> {
+  return listPlexServerResources(token, true, fetcher);
 }
 
 /** Resolve a server connection using the owner token, preferring local links. */
