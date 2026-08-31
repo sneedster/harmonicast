@@ -60,9 +60,13 @@ host API remain the next implementation milestone.
 
 ## User experience
 
-1. A completed kiosk Plex search has no tracks.
-2. If an enabled plugin is healthy, the kiosk offers **Search connected music
-   sources**. Otherwise it presents the normal no-results state.
+1. A completed Plex search in the kiosk or regular web interface has no
+   tracks. The regular web interface also offers an artist-browse path when a
+   local artist match exists.
+2. If an enabled plugin is healthy, the client offers **Search connected music
+   sources**. Otherwise it presents the normal no-results state. On a phone,
+   the regular web picker is a full-screen, touch-friendly flow; on larger
+   screens it is a modal.
 3. Harmonicast creates a durable request and opens the plugin's in-origin
    kiosk page.
 4. The plugin resolves the guest's MusicBrainz choice and performs acquisition.

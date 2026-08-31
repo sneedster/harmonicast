@@ -132,6 +132,9 @@ export async function getMusicSourceRecordings(id: string, requestId: string): P
 export async function acquireMusicSourceRecording(id: string, requestId: string, recording: MusicSourceRecording): Promise<void> {
   await request(`/api/plugins/${encodeURIComponent(id)}/requests/${encodeURIComponent(requestId)}/acquire`, { method: 'POST', body: JSON.stringify({ recordingId: recording.id, artist: recording.artist, title: recording.title, durationMs: recording.durationMs }) });
 }
+export async function getMusicSourceRequest(requestId: string): Promise<{ status: 'resolving' | 'acquiring' | 'waiting_for_plex' | 'failed' | 'fulfilled'; message: string | null }> {
+  return request(`/api/extensions/music-sources/requests/${encodeURIComponent(requestId)}`);
+}
 export async function getMusicSourceAlbums(id: string, requestId: string, artistId: string, offset = 0): Promise<{ albums: MusicSourceAlbum[]; nextOffset: number }> {
   const result = await request<{ albums: MusicSourceAlbum[] }>(`/api/plugins/${encodeURIComponent(id)}/requests/${encodeURIComponent(requestId)}/artist-albums`, { method: 'POST', body: JSON.stringify({ artistId, offset }) });
   return { albums: result.albums, nextOffset: offset + result.albums.length };
