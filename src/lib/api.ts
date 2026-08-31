@@ -125,11 +125,20 @@ export async function launchMusicSourceExtension(id: string, query: string, mode
 }
 
 export interface MusicSourceRecording { id: string; title: string; artist: string; album: string | null; year: string | null; durationMs: number | null; disambiguation: string | null; }
+export interface MusicSourceAlbum { id: string; title: string; year: string | null; type: string | null; }
 export async function getMusicSourceRecordings(id: string, requestId: string): Promise<{ recordings: MusicSourceRecording[]; artist?: { id: string; name: string; nextOffset: number } }> {
   return request(`/api/plugins/${encodeURIComponent(id)}/requests/${encodeURIComponent(requestId)}/recordings`, { method: 'POST' });
 }
 export async function acquireMusicSourceRecording(id: string, requestId: string, recording: MusicSourceRecording): Promise<void> {
   await request(`/api/plugins/${encodeURIComponent(id)}/requests/${encodeURIComponent(requestId)}/acquire`, { method: 'POST', body: JSON.stringify({ recordingId: recording.id, artist: recording.artist, title: recording.title, durationMs: recording.durationMs }) });
+}
+export async function getMusicSourceAlbums(id: string, requestId: string, artistId: string): Promise<MusicSourceAlbum[]> {
+  const result = await request<{ albums: MusicSourceAlbum[] }>(`/api/plugins/${encodeURIComponent(id)}/requests/${encodeURIComponent(requestId)}/artist-albums`, { method: 'POST', body: JSON.stringify({ artistId, offset: 0 }) });
+  return result.albums;
+}
+export async function getMusicSourceReleaseTracks(id: string, requestId: string, releaseGroupId: string, artistName: string): Promise<MusicSourceRecording[]> {
+  const result = await request<{ recordings: MusicSourceRecording[] }>(`/api/plugins/${encodeURIComponent(id)}/requests/${encodeURIComponent(requestId)}/release-group-tracks`, { method: 'POST', body: JSON.stringify({ releaseGroupId, artistName }) });
+  return result.recordings;
 }
 
 export interface InstalledPlugin {
