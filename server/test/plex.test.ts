@@ -10,6 +10,7 @@ process.env.DATA_DIR = dataDir;
 const { initDb } = await import('../db.js');
 const {
   beginPlexSetup,
+  canAccessConfiguredPlexLibrary,
   clearPlexSetup,
   getActivePlexSource,
   getPersistedPlexSource,
@@ -51,6 +52,24 @@ test('first-run Plex setup persists the selected server and clears its temporary
 
   clearPlexSetup();
   assert.equal(getPlexSetup(), null);
+});
+
+test('shared Plex users are admitted when the selected library is directly accessible', async () => {
+  const requestedUrls: string[] = [];
+  const fetcher: PlexFetch = async (input) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (new URL(url).pathname === '/library/sections') {
+      return response({ MediaContainer: { Directory: [] } });
+    }
+    if (new URL(url).pathname === '/library/sections/5/all') {
+      return response({ MediaContainer: { size: 0, Metadata: [] } });
+    }
+    return new Response('missing', { status: 404 });
+  };
+
+  assert.equal(await canAccessConfiguredPlexLibrary('shared-user-token', fetcher), true);
+  assert.ok(requestedUrls.some((url) => new URL(url).pathname === '/library/sections/5/all'));
 });
 
 test('Track Radio uses Plex nearest with sonic-analysis distance and excludes its seed', async () => {

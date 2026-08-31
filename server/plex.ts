@@ -545,11 +545,29 @@ export async function canAccessConfiguredPlexLibrary(
 ): Promise<boolean> {
   const source = getActivePlexSource();
   if (!source || !userToken) return false;
+  const userConnection: PlexConnection = { baseUrl: source.baseUrl, token: userToken };
   try {
-    const userConnection: PlexConnection = { baseUrl: source.baseUrl, token: userToken };
     const libraries = await listPlexMusicLibraries(userConnection, fetcher);
-    return libraries.some((library) => library.key === source.libraryKey);
-  } catch {
+    if (libraries.some((library) => library.key === source.libraryKey)) return true;
+  } catch (error) {
+    // A direct section lookup below is still authoritative. Some Plex shares
+    // can use the library while their /library/sections directory is stale or
+    // incomplete, so a listing failure must not by itself reject the guest.
+    console.warn('Could not enumerate Plex libraries for access check:', error);
+  }
+
+  try {
+    // Ask Plex for one item from the configured section. A 200 response is an
+    // explicit authorization decision for this exact library and avoids
+    // treating directory-list quirks as a sharing denial.
+    await plexServerJson(
+      userConnection,
+      `/library/sections/${encodeURIComponent(source.libraryKey)}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=1`,
+      fetcher,
+    );
+    return true;
+  } catch (error) {
+    console.warn('Plex access check for configured Music library failed:', error);
     return false;
   }
 }
