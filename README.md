@@ -230,6 +230,13 @@ image or APK:
 Do not publish a Docker image or GitHub APK release until the automated gate
 and the relevant manual checks have passed.
 
+The web download button and its QR code use Harmonicast's `/api/downloads/android`
+redirect. It checks GitHub releases for the highest versioned
+`harmonicast-X.Y.Z.apk` asset and caches the result, so server-only releases do
+not break Android downloads. Publish Android assets with the versioned filename
+created by `android/build-release.sh`; no web-link edit is needed for an Android
+update.
+
 ## API notes
 
 All REST routes are under `/api` and require a Harmonicast Bearer token unless

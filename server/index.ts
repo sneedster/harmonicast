@@ -35,12 +35,14 @@ import type { PlexSong } from './plex.js';
 import { createPluginExtensionRequest, getExtensionRequest, updateExtensionRequest } from './extensions.js';
 import { getPluginSettings, listPluginSettings, pluginSecretsAreAvailable, savePluginSettings } from './plugin-settings.js';
 import { installPlugin, loadPlugins, type MusicSourceStatus } from './plugins.js';
+import { createAndroidDownloadResolver } from './android-download.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
 // Release images set this during `docker build`; a source checkout should not
 // pretend to be a published release.
 const SERVER_VERSION = process.env.HARMONICAST_VERSION || 'development';
+const resolveAndroidDownload = createAndroidDownloadResolver();
 
 initDb();
 // Retain the legacy Subsonic environment fallback for upgrades. A normal
@@ -126,6 +128,13 @@ function requireActivePlayer(req, res, next) {
 }
 
 // ── Jukebox Auto-fill ────────────────────────────────────────────────
+
+// This route is intentionally public: it is also used from the sign-in screen
+// and QR code. It resolves Android releases separately from Docker releases.
+app.get('/api/downloads/android', async (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.redirect(302, await resolveAndroidDownload());
+});
 
 let jukeboxFillInProgress = false;
 
