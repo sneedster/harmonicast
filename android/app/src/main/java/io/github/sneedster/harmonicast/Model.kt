@@ -12,6 +12,11 @@ data class NowPlaying(val song: Song? = null, val isPlaying: Boolean = false)
 data class ArtistDiscovery(val name: String, val bio: String, val genres: List<String>, val similarArtists: List<String>, val albumName: String, val albumYear: Int?, val albumSummary: String)
 data class PlexServer(val machineIdentifier: String, val name: String)
 data class PlexLibrary(val key: String, val title: String)
+data class MusicSourceExtension(val id: String, val displayName: String, val available: Boolean)
+data class MusicSourceRecording(val id: String, val title: String, val artist: String, val album: String?, val year: String?, val durationMs: Long?, val disambiguation: String?)
+data class MusicSourceAlbum(val id: String, val title: String, val year: String?, val type: String?)
+data class MusicSourceArtist(val id: String, val name: String)
+data class LibraryArtistBrowse(val name: String, val songs: List<Song>)
 
 class Api(private val prefs: android.content.SharedPreferences) {
     private val http = OkHttpClient()
