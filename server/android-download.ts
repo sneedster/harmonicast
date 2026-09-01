@@ -11,8 +11,13 @@ function apkFromReleases(payload: unknown): string | null {
   const candidates: { version: number[]; url: string }[] = [];
   for (const release of payload) {
     if (!release || typeof release !== 'object') continue;
-    const tag = (release as { tag_name?: unknown }).tag_name;
-    const assets = (release as { assets?: unknown }).assets;
+    const { tag_name: tag, assets, draft, prerelease } = release as {
+      tag_name?: unknown;
+      assets?: unknown;
+      draft?: unknown;
+      prerelease?: unknown;
+    };
+    if (draft === true || prerelease === true) continue;
     if (typeof tag !== 'string' || !Array.isArray(assets)) continue;
     for (const asset of assets) {
       const name = asset && typeof asset === 'object' ? (asset as { name?: unknown }).name : null;
