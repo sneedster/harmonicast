@@ -850,6 +850,17 @@ app.post('/api/now-playing', requireAuth, requireActivePlayer, (req, res) => {
   res.json({ ok: true });
 });
 
+// Skip is a control request, not the playback operation itself.  Broadcasting
+// it lets the device that currently owns playback dequeue and load the next
+// track, even when the request originated from another host controller (such
+// as the Android phone UI).
+app.post('/api/player/skip', requireAuth, (req, res) => {
+  if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can control playback' });
+  if (!getNowPlaying()?.song_id) return res.status(400).json({ error: 'No song is currently playing' });
+  broadcastForceSkip();
+  res.json({ ok: true });
+});
+
 // ── Votes ─────────────────────────────────────────────────────────────
 
 app.post('/api/vote', requireAuth, async (req, res) => {
@@ -862,7 +873,9 @@ app.post('/api/vote', requireAuth, async (req, res) => {
       if (!np?.song_id) throw new Error('No song is currently playing');
       const track = await getPlexTrack(plexSource, np.song_id);
       const rating = await ratePlexTrack(plexSource, np.song_id, (track.userRating ?? 5) + (vote === 'up' ? 1 : -1));
-      if (vote === 'down' && np.is_auto_queue) broadcastForceSkip();
+      // A down-vote is an explicit "don't play this" action in every queue,
+      // not only the auto-filled portion of it.
+      if (vote === 'down') broadcastForceSkip();
       return res.json({ ok: true, rating });
     }
 
@@ -870,7 +883,7 @@ app.post('/api/vote', requireAuth, async (req, res) => {
     const stats = voteOnCurrent(req.user.id, vote);
     if (vote === 'down') {
       const np = getNowPlaying();
-      if (np?.is_auto_queue) broadcastForceSkip();
+      if (np?.song_id) broadcastForceSkip();
     }
     res.json({ ok: true, stats });
   } catch (err) {

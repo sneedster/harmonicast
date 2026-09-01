@@ -304,7 +304,7 @@ class HarmonicastViewModel : ViewModel() {
         if (nowPlaying.isPlaying) controller?.pause() else controller?.play()
     }
 
-    fun nextSong() { controller?.seekToNext() }
+    fun nextSong() = action("player/skip", "POST", JSONObject())
     fun playQueued(song: Song) {
         if (!isActivePlayer) return
         controller?.setMediaItem(MediaItem.Builder().setMediaId(song.id).build())
@@ -574,11 +574,11 @@ class MainActivity : ComponentActivity() {
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .pointerInput(song.id, vm.isActivePlayer) {
+                    .pointerInput(song.id, vm.isHost) {
                         detectHorizontalDragGestures(
                             onDragStart = { swipeOffset = 0f; swipeStartedAt = SystemClock.uptimeMillis() },
                             onHorizontalDrag = { change, amount ->
-                                if (vm.isActivePlayer && amount < 0f) {
+                                if (vm.isHost && amount < 0f) {
                                     change.consume()
                                     swipeOffset = (swipeOffset + amount).coerceAtLeast(-throwDistance * 0.8f)
                                 }
@@ -647,7 +647,7 @@ class MainActivity : ComponentActivity() {
                 FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.size(64.dp)) {
                     Icon(if (vm.nowPlaying.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or pause")
                 }
-                IconButton(onClick = { vm.nextSong() }, enabled = vm.isActivePlayer, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.SkipNext, "Next") }
+                IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.SkipNext, "Next") }
                 IconButton(onClick = { vm.vote(true) }, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.ThumbUp, "Vote up") }
             }
             if (vm.isHost) {

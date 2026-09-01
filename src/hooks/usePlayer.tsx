@@ -513,13 +513,10 @@ export function PlayerProvider({
       } catch {
         // No song playing, or the vote was rejected.
       }
-      // Host-side fallback: if the host downvotes an auto-queued song, skip it
-      // immediately even if the server's force_skip broadcast hasn't arrived yet.
-      if (isHost && event === 'thumbs_down' && currentIsAutoRef.current) {
-        void advance('skip');
-      }
+      // The server broadcasts a force_skip for every down-vote.  Do not also
+      // advance locally here, or an auto-queued song can be skipped twice.
     },
-    [advance, isHost],
+    [],
   );
 
   const thumbsUp = useCallback(() => { void vote('thumbs_up'); }, [vote]);
