@@ -9,10 +9,8 @@ import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.browser.customtabs.CustomTabsIntent
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -728,7 +726,6 @@ class MainActivity : ComponentActivity() {
         val skipThreshold = throwDistance * 0.35f
         var swipeOffset by remember(song?.id) { mutableFloatStateOf(0f) }
         var swipeStartedAt by remember(song?.id) { mutableLongStateOf(0L) }
-        var throwingSongAway by remember(song?.id) { mutableStateOf(false) }
         var detailsOpen by remember(song?.id) { mutableStateOf(false) }
         var scrubPosition by remember(song?.id) { mutableFloatStateOf(vm.playbackPosition) }
         var isScrubbing by remember(song?.id) { mutableStateOf(false) }
@@ -743,22 +740,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         val animatedSwipeOffset by animateFloatAsState(
-            targetValue = if (throwingSongAway) -throwDistance else swipeOffset,
-            animationSpec = if (throwingSongAway) {
-                tween(durationMillis = 220, easing = FastOutSlowInEasing)
-            } else {
-                spring()
-            },
-            label = "artwork throw",
-            finishedListener = {
-                if (throwingSongAway) {
-                    // Keep the old art off-screen until the next queue update
-                    // replaces it, rather than springing it back into view.
-                    swipeOffset = -throwDistance
-                    throwingSongAway = false
-                    vm.nextSong()
-                }
-            },
+            targetValue = swipeOffset,
+            animationSpec = spring(),
+            label = "artwork swipe",
         )
         if (detailsOpen && song != null) {
             ArtistDiscoveryPage(vm, song) { detailsOpen = false }
@@ -792,8 +776,10 @@ class MainActivity : ComponentActivity() {
                                 // A deliberate flick should feel immediate even when it
                                 // travels less than the long-drag distance.
                                 val fastFlick = swipeOffset < -72f && SystemClock.uptimeMillis() - swipeStartedAt < 180L
-                                if (swipeOffset <= -skipThreshold || fastFlick) throwingSongAway = true
-                                else swipeOffset = 0f
+                                if (swipeOffset <= -skipThreshold || fastFlick) vm.nextSong()
+                                // A swipe is a command, not a card-dismissal UI.
+                                // The art returns until the server publishes the next song.
+                                swipeOffset = 0f
                             },
                             onDragCancel = { swipeOffset = 0f },
                         )
