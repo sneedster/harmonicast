@@ -146,6 +146,14 @@ signing. To upgrade an installed copy, increase both the point version and
 have lost the keystore. `HARMONICAST_SKIP_RELEASE_CHECKS=1` is reserved for
 local troubleshooting; do not use it for a published APK.
 
+### Android release channels
+
+Use `dev-android-vX.Y.Z.N` tags and GitHub **pre-releases** for builds from the
+`dev` branch. They are excluded from both the normal Android download link and
+F-Droid's update checks. Only tag a promoted `main` commit as `vX.Y.Z` and
+publish it as a non-prerelease GitHub release; that is the sole form eligible
+for F-Droid automation.
+
 ## Configuration
 
 | Variable | Default | Purpose |

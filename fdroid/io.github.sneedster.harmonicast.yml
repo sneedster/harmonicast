@@ -23,7 +23,9 @@ Builds:
       - yes
 
 AutoUpdateMode: Version
-UpdateCheckMode: Tags
+# Only stable Android tags are eligible for automatic F-Droid builds.  Tags for
+# dev releases use the `dev-android-vX.Y.Z.N` form and must never be selected.
+UpdateCheckMode: 'Tags ^v[0-9]+\.[0-9]+\.[0-9]+$'
 UpdateCheckData: 
   android/app/build.gradle.kts|versionCode.*orElse\("([0-9]+)"\)|.|versionName.*orElse\("([0-9.]+)"\)
 CurrentVersion: 1.0.20
