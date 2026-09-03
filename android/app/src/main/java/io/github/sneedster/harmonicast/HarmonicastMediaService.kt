@@ -28,6 +28,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -41,6 +42,9 @@ class HarmonicastMediaService : MediaLibraryService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private var webSocket: okhttp3.WebSocket? = null
+    private var webSocketReconnectJob: kotlinx.coroutines.Job? = null
+    private var webSocketGeneration = 0
+    private var webSocketStopped = false
     private val currentIsAuto = AtomicReference(false)
     private val androidAutoControllers = mutableSetOf<MediaSession.ControllerInfo>()
     private var positionSaveJob: kotlinx.coroutines.Job? = null
@@ -466,8 +470,9 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun connectWebSocket() {
-        if (api.base.isEmpty() || api.token.isEmpty()) return
-        webSocket?.close(1000, null)
+        if (webSocketStopped || api.base.isEmpty() || api.token.isEmpty()) return
+        webSocketReconnectJob?.cancel()
+        val generation = ++webSocketGeneration
         webSocket = api.websocket(onMessage = { text ->
             try {
                 val msg = JSONObject(text)
@@ -501,6 +506,19 @@ class HarmonicastMediaService : MediaLibraryService() {
                 }
             } catch (e: Exception) {
                 Log.e("HarmonicastMedia", "Failed to parse WS message", e)
+            }
+        }, onDisconnected = {
+            scope.launch {
+                if (webSocketStopped || generation != webSocketGeneration) return@launch
+                Log.w("HarmonicastMedia", "Command WebSocket disconnected; reconnecting")
+                webSocket = null
+                webSocketReconnectJob?.cancel()
+                webSocketReconnectJob = scope.launch {
+                    delay(1_000)
+                    if (!webSocketStopped && generation == webSocketGeneration) {
+                        connectWebSocket()
+                    }
+                }
             }
         })
     }
@@ -859,6 +877,10 @@ class HarmonicastMediaService : MediaLibraryService() {
 
     override fun onDestroy() {
         stopPositionSaving()
+        webSocketStopped = true
+        webSocketGeneration += 1
+        webSocketReconnectJob?.cancel()
+        webSocketReconnectJob = null
         webSocket?.close(1000, null)
         webSocket = null
         mediaLibrarySession?.run {
