@@ -36,6 +36,7 @@ import { createPluginExtensionRequest, getExtensionRequest, updateExtensionReque
 import { getPluginSettings, listPluginSettings, pluginSecretsAreAvailable, savePluginSettings } from './plugin-settings.js';
 import { installPlugin, loadPlugins, type MusicSourceStatus } from './plugins.js';
 import { createAndroidDownloadResolver } from './android-download.js';
+import { pipeWebResponseBody } from './streaming.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -1172,12 +1173,15 @@ app.get('/api/stream/:id', requireAuth, requireActivePlayer, async (req, res) =>
       }
       res.status(upstream.status);
       if (!upstream.body) return res.end();
-      const { Readable } = await import('node:stream');
-      Readable.fromWeb(upstream.body as never).pipe(res);
+      await pipeWebResponseBody(upstream.body, res);
       return;
     } catch (err) {
       console.error('Plex stream failed:', err);
-      return res.status(502).json({ error: 'Could not stream from the Plex music library' });
+      if (!res.headersSent && !res.destroyed) {
+        return res.status(502).json({ error: 'Could not stream from the Plex music library' });
+      }
+      if (!res.destroyed) res.destroy();
+      return;
     }
   }
   const conn = getConnection();
@@ -1197,10 +1201,13 @@ app.get('/api/stream/:id', requireAuth, requireActivePlayer, async (req, res) =>
     }
     res.status(upstream.status);
     if (!upstream.body) return res.end();
-    const { Readable } = await import('node:stream');
-    Readable.fromWeb(upstream.body as never).pipe(res);
-  } catch {
-    res.status(502).json({ error: 'Could not stream from music server' });
+    await pipeWebResponseBody(upstream.body, res);
+  } catch (err) {
+    console.error('Music server stream failed:', err);
+    if (!res.headersSent && !res.destroyed) {
+      return res.status(502).json({ error: 'Could not stream from music server' });
+    }
+    if (!res.destroyed) res.destroy();
   }
 });
 
