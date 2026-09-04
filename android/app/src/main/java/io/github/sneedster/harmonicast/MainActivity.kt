@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -56,6 +58,7 @@ import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import kotlin.math.roundToInt
 
 // Playback control is delegated to HarmonicastMediaService via MediaController.
 // The ViewModel only reads state for display and forwards user commands.
@@ -74,6 +77,8 @@ class HarmonicastViewModel : ViewModel() {
     var artistDiscoveryLoading by mutableStateOf(false); private set
     var artistDiscoveryError by mutableStateOf(""); private set
     var isHost by mutableStateOf(false); var isActivePlayer by mutableStateOf(false)
+    var ratedTrackShare by mutableIntStateOf(8); private set
+    var settingsSaving by mutableStateOf(false); private set
     var configured by mutableStateOf(true)
     var needsPlexSetup by mutableStateOf(false); private set
     var isPlexSetupOwner by mutableStateOf(false); private set
@@ -167,6 +172,7 @@ class HarmonicastViewModel : ViewModel() {
                     val np = JSONObject(npJson)
                     nowPlaying = NowPlaying(np.optJSONObject("song")?.let(::song), np.optBoolean("isPlaying"))
                     playbackPosition = np.optDouble("playbackPosition", 0.0).toFloat().coerceAtLeast(0f)
+                    ratedTrackShare = JSONObject(api.json("settings")).optInt("ratedTrackShare", 8).coerceIn(0, 10)
                     ensureSocket()
                     if (isHost) loadPlexSource()
                 } else if (needsPlexSetup && isPlexSetupOwner) {
@@ -456,11 +462,28 @@ class HarmonicastViewModel : ViewModel() {
     fun vote(up: Boolean) = action("vote", "POST", JSONObject().put("vote", if (up) "up" else "down"))
     fun claim() = action("player/claim", "POST", JSONObject()) { refresh() }
     fun clearQueue() = action("queue", "DELETE", JSONObject()) { refresh() }
+    fun saveRatedTrackShare(share: Int) {
+        if (!isHost || settingsSaving) return
+        viewModelScope.launch {
+            settingsSaving = true
+            try {
+                val value = share.coerceIn(0, 10)
+                api.json("settings", "PUT", JSONObject().put("ratedTrackShare", value))
+                ratedTrackShare = value
+                showTemporaryNotice("Automatic mix saved")
+            } catch (e: Exception) {
+                error = e.message ?: "Could not save automatic mix"
+            } finally {
+                settingsSaving = false
+            }
+        }
+    }
+
     fun queueSimilar() {
         viewModelScope.launch {
             try {
                 val added = JSONObject(api.json("queue/similar", "POST", JSONObject())).optInt("added", 0)
-                if (added > 0) showTemporaryNotice("Queued $added Track Radio songs")
+                if (added > 0) showTemporaryNotice("Track Radio ready · $added songs queued")
                 else error = "No Track Radio songs were found"
                 refresh()
             } catch (e: Exception) {
@@ -558,10 +581,11 @@ class HarmonicastViewModel : ViewModel() {
     private fun song(o: JSONObject) = Song(
         o.optString("id"), o.optString("title"), o.optString("artist"), o.optString("album"),
         o.optInt("duration"), o.optString("coverArt"),
-        if (o.has("rating") && !o.isNull("rating")) o.optInt("rating").coerceIn(0, 10) else null,
+        if (o.has("rating") && !o.isNull("rating")) o.optDouble("rating").coerceIn(0.0, 10.0) else null,
         o.optString("addedByEmail"), o.optBoolean("isManual", true),
+        year = if (o.has("year") && !o.isNull("year")) o.optInt("year").takeIf { it > 0 } else null,
     )
-    private fun songJson(s: Song) = JSONObject().put("id", s.id).put("title", s.title).put("artist", s.artist).put("album", s.album).put("duration", s.duration).put("coverArt", s.coverArt)
+    private fun songJson(s: Song) = JSONObject().put("id", s.id).put("title", s.title).put("artist", s.artist).put("album", s.album).put("year", s.year).put("duration", s.duration).put("coverArt", s.coverArt)
 }
 
 data class MusicSourceDialog(val id: String, val displayName: String, val mode: String, val query: String, val requestId: String? = null)
@@ -653,7 +677,12 @@ class MainActivity : ComponentActivity() {
         },
         bottomBar = {
             NavigationBar(Modifier.height(56.dp)) {
-                val items = listOf("Now playing" to Icons.Default.MusicNote, "Queue" to Icons.AutoMirrored.Filled.QueueMusic, "Search" to Icons.Default.Search)
+                val items = listOf(
+                    "Now playing" to Icons.Default.MusicNote,
+                    "Queue" to Icons.AutoMirrored.Filled.QueueMusic,
+                    "Search" to Icons.Default.Search,
+                    "Settings" to Icons.Default.Settings,
+                )
                 items.forEachIndexed { index, item ->
                     NavigationBarItem(
                         selected = tab == index,
@@ -670,13 +699,59 @@ class MainActivity : ComponentActivity() {
             when (tab) {
                 0 -> Now(vm) { term -> vm.query = term; vm.search(); tab = 2 }
                 1 -> Queue(vm)
-                else -> Search(vm)
+                2 -> Search(vm)
+                else -> SettingsScreen(vm)
             }
             if (vm.musicSourceDialog != null) MusicSourceSheet(vm)
             val message = vm.error.ifBlank { vm.notice }
             if (message.isNotBlank()) {
                 Snackbar(modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp), action = {}) {
                     Text(message)
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun SettingsScreen(vm: HarmonicastViewModel) {
+    var share by remember(vm.ratedTrackShare) { mutableFloatStateOf(vm.ratedTrackShare.toFloat()) }
+    val value = share.roundToInt().coerceIn(0, 10)
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        ElevatedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Default.Tune, null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Automatic rated-track share", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                }
+                Text(
+                    "Choose how many of every ten automatic picks come from rated tracks. Tracks above 1 stay eligible, but lower ratings are selected less often. The rest explore unrated tracks.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Slider(
+                    value = share,
+                    onValueChange = { share = it.roundToInt().toFloat() },
+                    onValueChangeFinished = { vm.saveRatedTrackShare(value) },
+                    valueRange = 0f..10f,
+                    steps = 9,
+                    enabled = vm.isHost && !vm.settingsSaving,
+                )
+                Text(
+                    when (value) {
+                        0 -> "All unrated"
+                        10 -> "All rated"
+                        else -> "$value rated · ${10 - value} unrated"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                if (!vm.isHost) {
+                    Text("Only the host can change this setting.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else if (vm.settingsSaving) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
             }
         }
@@ -720,6 +795,7 @@ class MainActivity : ComponentActivity() {
 @Composable private fun Now(vm: HarmonicastViewModel, onSearch: (String) -> Unit) {
     val song = vm.nowPlaying.song
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
+        val availableWidth = maxWidth
         val artworkSize = minOf((maxWidth - 12.dp).coerceAtLeast(180.dp), maxHeight * 0.5f)
         val density = LocalDensity.current
         val throwDistance = with(density) { (maxWidth + artworkSize).toPx() }
@@ -747,15 +823,7 @@ class MainActivity : ComponentActivity() {
         if (detailsOpen && song != null) {
             ArtistDiscoveryPage(vm, song) { detailsOpen = false }
         } else Column(
-            Modifier.fillMaxSize().pointerInput(song?.id) {
-                var upward = 0f
-                detectVerticalDragGestures(onVerticalDrag = { change, amount ->
-                    if (amount < 0) { change.consume(); upward -= amount }
-                }, onDragEnd = {
-                    if (upward > 90f && song != null) { detailsOpen = true; vm.loadArtistDiscovery(song) }
-                    upward = 0f
-                })
-            },
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -763,6 +831,15 @@ class MainActivity : ComponentActivity() {
             Box(
                 Modifier
                     .fillMaxWidth()
+                    .pointerInput(song.id) {
+                        var upward = 0f
+                        detectVerticalDragGestures(onVerticalDrag = { change, amount ->
+                            if (amount < 0) { change.consume(); upward -= amount }
+                        }, onDragEnd = {
+                            if (upward > 90f) { detailsOpen = true; vm.loadArtistDiscovery(song) }
+                            upward = 0f
+                        })
+                    }
                     .pointerInput(song.id, vm.isHost) {
                         detectHorizontalDragGestures(
                             onDragStart = { swipeOffset = 0f; swipeStartedAt = SystemClock.uptimeMillis() },
@@ -827,25 +904,42 @@ class MainActivity : ComponentActivity() {
             }
             TextButton(onClick = { onSearch(song.artist) }) { Text(song.artist, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (song.album.isNotBlank()) TextButton(onClick = { onSearch(song.album) }) { Text(song.album, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            val rating = song.rating ?: 0
-            val filledStars = (rating / 2).coerceIn(0, 5)
+            if (song.album.isNotBlank()) {
+                val albumLabel = song.year?.let { "${song.album} ($it)" } ?: song.album
+                TextButton(onClick = { onSearch(song.album) }) { Text(albumLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+            val rating = song.rating ?: 0.0
+            val filledStars = (rating / 2).toInt().coerceIn(0, 5)
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 repeat(5) { index -> Icon(if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder, if (index == 0) "Plex rating $rating out of 10" else null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp)) }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.ThumbDown, "Vote down") }
-                FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.size(64.dp)) {
-                    Icon(if (vm.nowPlaying.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or pause")
-                }
-                IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.SkipNext, "Next") }
-                IconButton(onClick = { vm.vote(true) }, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.ThumbUp, "Vote up") }
-            }
             if (vm.isHost) {
-                OutlinedButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer) {
-                    Icon(Icons.Default.AutoAwesome, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Queue Track Radio")
+                FilledTonalButton(
+                    onClick = { vm.queueSimilar() },
+                    enabled = vm.isActivePlayer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(28.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Start Track Radio", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            val controlButtonSize = minOf(78.dp, availableWidth * 0.22f)
+            val playButtonSize = minOf(96.dp, availableWidth * 0.26f)
+            val controlIconSize = minOf(36.dp, controlButtonSize * 0.46f)
+            val playIconSize = minOf(42.dp, playButtonSize * 0.44f)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(controlButtonSize)) {
+                    Icon(Icons.Default.ThumbDown, "Vote down", modifier = Modifier.size(controlIconSize))
+                }
+                FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.size(playButtonSize)) {
+                    Icon(if (vm.nowPlaying.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or pause", modifier = Modifier.size(playIconSize))
+                }
+                IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost, modifier = Modifier.size(controlButtonSize)) {
+                    Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(controlIconSize))
+                }
+                IconButton(onClick = { vm.vote(true) }, modifier = Modifier.size(controlButtonSize)) {
+                    Icon(Icons.Default.ThumbUp, "Vote up", modifier = Modifier.size(controlIconSize))
                 }
             }
             if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Take control on this device") }

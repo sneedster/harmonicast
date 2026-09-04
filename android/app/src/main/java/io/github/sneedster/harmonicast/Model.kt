@@ -7,7 +7,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
-data class Song(val id: String, val title: String, val artist: String, val album: String = "", val duration: Int = 0, val coverArt: String = "", val rating: Int? = null, val addedByEmail: String = "", val isManual: Boolean = true, val isRadio: Boolean = false)
+data class Song(val id: String, val title: String, val artist: String, val album: String = "", val duration: Int = 0, val coverArt: String = "", val rating: Double? = null, val addedByEmail: String = "", val isManual: Boolean = true, val isRadio: Boolean = false, val year: Int? = null)
 data class NowPlaying(val song: Song? = null, val isPlaying: Boolean = false)
 data class ArtistDiscovery(val name: String, val bio: String, val genres: List<String>, val similarArtists: List<String>, val albumName: String, val albumYear: Int?, val albumSummary: String)
 data class PlexServer(val machineIdentifier: String, val name: String)

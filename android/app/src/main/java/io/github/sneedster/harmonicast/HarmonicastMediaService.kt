@@ -649,17 +649,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     private fun consumeAutomaticQueueTransition(previous: MediaItem, current: MediaItem) {
         scope.launch {
             try {
-                val metadata = previous.mediaMetadata
-                api.json(
-                    "stats/play-event", "POST",
-                    JSONObject()
-                        .put("song_id", previous.mediaId)
-                        .put("title", metadata.title ?: "")
-                        .put("artist", metadata.artist ?: "")
-                        .put("album", metadata.albumTitle ?: "")
-                        .put("event", "complete")
-                        .put("progress", 1)
-                )
+                recordPlaybackEvent(previous, "complete", 1.0)
                 api.json("scrobble", "POST", JSONObject().put("id", previous.mediaId).put("submission", true))
 
                 val response = JSONObject(api.json("queue/dequeue", "POST", JSONObject()))
@@ -739,37 +729,18 @@ class HarmonicastMediaService : MediaLibraryService() {
                 val currentMediaItem = player.currentMediaItem
                 if (currentMediaItem != null) {
                     val oldId = currentMediaItem.mediaId
-                    val metadata = currentMediaItem.mediaMetadata
                     val progress = if (player.duration > 0) {
                         (player.currentPosition.toFloat() / player.duration).coerceIn(0f, 1f)
                     } else 0f
 
                     if (reason == "ended") {
-                        api.json(
-                            "stats/play-event", "POST",
-                            JSONObject()
-                                .put("song_id", oldId)
-                                .put("title", metadata.title ?: "")
-                                .put("artist", metadata.artist ?: "")
-                                .put("album", metadata.albumTitle ?: "")
-                                .put("event", "complete")
-                                .put("progress", 1)
-                        )
+                        recordPlaybackEvent(currentMediaItem, "complete", 1.0)
                         api.json(
                             "scrobble", "POST",
                             JSONObject().put("id", oldId).put("submission", true)
                         )
                     } else {
-                        api.json(
-                            "stats/play-event", "POST",
-                            JSONObject()
-                                .put("song_id", oldId)
-                                .put("title", metadata.title ?: "")
-                                .put("artist", metadata.artist ?: "")
-                                .put("album", metadata.albumTitle ?: "")
-                                .put("event", "skip")
-                                .put("progress", progress)
-                        )
+                        recordPlaybackEvent(currentMediaItem, "skip", progress.toDouble())
                     }
                 }
 
@@ -823,6 +794,26 @@ class HarmonicastMediaService : MediaLibraryService() {
             } catch (e: Exception) {
                 Log.e("HarmonicastMedia", "advance failed", e)
             }
+        }
+    }
+
+    private suspend fun recordPlaybackEvent(item: MediaItem, event: String, progress: Double) {
+        val metadata = item.mediaMetadata
+        try {
+            api.json(
+                "stats/play-event", "POST",
+                JSONObject()
+                    .put("song_id", item.mediaId)
+                    .put("title", metadata.title ?: "")
+                    .put("artist", metadata.artist ?: "")
+                    .put("album", metadata.albumTitle ?: "")
+                    .put("event", event)
+                    .put("progress", progress.coerceIn(0.0, 1.0))
+            )
+        } catch (e: Exception) {
+            // Rating updates are important, but playback must still advance if
+            // Plex is temporarily unavailable.
+            Log.e("HarmonicastMedia", "Failed to record $event rating event", e)
         }
     }
 
