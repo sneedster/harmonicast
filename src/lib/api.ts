@@ -287,6 +287,7 @@ export async function setDeviceName(deviceName: string): Promise<void> {
 export interface SettingsInfo {
   cooldownMinutes: number;
   maxRequestsPerUser: number;
+  ratedTrackShare: number;
   jukeboxMode: boolean;
   isHost: boolean;
 }
@@ -295,7 +296,7 @@ export async function getSettings(): Promise<SettingsInfo> {
   return request<SettingsInfo>('/api/settings');
 }
 
-export async function updateSettings(settings: Partial<Pick<SettingsInfo, 'cooldownMinutes' | 'maxRequestsPerUser'>>): Promise<void> {
+export async function updateSettings(settings: Partial<Pick<SettingsInfo, 'cooldownMinutes' | 'maxRequestsPerUser' | 'ratedTrackShare'>>): Promise<void> {
   await request('/api/settings', { method: 'PUT', body: JSON.stringify(settings) });
 }
 

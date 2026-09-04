@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
+import { MIN_JUKEBOX_RATING_EXCLUSIVE } from './jukebox-selection.js';
+import { quantizePlexRating } from './rating.js';
 
 const PLEX_API_BASE_URL = 'https://plex.tv';
 const PLEX_PRODUCT = 'Harmonicast';
@@ -57,6 +59,7 @@ export interface PlexSong {
   title: string;
   artist: string;
   album: string;
+  year: number | null;
   duration: number;
   coverArt: string;
   // These are shared Plex-account fields. Harmonicast intentionally does not
@@ -65,6 +68,12 @@ export interface PlexSong {
   viewCount: number;
   skipCount: number;
   lastViewedAt: string | null;
+}
+
+export interface PlexJukeboxCandidatePools {
+  rated: PlexSong[];
+  unrated: PlexSong[];
+  fallback: PlexSong[];
 }
 
 export interface PlexFetch {
@@ -227,12 +236,20 @@ function mapPlexSong(metadata: Record<string, unknown>, machineIdentifier: strin
   const ratingKey = String(metadata.ratingKey ?? '');
   const title = typeof metadata.title === 'string' ? metadata.title : '';
   if (!ratingKey || !title) return null;
+  const rawYear = Number(metadata.parentYear ?? metadata.year);
+  const dateYear = typeof metadata.originallyAvailableAt === 'string'
+    ? Number(/^\d{4}/.exec(metadata.originallyAvailableAt)?.[0])
+    : Number.NaN;
+  const year = Number.isInteger(rawYear) && rawYear > 0
+    ? rawYear
+    : Number.isInteger(dateYear) && dateYear > 0 ? dateYear : null;
   return {
     id: sourceId(machineIdentifier, ratingKey),
     title,
     artist: typeof metadata.grandparentTitle === 'string' ? metadata.grandparentTitle
       : typeof metadata.originalTitle === 'string' ? metadata.originalTitle : 'Unknown artist',
     album: typeof metadata.parentTitle === 'string' ? metadata.parentTitle : '',
+    year,
     // Plex reports milliseconds; Harmonicast exposes seconds.
     duration: Math.max(0, Math.round(Number(metadata.duration ?? 0) / 1000)),
     coverArt: sourceId(machineIdentifier, ratingKey),
@@ -331,6 +348,38 @@ export async function getPlexRandomTracks(
     const song = mapPlexSong(metadata, machineIdentifier);
     return song ? [song] : [];
   });
+}
+
+/**
+ * Fetch explicit exploitation and exploration pools for Jukebox. Sampling the
+ * whole library first can easily return zero rated tracks in a large library,
+ * so eligible rated and unrated tracks must be queried independently.
+ */
+export async function getPlexJukeboxCandidatePools(
+  source: PlexSource,
+  size = 100,
+  fetcher: PlexFetch = fetch,
+): Promise<PlexJukeboxCandidatePools> {
+  const limit = String(Math.max(1, Math.min(size, 100)));
+  const ratedParams = new URLSearchParams({ type: '10', sort: 'random', limit });
+  ratedParams.set('userRating>', String(MIN_JUKEBOX_RATING_EXCLUSIVE));
+  const unratedParams = new URLSearchParams({ type: '10', sort: 'random', limit, userRating: '-1' });
+  const fallbackParams = new URLSearchParams({ type: '10', sort: 'random', limit });
+  const [machineIdentifier, ratedContainer, unratedContainer, fallbackContainer] = await Promise.all([
+    plexSourceMachineIdentifier(source, fetcher),
+    plexServerJson(source, `/library/sections/${source.libraryKey}/all?${ratedParams}`, fetcher),
+    plexServerJson(source, `/library/sections/${source.libraryKey}/all?${unratedParams}`, fetcher),
+    plexServerJson(source, `/library/sections/${source.libraryKey}/all?${fallbackParams}`, fetcher),
+  ]);
+  const mapSongs = (container: Record<string, unknown>) => metadataArray(container).flatMap((metadata) => {
+    const song = mapPlexSong(metadata, machineIdentifier);
+    return song ? [song] : [];
+  });
+  return {
+    rated: mapSongs(ratedContainer),
+    unrated: mapSongs(unratedContainer),
+    fallback: mapSongs(fallbackContainer),
+  };
 }
 
 /** Fetch the newest tracks without indexing the whole library. */
@@ -481,7 +530,7 @@ async function plexServerAction(
 export async function ratePlexTrack(source: PlexSource, id: string, rating: number, fetcher: PlexFetch = fetch): Promise<number> {
   await getConfiguredPlexTrack(source, id, fetcher);
   const ratingKey = parseSourceId(id);
-  const nextRating = Math.max(0, Math.min(10, Math.round(rating)));
+  const nextRating = quantizePlexRating(rating);
   const params = new URLSearchParams({
     identifier: 'com.plexapp.plugins.library',
     key: ratingKey,

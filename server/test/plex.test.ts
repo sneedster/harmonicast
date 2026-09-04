@@ -19,6 +19,8 @@ const {
   searchPlexTracks,
   getPlexSetup,
   getPlexTrack,
+  getPlexJukeboxCandidatePools,
+  ratePlexTrack,
   savePersistedPlexSource,
 } = await import('../plex.js');
 initDb();
@@ -104,7 +106,7 @@ test('Track Radio uses Plex nearest with sonic-analysis distance and excludes it
   assert.deepEqual(songs.map((song) => song.artist), ['Artist One', 'Artist Two']);
 });
 
-test('Plex track metadata provides Android Auto-safe title, artist, album, and artwork fields', async () => {
+test('Plex track metadata provides Android Auto-safe title, artist, album year, and artwork fields', async () => {
   const requestedUrls: string[] = [];
   const fetcher: PlexFetch = async (input) => {
     const url = String(input);
@@ -120,6 +122,7 @@ test('Plex track metadata provides Android Auto-safe title, artist, album, and a
           title: 'Metadata Track',
           grandparentTitle: 'Metadata Artist',
           parentTitle: 'Metadata Album',
+          parentYear: 1994,
           duration: 201_600,
           userRating: 8,
           viewCount: 12,
@@ -139,6 +142,7 @@ test('Plex track metadata provides Android Auto-safe title, artist, album, and a
     title: 'Metadata Track',
     artist: 'Metadata Artist',
     album: 'Metadata Album',
+    year: 1994,
     duration: 202,
     coverArt: 'plex:server-1:101',
     userRating: 8,
@@ -146,6 +150,49 @@ test('Plex track metadata provides Android Auto-safe title, artist, album, and a
     skipCount: 3,
     lastViewedAt: '2023-11-14T22:13:20.000Z',
   });
+});
+
+test('Plex rating writes preserve the server-supported tenth-point precision', async () => {
+  const requestedUrls: string[] = [];
+  const fetcher: PlexFetch = async (input, init) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    const path = new URL(url).pathname;
+    if (path === '/') return response({ MediaContainer: { machineIdentifier: 'server-1', friendlyName: 'Test Plex' } });
+    if (path === '/library/metadata/101') return response({ MediaContainer: { Metadata: [{
+      type: 'track', ratingKey: '101', title: 'Track', librarySectionID: '5',
+    }] } });
+    if (path === '/:/rate' && init?.method === 'PUT') return response({});
+    return new Response('missing', { status: 404 });
+  };
+
+  assert.equal(await ratePlexTrack(source, 'plex:server-1:101', 5.05, fetcher), 5.1);
+  const ratingRequest = requestedUrls.map((url) => new URL(url)).find((url) => url.pathname === '/:/rate');
+  assert.equal(ratingRequest?.searchParams.get('rating'), '5.1');
+});
+
+test('Plex Jukebox candidates query eligible rated and unrated tracks independently', async () => {
+  const requestedUrls: string[] = [];
+  const fetcher: PlexFetch = async (input) => {
+    const url = new URL(String(input));
+    requestedUrls.push(url.toString());
+    if (url.pathname === '/') return response({ MediaContainer: { machineIdentifier: 'server-1', friendlyName: 'Test Plex' } });
+    const rating = url.searchParams.get('userRating');
+    const minimum = url.searchParams.get('userRating>');
+    const metadata = minimum === '1'
+      ? [{ type: 'track', ratingKey: 'liked', title: 'Liked', userRating: 8 }]
+      : rating === '-1'
+        ? [{ type: 'track', ratingKey: 'new', title: 'New' }]
+        : [{ type: 'track', ratingKey: 'fallback', title: 'Fallback', userRating: 4 }];
+    return response({ MediaContainer: { Metadata: metadata } });
+  };
+
+  const pools = await getPlexJukeboxCandidatePools(source, 100, fetcher);
+  assert.deepEqual(pools.rated.map((song) => song.title), ['Liked']);
+  assert.deepEqual(pools.unrated.map((song) => song.title), ['New']);
+  assert.deepEqual(pools.fallback.map((song) => song.title), ['Fallback']);
+  assert.ok(requestedUrls.some((url) => new URL(url).searchParams.get('userRating>') === '1'));
+  assert.ok(requestedUrls.some((url) => new URL(url).searchParams.get('userRating') === '-1'));
 });
 
 test('Plex search expands matching album results into playable tracks', async () => {

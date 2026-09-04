@@ -55,6 +55,11 @@ export async function fetchMaxRequestsPerUser(): Promise<number> {
   return s.maxRequestsPerUser;
 }
 
+export async function fetchRatedTrackShare(): Promise<number> {
+  const s = await request<{ ratedTrackShare: number }>('/api/settings');
+  return s.ratedTrackShare;
+}
+
 export async function fetchJukeboxMode(): Promise<boolean> {
   const s = await request<{ jukeboxMode: boolean }>('/api/settings');
   return s.jukeboxMode;

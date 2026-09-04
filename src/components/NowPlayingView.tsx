@@ -96,7 +96,7 @@ export function NowPlayingView({ onSearch }: { onSearch: (query: string) => void
           <button onClick={() => onSearch(current.album)} className="mt-0.5 block text-xs text-ink-500 transition hover:text-amber-300">{current.album}</button>
         )}
         <p className="mt-2 text-sm font-medium text-amber-400">
-          Plex rating · {plexRating === null ? 'Not rated yet' : `${plexRating.toFixed(0)} / 10`}
+          Plex rating · {plexRating === null ? 'Not rated yet' : `${plexRating.toFixed(1)} / 10`}
         </p>
         <button onClick={() => void openDiscovery()} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-ink-400 transition hover:text-amber-300"><Sparkles className="h-3.5 w-3.5" /> Artist discovery</button>
       </div>
