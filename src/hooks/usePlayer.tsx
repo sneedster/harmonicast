@@ -21,6 +21,7 @@ import {
   fetchCooldownMinutes,
   fetchJukeboxMode,
   fetchMaxRequestsPerUser,
+  fetchRatedTrackShare,
   fetchNowPlaying,
   fetchQueue,
   fetchQueueSongs,
@@ -30,6 +31,7 @@ import {
   clearQueue as clearSharedQueue,
   removeFromQueue as removeSharedQueueItem,
 } from '@/lib/jukeboxState';
+import { recordPlayEvent } from '@/lib/stats';
 
 interface PlayerContextValue {
   connection: Connection;
@@ -50,6 +52,8 @@ interface PlayerContextValue {
   streamError: string | null;
   cooldownMinutes: number;
   maxRequestsPerUser: number;
+  ratedTrackShare: number;
+  setRatedTrackShare: (share: number) => void;
   coverUrl: (coverArt: string, size?: number) => string | null;
   playNow: (song: Song) => void;
   enqueue: (song: Song) => void;
@@ -98,6 +102,7 @@ export function PlayerProvider({
   const [streamError, setStreamError] = useState<string | null>(null);
   const [cooldownMinutes, setCooldownMinutes] = useState(30);
   const [maxRequestsPerUser, setMaxRequestsPerUser] = useState(5);
+  const [ratedTrackShare, setRatedTrackShare] = useState(8);
 
   const connRef = useRef(connection);
   const currentRef = useRef<Song | null>(null);
@@ -173,8 +178,25 @@ export function PlayerProvider({
     async (reason: 'ended' | 'skip') => {
       const prev = currentRef.current;
       if (prev) {
+        const audio = audioRef.current;
+        const progress = reason === 'ended'
+          ? 1
+          : audio && Number.isFinite(audio.duration) && audio.duration > 0
+            ? Math.max(0, Math.min(1, audio.currentTime / audio.duration))
+            : 0;
+        try {
+          await recordPlayEvent(prev, reason === 'ended' ? 'complete' : 'skip', progress);
+        } catch {
+          // A rating service failure must not strand playback on the old song.
+        }
         if (reason === 'ended') {
-          void scrobble(connRef.current, prev.id, true);
+          try {
+            // Let Plex publish last-played before auto-fill queries its next
+            // candidates, so the completed track immediately enters cooldown.
+            await scrobble(connRef.current, prev.id, true);
+          } catch {
+            // Playback can still advance when Plex scrobbling is unavailable.
+          }
         }
         pushHistory(prev);
       }
@@ -290,11 +312,12 @@ export function PlayerProvider({
     let cancelled = false;
 
     async function loadInitial() {
-      const [queueSongs, nowPlaying, cd, maxReq, jukebox] = await Promise.all([
+      const [queueSongs, nowPlaying, cd, maxReq, ratedShare, jukebox] = await Promise.all([
         fetchQueueSongs(),
         fetchNowPlaying(),
         fetchCooldownMinutes(),
         fetchMaxRequestsPerUser(),
+        fetchRatedTrackShare(),
         fetchJukeboxMode(),
       ]);
       if (cancelled) return;
@@ -302,6 +325,7 @@ export function PlayerProvider({
       queueRef.current = queueSongs;
       setCooldownMinutes(cd);
       setMaxRequestsPerUser(maxReq);
+      setRatedTrackShare(ratedShare);
       setJukeboxMode(jukebox);
       jukeboxRef.current = jukebox;
 
@@ -574,14 +598,14 @@ export function PlayerProvider({
     () => ({
       connection, isHost, isHostUser, isActivePlayer, current, plexRating, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
-      streamError, cooldownMinutes, maxRequestsPerUser,
+      streamError, cooldownMinutes, maxRequestsPerUser, ratedTrackShare, setRatedTrackShare,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
       thumbsUp, thumbsDown, queueSimilar, clearQueue, removeQueueItem, startRandomPlayback,
     }),
     [
       connection, isHost, isHostUser, isActivePlayer, current, plexRating, queue, queueRows, history,
       isPlaying, currentTime, duration, volume, jukeboxMode, loadingNext,
-      streamError, cooldownMinutes, maxRequestsPerUser,
+      streamError, cooldownMinutes, maxRequestsPerUser, ratedTrackShare,
       coverUrl, playNow, enqueue, togglePlay, next, seek, setVolume,
       thumbsUp, thumbsDown, queueSimilar, clearQueue, removeQueueItem, startRandomPlayback,
     ],

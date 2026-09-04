@@ -17,6 +17,11 @@ const {
   setActivePlayerSession,
   setCooldownMinutes,
   setMaxRequestsPerUser,
+  getRatedTrackShare,
+  setRatedTrackShare,
+  recordPlayEvent,
+  previewVoteOnCurrent,
+  voteOnCurrent,
 } = await import('../store.js');
 
 initDb();
@@ -32,11 +37,18 @@ function resetDatabase() {
   `);
   db.prepare(`
     UPDATE settings
-    SET cooldown_minutes = 0, max_requests_per_user = 5,
+    SET cooldown_minutes = 0, max_requests_per_user = 5, rated_track_share = 8,
         active_player_session = NULL, host_user_id = NULL
     WHERE id = 1
   `).run();
 }
+
+test('rated-track share is persisted in settings', () => {
+  resetDatabase();
+  assert.equal(getRatedTrackShare(), 8);
+  setRatedTrackShare(3);
+  assert.equal(getRatedTrackShare(), 3);
+});
 
 function createUser(email: string): number {
   return Number(db.prepare(`
@@ -121,4 +133,42 @@ test('starting a queued track removes it from upcoming entries', () => {
   assert.equal(updateNowPlaying(queued, true), true);
   assert.deepEqual(fetchQueue(), []);
   assert.equal(updateNowPlaying(queued, true), false);
+});
+
+test('playback outcomes use Plex-compatible whole rating points', () => {
+  resetDatabase();
+  const played = song('adaptive-rating');
+
+  const completed = recordPlayEvent({
+    song_id: played.id, title: played.title, artist: played.artist,
+    album: played.album, duration: played.duration, cover_art: played.coverArt,
+    event: 'complete', progress: 1,
+  });
+  assert.equal(completed.rating, 5.1);
+  assert.equal(completed.play_count, 1);
+
+  const skipped = recordPlayEvent({
+    song_id: played.id, title: played.title, artist: played.artist,
+    album: played.album, duration: played.duration, cover_art: played.coverArt,
+    event: 'skip', progress: 0,
+  });
+  assert.equal(skipped.rating, 4.8);
+  assert.equal(skipped.skip_count, 1);
+});
+
+test('votes apply once and switching sides reverses the previous points', () => {
+  resetDatabase();
+  const user = createUser('voter@example.test');
+  updateNowPlaying(song('vote-rating'), true);
+
+  assert.deepEqual(previewVoteOnCurrent(user, 'up'), {
+    songId: 'vote-rating', previousVote: null, deltaPoints: 10, changed: true,
+  });
+  assert.equal(voteOnCurrent(user, 'up').rating, 6);
+  assert.equal(voteOnCurrent(user, 'up').rating, 6);
+
+  assert.deepEqual(previewVoteOnCurrent(user, 'down'), {
+    songId: 'vote-rating', previousVote: 'up', deltaPoints: -20, changed: true,
+  });
+  assert.equal(voteOnCurrent(user, 'down').rating, 4);
 });

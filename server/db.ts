@@ -56,6 +56,7 @@ export function initDb() {
       host_user_id INTEGER,
       cooldown_minutes INTEGER NOT NULL DEFAULT 30,
       max_requests_per_user INTEGER NOT NULL DEFAULT 5,
+      rated_track_share INTEGER NOT NULL DEFAULT 8,
       active_player_session TEXT,
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       CHECK (id = 1)
@@ -199,6 +200,9 @@ export function initDb() {
   }
   if (!settingsColNames.includes('jukebox_mode')) {
     db.exec('ALTER TABLE settings ADD COLUMN jukebox_mode INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!settingsColNames.includes('rated_track_share')) {
+    db.exec('ALTER TABLE settings ADD COLUMN rated_track_share INTEGER NOT NULL DEFAULT 8');
   }
   if (!settingsColNames.includes('plex_client_identifier')) {
     db.exec('ALTER TABLE settings ADD COLUMN plex_client_identifier TEXT');

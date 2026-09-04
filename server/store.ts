@@ -1,5 +1,6 @@
 import { db } from './db.js';
 import { randomUUID } from 'node:crypto';
+import { adjustRatingByPoints, applyPlaybackRating, THUMBS_RATING_POINTS } from './rating.js';
 
 interface NowPlayingRow {
   song_id: string | null;
@@ -14,6 +15,12 @@ interface NowPlayingRow {
 }
 
 interface VoteRow { vote: 'up' | 'down'; }
+export interface VotePreview {
+  songId: string;
+  previousVote: 'up' | 'down' | null;
+  deltaPoints: number;
+  changed: boolean;
+}
 interface HostRow { host_user_id: number | null; }
 interface ActiveSessionRow { active_player_session: string | null; }
 
@@ -33,31 +40,27 @@ export function recordPlayEvent({ song_id, title, artist, album, duration, cover
 
   const p = Math.max(0, Math.min(1, progress || 0));
 
-  if (event === 'complete') {
-    const row = db.prepare('SELECT play_count FROM song_stats WHERE song_id = ?').get(song_id);
-    const delta = 0.05 * (1 + Math.log((row?.play_count || 0) + 1));
+  if (event === 'complete' || event === 'skip') {
+    const row = db.prepare('SELECT rating, play_count FROM song_stats WHERE song_id = ?').get(song_id);
+    const adjusted = applyPlaybackRating(row?.rating, event, p, row?.play_count || 0);
+    const countColumn = event === 'complete' ? 'play_count' : 'skip_count';
     db.prepare(`
-      UPDATE song_stats SET rating = MIN(10, rating + ?), play_count = play_count + 1,
+      UPDATE song_stats SET rating = ?, ${countColumn} = ${countColumn} + 1,
         last_played_at = datetime('now'), updated_at = datetime('now')
       WHERE song_id = ?
-    `).run(delta, song_id);
-  } else if (event === 'skip') {
-    const delta = 0.3 * (1 - p);
-    db.prepare(`
-      UPDATE song_stats SET rating = MAX(0, rating - ?), skip_count = skip_count + 1,
-        last_played_at = datetime('now'), updated_at = datetime('now')
-      WHERE song_id = ?
-    `).run(delta, song_id);
+    `).run(adjusted.rating, song_id);
   } else if (event === 'thumbs_up') {
+    const row = db.prepare('SELECT rating FROM song_stats WHERE song_id = ?').get(song_id);
     db.prepare(`
-      UPDATE song_stats SET rating = MIN(10, rating + 1.0), thumbs_up = thumbs_up + 1,
+      UPDATE song_stats SET rating = ?, thumbs_up = thumbs_up + 1,
         updated_at = datetime('now') WHERE song_id = ?
-    `).run(song_id);
+    `).run(adjustRatingByPoints(row?.rating, THUMBS_RATING_POINTS), song_id);
   } else if (event === 'thumbs_down') {
+    const row = db.prepare('SELECT rating FROM song_stats WHERE song_id = ?').get(song_id);
     db.prepare(`
-      UPDATE song_stats SET rating = MAX(0, rating - 1.0), thumbs_down = thumbs_down + 1,
+      UPDATE song_stats SET rating = ?, thumbs_down = thumbs_down + 1,
         updated_at = datetime('now') WHERE song_id = ?
-    `).run(song_id);
+    `).run(adjustRatingByPoints(row?.rating, -THUMBS_RATING_POINTS), song_id);
   }
 
   const id = randomUUID();
@@ -243,7 +246,7 @@ export function updateNowPlaying(song, isPlaying, isAutoQueue = false) {
  * It deliberately does NOT live on /api/stats/play-event, which has no such
  * constraint and could be replayed to pin a rating at 0 or 10.
  */
-export function voteOnCurrent(userId, vote) {
+export function previewVoteOnCurrent(userId, vote): VotePreview {
   if (vote !== 'up' && vote !== 'down') throw new Error('Invalid vote type');
   const np = getNowPlaying();
   if (!np || !np.song_id) throw new Error('No song is currently playing');
@@ -251,8 +254,23 @@ export function voteOnCurrent(userId, vote) {
   const songId = np.song_id;
   const previous = db.prepare('SELECT vote FROM votes WHERE song_id = ? AND user_id = ?')
     .get(songId, userId) as VoteRow | undefined;
+  const deltaPoints = (vote === 'up' ? THUMBS_RATING_POINTS : -THUMBS_RATING_POINTS)
+    - (previous ? (previous.vote === 'up' ? THUMBS_RATING_POINTS : -THUMBS_RATING_POINTS) : 0);
+  return {
+    songId,
+    previousVote: previous?.vote ?? null,
+    deltaPoints,
+    changed: previous?.vote !== vote,
+  };
+}
 
-  if (previous?.vote === vote) {
+export function voteOnCurrent(userId, vote, ratingOverride: number | null = null) {
+  const preview = previewVoteOnCurrent(userId, vote);
+  const np = getNowPlaying();
+  if (!np || np.song_id !== preview.songId) throw new Error('The current song changed while voting');
+  const songId = preview.songId;
+
+  if (!preview.changed) {
     // Same vote again: no double counting.
     return db.prepare('SELECT * FROM song_stats WHERE song_id = ?').get(songId) ?? null;
   }
@@ -270,16 +288,19 @@ export function voteOnCurrent(userId, vote) {
   `).run(songId, np.title ?? '', np.artist ?? '', np.album ?? '', np.duration ?? 0, np.cover_art ?? '');
 
   // Switching sides undoes the previous delta as well as applying the new one.
-  const delta = (vote === 'up' ? 1.0 : -1.0) - (previous ? (previous.vote === 'up' ? 1.0 : -1.0) : 0);
   const counterColumn = vote === 'up' ? 'thumbs_up' : 'thumbs_down';
+  const stats = db.prepare('SELECT rating FROM song_stats WHERE song_id = ?').get(songId);
+  const nextRating = ratingOverride !== null && Number.isFinite(Number(ratingOverride))
+    ? adjustRatingByPoints(Number(ratingOverride), 0)
+    : adjustRatingByPoints(stats?.rating, preview.deltaPoints);
 
   db.prepare(`
     UPDATE song_stats
-    SET rating = MAX(0, MIN(10, rating + ?)),
+    SET rating = ?,
         ${counterColumn} = ${counterColumn} + 1,
         updated_at = datetime('now')
     WHERE song_id = ?
-  `).run(delta, songId);
+  `).run(nextRating, songId);
 
   db.prepare(`
     INSERT INTO play_history (id, song_id, title, artist, event, progress)
@@ -319,6 +340,14 @@ export function getMaxRequestsPerUser() {
 
 export function setMaxRequestsPerUser(limit) {
   db.prepare('UPDATE settings SET max_requests_per_user = ?, updated_at = datetime(\'now\') WHERE id = 1').run(limit);
+}
+
+export function getRatedTrackShare() {
+  return db.prepare('SELECT rated_track_share FROM settings WHERE id = 1').get().rated_track_share;
+}
+
+export function setRatedTrackShare(share: number) {
+  db.prepare("UPDATE settings SET rated_track_share = ?, updated_at = datetime('now') WHERE id = 1").run(share);
 }
 
 export function getJukeboxMode() {

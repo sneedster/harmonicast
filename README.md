@@ -14,8 +14,12 @@ between the web client, Android app, and Android Auto.
 - First-run setup lets the Plex server owner select an owned server and Music
   library. Plex library sharing controls guest access.
 - Shared request queue with per-user limits, cooldowns, and fair ordering.
-- Automatic weighted playback when the request queue runs out.
-- Plex-backed 1–10 ratings, completed-play scrobbles, and playback history.
+- Automatic weighted playback when the request queue runs out, using a
+  host-adjustable rated/unrated mix (0–10 rated picks per ten, default 8 for a
+  four-rated-to-one-unrated cadence). Rated tracks remain eligible above 1.0,
+  with lower ratings receiving progressively fewer automatic chances.
+- Adaptive Plex-backed ratings using a 0–100 internal point scale, mirrored to
+  Plex's 0.0–10.0 rating in one-decimal steps.
 - **Track Radio** uses Plex Sonic Analysis to queue up to 20 nearby tracks.
 - On-demand artist discovery: biography, genres, similar artists, and album
   context from Plex—without bulk metadata indexing.
@@ -260,8 +264,8 @@ consumers. Key integration routes are:
   a selected Plex track.
 - `GET|POST /api/now-playing`, `POST /api/player/claim`, and
   `GET /api/player/status`: active-player coordination.
-- `POST /api/vote` and `POST /api/scrobble`: shared Plex ratings and completed
-  play reporting.
+- `POST /api/vote`, `POST /api/stats/play-event`, and `POST /api/scrobble`:
+  shared Plex rating adjustments and completed-play reporting.
 
 The WebSocket endpoint is `/ws`; it broadcasts queue, now-playing, active
 player, vote, and playback-position changes.

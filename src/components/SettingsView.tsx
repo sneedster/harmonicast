@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { Settings, Clock, Users, Loader2, Check, MonitorSpeaker, Pencil, Server, Smartphone, PlugZap } from 'lucide-react';
+import { Settings, Clock, Users, Loader2, Check, MonitorSpeaker, Pencil, Server, Smartphone, PlugZap, SlidersHorizontal } from 'lucide-react';
 import { usePlayer } from '@/hooks/usePlayer';
 import { AndroidAppDownload } from '@/components/AndroidAppDownload';
 import {
@@ -8,9 +8,10 @@ import {
 } from '@/lib/api';
 
 export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
-  const { isActivePlayer, cooldownMinutes, maxRequestsPerUser } = usePlayer();
+  const { isActivePlayer, cooldownMinutes, maxRequestsPerUser, ratedTrackShare, setRatedTrackShare } = usePlayer();
   const [cooldown, setCooldown] = useState(cooldownMinutes);
   const [maxReq, setMaxReq] = useState(maxRequestsPerUser);
+  const [ratedShare, setRatedShare] = useState(ratedTrackShare);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
   const [sessions, setSessions] = useState<SessionDevice[]>([]);
@@ -28,6 +29,7 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
 
   useEffect(() => { setCooldown(cooldownMinutes); }, [cooldownMinutes]);
   useEffect(() => { setMaxReq(maxRequestsPerUser); }, [maxRequestsPerUser]);
+  useEffect(() => { setRatedShare(ratedTrackShare); }, [ratedTrackShare]);
 
   useEffect(() => {
     if (isHostUser) {
@@ -75,7 +77,8 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
     e.preventDefault();
     setStatus('saving');
     try {
-      await updateSettings({ cooldownMinutes: cooldown, maxRequestsPerUser: maxReq });
+      await updateSettings({ cooldownMinutes: cooldown, maxRequestsPerUser: maxReq, ratedTrackShare: ratedShare });
+      setRatedTrackShare(ratedShare);
       setStatus('saved');
       setTimeout(() => setStatus('idle'), 2000);
     } catch {
@@ -304,6 +307,36 @@ export function SettingsView({ isHostUser }: { isHostUser: boolean }) {
               />
               <span className="text-sm text-ink-400">minutes</span>
             </div>
+          </label>
+
+          <div className="border-t border-ink-800" />
+
+          <label className="block">
+            <span className="mb-2 flex items-center gap-1.5 text-sm font-medium text-ink-300">
+              <SlidersHorizontal className="h-4 w-4 text-amber-400" />
+              Automatic Rated-Track Share
+            </span>
+            <p className="mb-3 text-xs leading-relaxed text-ink-500">
+              Choose how many of every ten automatic picks should come from rated tracks.
+              Tracks above 1 remain eligible, but lower ratings are selected less often. The remaining picks explore unrated tracks.
+            </p>
+            <div className="flex items-center gap-4">
+              <input
+                type="range"
+                min={0}
+                max={10}
+                step={1}
+                value={ratedShare}
+                onChange={(e) => setRatedShare(Number(e.target.value))}
+                className="h-2 flex-1 cursor-pointer accent-amber-500"
+              />
+              <span className="w-24 text-right text-sm font-medium text-white">
+                {ratedShare === 0 ? 'All unrated' : ratedShare === 10 ? 'All rated' : `${ratedShare} / 10 rated`}
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-ink-500">
+              {ratedShare} rated · {10 - ratedShare} unrated
+            </p>
           </label>
 
           <div className="border-t border-ink-800" />

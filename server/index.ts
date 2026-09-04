@@ -17,8 +17,9 @@ import { ping, getRandomSongs, search, scrobble, getSettings, getConnection } fr
 import {
   recordPlayEvent, fetchStatsFor, fetchTopRated, fetchMostPlayed, fetchRecentlyPlayed,
   fetchQueue, addToQueue, dequeueNext, clearQueue, clearAutoQueue, removeFromQueue,
-  getNowPlaying, updateNowPlaying, updatePlaybackPosition, voteOnCurrent, getVoteCounts, clearOldVotes,
+  getNowPlaying, updateNowPlaying, updatePlaybackPosition, previewVoteOnCurrent, voteOnCurrent, getVoteCounts, clearOldVotes,
   getCooldownMinutes, setCooldownMinutes, getMaxRequestsPerUser, setMaxRequestsPerUser,
+  getRatedTrackShare, setRatedTrackShare,
   getJukeboxMode, setJukeboxMode,
   saveConnection, clearConnection, isHost, getHostUserId, autoConfigureFromEnv, assignHostIfUnset,
   cleanupStaleState,
@@ -27,7 +28,7 @@ import {
 import { initWebSocket, broadcastQueue, broadcastNowPlaying, broadcastVotes, broadcastPlayerSession, broadcastForceSkip, broadcastJukebox, broadcastPlaybackPosition } from './realtime.js';
 import {
   beginPlexSetup, buildPlexAuthUrl, canAccessConfiguredPlexLibrary, clearPlexSetup, connectOwnedPlexServer,
-  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexRandomTracks, getPlexRecentlyAddedTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack, getPlexArtistDiscovery,
+  createPlexPin, getActivePlexSource, getPersistedPlexSource, getPlexAccount, getPlexPin, getPlexJukeboxCandidatePools, getPlexRandomTracks, getPlexRecentlyAddedTracks, getPlexRelatedTracks, getPlexServerInfo, getPlexTrack, getPlexArtistDiscovery,
   getPlexSetup, getPlexTrackArtworkUrl, getPlexTrackStreamUrl, listOwnedPlexServers, listPlexMusicLibraries,
   plexHeaders, ratePlexTrack, savePersistedPlexSource, scrobblePlexTrack, searchPlexTracks, browsePlexArtist,
 } from './plex.js';
@@ -37,6 +38,8 @@ import { getPluginSettings, listPluginSettings, pluginSecretsAreAvailable, saveP
 import { installPlugin, loadPlugins, type MusicSourceStatus } from './plugins.js';
 import { createAndroidDownloadResolver } from './android-download.js';
 import { pipeWebResponseBody } from './streaming.js';
+import { adjustRatingByPoints, applyPlaybackRating } from './rating.js';
+import { choosePlexJukeboxTracks } from './jukebox-selection.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -138,18 +141,7 @@ app.get('/api/downloads/android', async (_req, res) => {
 });
 
 let jukeboxFillInProgress = false;
-
-function plexJukeboxWeight(song) {
-  const rating = song.userRating ?? 5;
-  const ratingWeight = Math.pow(Math.max(0.1, rating), 1.6);
-  const hoursSincePlayed = song.lastViewedAt
-    ? Math.max(0, (Date.now() - new Date(song.lastViewedAt).getTime()) / 3_600_000)
-    : Infinity;
-  const recencyWeight = Math.min(1, hoursSincePlayed / 6);
-  const playWeight = 1 + Math.log(song.viewCount + 1) * 0.15;
-  const skipWeight = 1 / (1 + song.skipCount * 0.1);
-  return ratingWeight * recencyWeight * playWeight * skipWeight;
-}
+let jukeboxMixIndex = 0;
 
 function plexSongIsOnCooldown(song: PlexSong, cooldownMinutes: number): boolean {
   if (cooldownMinutes <= 0 || !song.lastViewedAt) return false;
@@ -165,22 +157,6 @@ function eligiblePlexQueueSongs(songs: PlexSong[], excludedSongIds: Iterable<str
     seen.add(song.id);
     return true;
   });
-}
-
-function choosePlexJukeboxTracks(songs, count) {
-  const pool = [...songs];
-  const selected = [];
-  while (pool.length && selected.length < count) {
-    const total = pool.reduce((sum, song) => sum + plexJukeboxWeight(song), 0);
-    let pick = Math.random() * total;
-    let index = pool.length - 1;
-    for (let i = 0; i < pool.length; i++) {
-      pick -= plexJukeboxWeight(pool[i]);
-      if (pick <= 0) { index = i; break; }
-    }
-    selected.push(pool.splice(index, 1)[0]);
-  }
-  return selected;
 }
 
 async function fillJukeboxQueue() {
@@ -212,12 +188,23 @@ async function fillJukeboxQueueOnce() {
     let added = 0;
 
     if (plexSource) {
-      // Plex is the canonical shared taste/history store. Its metadata is
-      // already scoped to the Plex owner token used by this proxy.
-      const randomSongs = await getPlexRandomTracks(plexSource, 100);
+      // Query rated and unrated pools independently. In a large library, a
+      // single random sample can contain no rated tracks at all.
+      const candidates = await getPlexJukeboxCandidatePools(plexSource, 100);
       const existingSongIds = currentQueue.map((row) => row.song_id);
-      const eligibleSongs = eligiblePlexQueueSongs(randomSongs, existingSongIds);
-      for (const song of choosePlexJukeboxTracks(eligibleSongs, target)) {
+      const rated = eligiblePlexQueueSongs(candidates.rated, existingSongIds);
+      const unrated = eligiblePlexQueueSongs(candidates.unrated, existingSongIds);
+      const fallback = eligiblePlexQueueSongs(candidates.fallback, existingSongIds);
+      const selection = choosePlexJukeboxTracks(
+        rated,
+        unrated,
+        fallback,
+        target,
+        getRatedTrackShare(),
+        jukeboxMixIndex,
+      );
+      jukeboxMixIndex = selection.nextMixIndex;
+      for (const song of selection.songs) {
         try {
           addToQueue({ song, userId: null, userEmail: 'Jukebox', isManual: false, queueKind: 'jukebox' });
           added++;
@@ -810,22 +797,24 @@ app.get('/api/now-playing', requireAuth, async (req, res) => {
   if (!np || !np.song_id) return res.json({ song: null, isPlaying: false, isAutoQueue: false, playbackPosition: 0 });
 
   // Queue rows intentionally only retain the metadata needed for playback.
-  // Plex remains the canonical shared rating store, so hydrate that one field
+  // Plex remains the canonical metadata store, so hydrate display-only fields
   // for the now-playing view without making Plex availability block playback.
   let rating = null;
   let duration = np.duration || 0;
+  let year = null;
   const plexSource = getActivePlexSource();
   if (plexSource && np.song_id.startsWith('plex:')) {
     try {
       const track = await getPlexTrack(plexSource, np.song_id);
       rating = track.userRating;
       duration = duration || track.duration;
+      year = track.year;
     } catch (err) {
-      console.warn('Could not load now-playing Plex rating:', err.message);
+      console.warn('Could not load now-playing Plex metadata:', err.message);
     }
   }
   res.json({
-    song: { id: np.song_id, title: np.title, artist: np.artist, album: np.album, duration, coverArt: np.cover_art, rating },
+    song: { id: np.song_id, title: np.title, artist: np.artist, album: np.album, year, duration, coverArt: np.cover_art, rating },
     isPlaying: !!np.is_playing,
     isAutoQueue: !!np.is_auto_queue,
     playbackPosition: np.playback_position || 0,
@@ -873,7 +862,15 @@ app.post('/api/vote', requireAuth, async (req, res) => {
       const np = getNowPlaying();
       if (!np?.song_id) throw new Error('No song is currently playing');
       const track = await getPlexTrack(plexSource, np.song_id);
-      const rating = await ratePlexTrack(plexSource, np.song_id, (track.userRating ?? 5) + (vote === 'up' ? 1 : -1));
+      const preview = previewVoteOnCurrent(req.user.id, vote);
+      const rating = preview.changed
+        ? await ratePlexTrack(
+            plexSource,
+            np.song_id,
+            adjustRatingByPoints(track.userRating, preview.deltaPoints),
+          )
+        : track.userRating ?? adjustRatingByPoints(null, 0);
+      voteOnCurrent(req.user.id, vote, rating);
       // A down-vote is an explicit "don't play this" action in every queue,
       // not only the auto-filled portion of it.
       if (vote === 'down') broadcastForceSkip();
@@ -910,10 +907,7 @@ app.post('/api/votes/clear/:songId', requireAuth, requireActivePlayer, (req, res
 // request to pin a rating at its maximum or drive it to zero.
 const PLAY_EVENTS = new Set(['complete', 'skip']);
 
-app.post('/api/stats/play-event', requireAuth, requireActivePlayer, (req, res) => {
-  // Plex-backed deployments keep playback history and counts in Plex. This
-  // endpoint remains only for the legacy Subsonic migration path.
-  if (getActivePlexSource()) return res.json({ ok: true });
+app.post('/api/stats/play-event', requireAuth, requireActivePlayer, async (req, res) => {
   const { song_id, title, artist, album, duration, cover_art, event, progress } = req.body || {};
 
   if (typeof song_id !== 'string' || !song_id.trim()) {
@@ -926,6 +920,27 @@ app.post('/api/stats/play-event', requireAuth, requireActivePlayer, (req, res) =
   const str = (v) => (typeof v === 'string' ? v.slice(0, 500) : '');
   const numericProgress = Number(progress);
   const numericDuration = Number(duration);
+  const normalizedProgress = Number.isFinite(numericProgress) ? Math.max(0, Math.min(1, numericProgress)) : 0;
+
+  const plexSource = getActivePlexSource();
+  if (plexSource) {
+    try {
+      const track = await getPlexTrack(plexSource, song_id.trim());
+      const adjusted = applyPlaybackRating(
+        track.userRating,
+        event,
+        normalizedProgress,
+        track.viewCount,
+      );
+      const rating = adjusted.deltaPoints === 0
+        ? track.userRating ?? adjusted.rating
+        : await ratePlexTrack(plexSource, song_id.trim(), adjusted.rating);
+      return res.json({ ok: true, rating, ratingPoints: Math.round(rating * 10), deltaPoints: adjusted.deltaPoints });
+    } catch (err) {
+      console.error('Could not adjust Plex rating for playback event:', err);
+      return res.status(502).json({ error: 'Could not update the Plex track rating' });
+    }
+  }
 
   const result = recordPlayEvent({
     song_id: song_id.trim().slice(0, 200),
@@ -935,7 +950,7 @@ app.post('/api/stats/play-event', requireAuth, requireActivePlayer, (req, res) =
     cover_art: str(cover_art),
     duration: Number.isFinite(numericDuration) ? Math.max(0, Math.min(86400, Math.round(numericDuration))) : 0,
     event,
-    progress: Number.isFinite(numericProgress) ? Math.max(0, Math.min(1, numericProgress)) : 0,
+    progress: normalizedProgress,
   });
   res.json(result);
 });
@@ -963,6 +978,7 @@ app.get('/api/settings', requireAuth, (req, res) => {
   res.json({
     cooldownMinutes: getCooldownMinutes(),
     maxRequestsPerUser: getMaxRequestsPerUser(),
+    ratedTrackShare: getRatedTrackShare(),
     jukeboxMode: getJukeboxMode(),
     isHost: isHost(req.user.id),
   });
@@ -970,10 +986,10 @@ app.get('/api/settings', requireAuth, (req, res) => {
 
 app.put('/api/settings', requireAuth, (req, res) => {
   if (!isHost(req.user.id)) return res.status(403).json({ error: 'Only the host can change settings' });
-  const { cooldownMinutes, maxRequestsPerUser } = req.body || {};
+  const { cooldownMinutes, maxRequestsPerUser, ratedTrackShare } = req.body || {};
 
-  // Bound both values server-side. A negative or non-numeric limit would make
-  // the queue gate in addToQueue reject every request.
+  // Bound all values server-side. A negative or non-numeric request limit
+  // would make the queue gate in addToQueue reject every request.
   if (cooldownMinutes !== undefined) {
     const n = Number(cooldownMinutes);
     if (!Number.isFinite(n) || n < 0 || n > 10080) {
@@ -987,6 +1003,14 @@ app.put('/api/settings', requireAuth, (req, res) => {
       return res.status(400).json({ error: 'Max requests per user must be between 1 and 100' });
     }
     setMaxRequestsPerUser(Math.round(n));
+  }
+  if (ratedTrackShare !== undefined) {
+    const n = Number(ratedTrackShare);
+    if (!Number.isFinite(n) || n < 0 || n > 10) {
+      return res.status(400).json({ error: 'Rated-track share must be between 0 and 10' });
+    }
+    setRatedTrackShare(Math.round(n));
+    jukeboxMixIndex = 0;
   }
   res.json({ ok: true });
 });
@@ -1143,8 +1167,8 @@ app.post('/api/scrobble', requireAuth, requireActivePlayer, async (req, res) => 
   if (plexSource) {
     // The initial playback notification is not a completion. Plex's scrobble
     // endpoint is called only after a track reaches its end. Jukebox uses the
-    // resulting Plex play count and last-played metadata as neutral listening
-    // signals; ratings remain an explicit thumbs-only preference.
+    // resulting Plex play count and last-played metadata as listening signals.
+    // The separate play-event request applies the adaptive rating first.
     if (submission) {
       await scrobblePlexTrack(plexSource, id);
     }
