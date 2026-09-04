@@ -669,6 +669,11 @@ class MainActivity : ComponentActivity() {
                             Icon(Icons.Default.PlayCircle, contentDescription = "Take control of playback on this device")
                         }
                     }
+                    if (vm.isHost && vm.nowPlaying.song != null) {
+                        IconButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = "Start Track Radio")
+                        }
+                    }
                     IconButton(onClick = { vm.refresh() }) {
                         Icon(imageVector = Icons.Default.Refresh, contentDescription = "Refresh")
                     }
@@ -792,11 +797,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun Now(vm: HarmonicastViewModel, onSearch: (String) -> Unit) {
     val song = vm.nowPlaying.song
-    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 8.dp)) {
         val availableWidth = maxWidth
-        val artworkSize = minOf((maxWidth - 12.dp).coerceAtLeast(180.dp), maxHeight * 0.5f)
+        val artworkSize = minOf((maxWidth - 20.dp).coerceAtLeast(180.dp), maxHeight * 0.43f)
         val density = LocalDensity.current
         val throwDistance = with(density) { (maxWidth + artworkSize).toPx() }
         val skipThreshold = throwDistance * 0.35f
@@ -825,7 +831,7 @@ class MainActivity : ComponentActivity() {
         } else Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
         if (song != null) {
             Box(
@@ -875,7 +881,6 @@ class MainActivity : ComponentActivity() {
                 )
             }
             Column(Modifier.fillMaxWidth()) {
-                Text("Playback", style = MaterialTheme.typography.labelMedium)
                 if (duration > 0f) {
                     Slider(
                         value = scrubPosition.coerceIn(0f, duration),
@@ -889,6 +894,18 @@ class MainActivity : ComponentActivity() {
                         },
                         valueRange = 0f..duration,
                         enabled = vm.isActivePlayer,
+                        modifier = Modifier.height(24.dp),
+                        thumb = {},
+                        track = { sliderState ->
+                            SliderDefaults.Track(
+                                sliderState = sliderState,
+                                modifier = Modifier.height(3.dp),
+                                enabled = vm.isActivePlayer,
+                                drawStopIndicator = null,
+                                thumbTrackGapSize = 0.dp,
+                                trackInsideCornerSize = 0.dp,
+                            )
+                        },
                     )
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(formatDuration(scrubPosition.toInt()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -902,26 +919,33 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            TextButton(onClick = { onSearch(song.artist) }) { Text(song.artist, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (song.album.isNotBlank()) {
-                val albumLabel = song.year?.let { "${song.album} ($it)" } ?: song.album
-                TextButton(onClick = { onSearch(song.album) }) { Text(albumLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            }
-            val rating = song.rating ?: 0.0
-            val filledStars = (rating / 2).toInt().coerceIn(0, 5)
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                repeat(5) { index -> Icon(if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder, if (index == 0) "Plex rating $rating out of 10" else null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp)) }
-            }
-            if (vm.isHost) {
-                FilledTonalButton(
-                    onClick = { vm.queueSimilar() },
-                    enabled = vm.isActivePlayer,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(28.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text("Start Track Radio", style = MaterialTheme.typography.titleMedium)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    song.artist,
+                    modifier = Modifier.clickable { onSearch(song.artist) }.padding(vertical = 1.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (song.album.isNotBlank()) {
+                    val albumLabel = song.year?.let { "${song.album} ($it)" } ?: song.album
+                    Text(
+                        albumLabel,
+                        modifier = Modifier.clickable { onSearch(song.album) }.padding(vertical = 1.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                val rating = song.rating ?: 0.0
+                val filledStars = (rating / 2).toInt().coerceIn(0, 5)
+                Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                    repeat(5) { index -> Icon(if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder, if (index == 0) "Plex rating $rating out of 10" else null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(23.dp)) }
                 }
             }
             val controlButtonSize = minOf(78.dp, availableWidth * 0.22f)
