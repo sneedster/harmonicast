@@ -27,6 +27,10 @@
 
 ## Status
 
+- Active redesign: make Harmonicast a personal, standalone Android music player
+  first, with temporary proximity-based guest control as an optional mode. The
+  architecture and parity constraints are tracked in
+  [`docs/STANDALONE_ARCHITECTURE.md`](docs/STANDALONE_ARCHITECTURE.md).
 - Completed: on-demand Plex artist discovery (biography, genres, and similar
   artists) in Android and the web player. Metadata is fetched only when opened.
 - Completed: on-demand Plex album context (year and summary) in the shared
@@ -39,5 +43,6 @@
 - Completed: weighted auto-queue selection using Plex ratings, play history,
   skips, and recency cooldowns.
 
-There are no active planned enhancements. New work is driven by real-use
-feedback and should be added here before implementation.
+New work is driven by real-use feedback. The standalone redesign is the active
+product direction; existing deployment remains supported until the on-device
+personal-player acceptance slice reaches parity.
