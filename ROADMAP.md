@@ -31,6 +31,10 @@
   first, with temporary proximity-based guest control as an optional mode. The
   architecture and parity constraints are tracked in
   [`docs/STANDALONE_ARCHITECTURE.md`](docs/STANDALONE_ARCHITECTURE.md).
+- Planned for the first standalone acceptance slice: browse and load playlists
+  configured in the selected Plex Music library, including ordered playback,
+  shuffle, Play next, and Add to queue across Android, Android Auto, and the
+  retained tablet/TV kiosk experience.
 - Completed: on-demand Plex artist discovery (biography, genres, and similar
   artists) in Android and the web player. Metadata is fetched only when opened.
 - Completed: on-demand Plex album context (year and summary) in the shared
