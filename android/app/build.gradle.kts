@@ -24,8 +24,8 @@ android {
         targetSdk = 35
         // Keep the release version in source so F-Droid builds the metadata's
         // declared APK without relying on the local release helper.
-        versionCode = providers.gradleProperty("versionCode").orElse("28").get().toInt()
-        versionName = providers.gradleProperty("versionName").orElse("1.0.28").get()
+        versionCode = providers.gradleProperty("versionCode").orElse("29").get().toInt()
+        versionName = providers.gradleProperty("versionName").orElse("1.0.29").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -67,6 +67,7 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.9.0")

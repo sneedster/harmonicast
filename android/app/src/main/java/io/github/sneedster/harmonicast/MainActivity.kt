@@ -517,6 +517,10 @@ class HarmonicastViewModel : ViewModel() {
         if (nowPlaying.isPlaying) controller?.pause() else controller?.play()
     }
 
+    fun previousSong() {
+        if (isActivePlayer) controller?.seekToPrevious()
+    }
+
     fun nextSong() = action("player/skip", "POST", JSONObject())
     fun playQueued(song: Song) {
         if (!isActivePlayer) return
@@ -681,21 +685,24 @@ class MainActivity : ComponentActivity() {
             )
         },
         bottomBar = {
-            NavigationBar(Modifier.height(56.dp)) {
-                val items = listOf(
-                    "Now playing" to Icons.Default.MusicNote,
-                    "Queue" to Icons.AutoMirrored.Filled.QueueMusic,
-                    "Search" to Icons.Default.Search,
-                    "Settings" to Icons.Default.Settings,
-                )
-                items.forEachIndexed { index, item ->
-                    NavigationBarItem(
-                        selected = tab == index,
-                        onClick = { tab = index },
-                        icon = { Icon(item.second, item.first) },
-                        label = null,
-                        alwaysShowLabel = false,
+            Column(Modifier.navigationBarsPadding()) {
+                PhonePlayerControls(vm)
+                NavigationBar(Modifier.height(56.dp), windowInsets = WindowInsets(0, 0, 0, 0)) {
+                    val items = listOf(
+                        "Now playing" to Icons.Default.MusicNote,
+                        "Queue" to Icons.AutoMirrored.Filled.QueueMusic,
+                        "Search" to Icons.Default.Search,
+                        "Settings" to Icons.Default.Settings,
                     )
+                    items.forEachIndexed { index, item ->
+                        NavigationBarItem(
+                            selected = tab == index,
+                            onClick = { tab = index },
+                            icon = { Icon(item.second, item.first) },
+                            label = null,
+                            alwaysShowLabel = false,
+                        )
+                    }
                 }
             }
         }
@@ -801,7 +808,6 @@ class MainActivity : ComponentActivity() {
 @Composable private fun Now(vm: HarmonicastViewModel, onSearch: (String) -> Unit) {
     val song = vm.nowPlaying.song
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 8.dp)) {
-        val availableWidth = maxWidth
         val artworkSize = minOf((maxWidth - 20.dp).coerceAtLeast(180.dp), maxHeight * 0.43f)
         val density = LocalDensity.current
         val throwDistance = with(density) { (maxWidth + artworkSize).toPx() }
@@ -809,18 +815,6 @@ class MainActivity : ComponentActivity() {
         var swipeOffset by remember(song?.id) { mutableFloatStateOf(0f) }
         var swipeStartedAt by remember(song?.id) { mutableLongStateOf(0L) }
         var detailsOpen by remember(song?.id) { mutableStateOf(false) }
-        var scrubPosition by remember(song?.id) { mutableFloatStateOf(vm.playbackPosition) }
-        var isScrubbing by remember(song?.id) { mutableStateOf(false) }
-        val duration = song?.duration?.toFloat()?.coerceAtLeast(0f) ?: 0f
-        LaunchedEffect(song?.id, vm.playbackPosition, isScrubbing) {
-            if (!isScrubbing) scrubPosition = vm.playbackPosition.coerceIn(0f, duration)
-        }
-        LaunchedEffect(song?.id, vm.nowPlaying.isPlaying, duration, isScrubbing) {
-            while (vm.nowPlaying.isPlaying && duration > 0f && !isScrubbing) {
-                delay(500)
-                scrubPosition = (scrubPosition + 0.5f).coerceAtMost(duration)
-            }
-        }
         val animatedSwipeOffset by animateFloatAsState(
             targetValue = swipeOffset,
             animationSpec = spring(),
@@ -880,6 +874,69 @@ class MainActivity : ComponentActivity() {
                     },
                 )
             }
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    song.artist,
+                    modifier = Modifier.clickable { onSearch(song.artist) }.padding(vertical = 1.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (song.album.isNotBlank()) {
+                    val albumLabel = song.year?.let { "${song.album} ($it)" } ?: song.album
+                    Text(
+                        albumLabel,
+                        modifier = Modifier.clickable { onSearch(song.album) }.padding(vertical = 1.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                val rating = song.rating ?: 0.0
+                val filledStars = (rating / 2).toInt().coerceIn(0, 5)
+                Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                    repeat(5) { index -> Icon(if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder, if (index == 0) "Plex rating $rating out of 10" else null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(23.dp)) }
+                }
+            }
+
+        } else {
+            Spacer(Modifier.height(100.dp))
+            Text("Nothing is playing")
+            if (vm.isHost) {
+                Button({ vm.claim() }, enabled = !vm.isActivePlayer) { Text("Take control on this device") }
+                Button({ vm.startRandomPlayback() }, enabled = vm.isActivePlayer) { Text("Play random music") }
+            }
+        }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun PhonePlayerControls(vm: HarmonicastViewModel) {
+    val song = vm.nowPlaying.song ?: return
+    var scrubPosition by remember(song.id) { mutableFloatStateOf(vm.playbackPosition) }
+    var isScrubbing by remember(song.id) { mutableStateOf(false) }
+    val duration = song.duration.toFloat().coerceAtLeast(0f)
+    LaunchedEffect(song.id, vm.playbackPosition, isScrubbing) {
+        if (!isScrubbing) scrubPosition = vm.playbackPosition.coerceIn(0f, duration)
+    }
+    LaunchedEffect(song.id, vm.nowPlaying.isPlaying, duration, isScrubbing) {
+        while (vm.nowPlaying.isPlaying && duration > 0f && !isScrubbing) {
+            delay(500)
+            scrubPosition = (scrubPosition + 0.5f).coerceAtMost(duration)
+        }
+    }
+
+    Surface(tonalElevation = 3.dp) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Column(Modifier.fillMaxWidth()) {
                 if (duration > 0f) {
                     Slider(
@@ -919,63 +976,29 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    song.artist,
-                    modifier = Modifier.clickable { onSearch(song.artist) }.padding(vertical = 1.dp),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (song.album.isNotBlank()) {
-                    val albumLabel = song.year?.let { "${song.album} ($it)" } ?: song.album
-                    Text(
-                        albumLabel,
-                        modifier = Modifier.clickable { onSearch(song.album) }.padding(vertical = 1.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.ThumbDown, "Vote down")
                 }
-                val rating = song.rating ?: 0.0
-                val filledStars = (rating / 2).toInt().coerceIn(0, 5)
-                Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-                    repeat(5) { index -> Icon(if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder, if (index == 0) "Plex rating $rating out of 10" else null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(23.dp)) }
+                IconButton(onClick = { vm.previousSong() }, enabled = vm.isActivePlayer, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.SkipPrevious, "Previous track or restart", modifier = Modifier.size(32.dp))
                 }
-            }
-            val controlButtonSize = minOf(78.dp, availableWidth * 0.22f)
-            val playButtonSize = minOf(96.dp, availableWidth * 0.26f)
-            val controlIconSize = minOf(36.dp, controlButtonSize * 0.46f)
-            val playIconSize = minOf(42.dp, playButtonSize * 0.44f)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(controlButtonSize)) {
-                    Icon(Icons.Default.ThumbDown, "Vote down", modifier = Modifier.size(controlIconSize))
+                FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.size(64.dp)) {
+                    Icon(if (vm.nowPlaying.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (vm.nowPlaying.isPlaying) "Pause" else "Play", modifier = Modifier.size(36.dp))
                 }
-                FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.size(playButtonSize)) {
-                    Icon(if (vm.nowPlaying.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or pause", modifier = Modifier.size(playIconSize))
+                IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(32.dp))
                 }
-                IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost, modifier = Modifier.size(controlButtonSize)) {
-                    Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(controlIconSize))
-                }
-                IconButton(onClick = { vm.vote(true) }, modifier = Modifier.size(controlButtonSize)) {
-                    Icon(Icons.Default.ThumbUp, "Vote up", modifier = Modifier.size(controlIconSize))
+                IconButton(onClick = { vm.vote(true) }, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.ThumbUp, "Vote up")
                 }
             }
             if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Take control on this device") }
-
-        } else {
-            Spacer(Modifier.height(100.dp))
-            Text("Nothing is playing")
-            if (vm.isHost) {
-                Button({ vm.claim() }, enabled = !vm.isActivePlayer) { Text("Take control on this device") }
-                Button({ vm.startRandomPlayback() }, enabled = vm.isActivePlayer) { Text("Play random music") }
-            }
-        }
         }
     }
 }

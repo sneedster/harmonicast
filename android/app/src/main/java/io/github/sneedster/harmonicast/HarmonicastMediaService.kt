@@ -49,6 +49,9 @@ class HarmonicastMediaService : MediaLibraryService() {
     private val androidAutoControllers = mutableSetOf<MediaSession.ControllerInfo>()
     private var positionSaveJob: kotlinx.coroutines.Job? = null
     private var previousMediaItem: MediaItem? = null
+    private data class HistoryItem(val mediaItem: MediaItem, val isAuto: Boolean)
+    private val playbackHistory = PlaybackHistory<HistoryItem>()
+    private var changingTrack = false
 
     companion object {
         private const val ROOT_ID = "harmonicast:root"
@@ -104,28 +107,41 @@ class HarmonicastMediaService : MediaLibraryService() {
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && previous != null && mediaItem != null) {
                     consumeAutomaticQueueTransition(previous, mediaItem)
                 }
+                if (mediaItem != null) playbackHistory.record(HistoryItem(mediaItem, currentIsAuto.get()))
                 previousMediaItem = mediaItem
                 syncCurrentPlaybackState(player.isPlaying)
             }
         })
 
-        // Use ForwardingPlayer so Media3 / Android Auto always sees Next / Skip as available
+        // Handle transport outside the single-item Media3 timeline.
         val forwardingPlayer = object : ForwardingPlayer(exoPlayer) {
             override fun getAvailableCommands(): Player.Commands {
                 return super.getAvailableCommands().buildUpon()
                     .add(COMMAND_SEEK_TO_NEXT)
                     .add(COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(COMMAND_SEEK_TO_PREVIOUS)
+                    .add(COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
                     .build()
             }
 
             override fun isCommandAvailable(command: Int): Boolean {
                 return command == COMMAND_SEEK_TO_NEXT ||
                        command == COMMAND_SEEK_TO_NEXT_MEDIA_ITEM ||
+                       command == COMMAND_SEEK_TO_PREVIOUS ||
+                       command == COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM ||
                        super.isCommandAvailable(command)
             }
 
             override fun hasNextMediaItem(): Boolean {
                 return true
+            }
+
+            override fun seekToPrevious() {
+                goBack()
+            }
+
+            override fun seekToPreviousMediaItem() {
+                goBack(forcePrevious = true)
             }
 
             override fun seekToNext() {
@@ -723,8 +739,44 @@ class HarmonicastMediaService : MediaLibraryService() {
         positionSaveJob = null
     }
 
+    private fun playHistoryItem(item: HistoryItem, playWhenReady: Boolean) {
+        currentIsAuto.set(item.isAuto)
+        player.setMediaItem(item.mediaItem, 0)
+        player.prepare()
+        player.playWhenReady = playWhenReady
+        syncCurrentPlaybackState(playWhenReady)
+        scope.launch {
+            try {
+                api.json("scrobble", "POST", JSONObject().put("id", item.mediaItem.mediaId).put("submission", false))
+            } catch (e: Exception) {
+                Log.e("HarmonicastMedia", "History scrobble failed", e)
+            }
+        }
+    }
+
+    private fun goBack(forcePrevious: Boolean = false) {
+        scope.launch {
+            if (changingTrack || player.currentMediaItem == null) return@launch
+            val previous = playbackHistory.previous(player.currentPosition, forcePrevious)
+            if (previous == null) {
+                player.seekTo(0)
+                if (player.playbackState == Player.STATE_ENDED) player.prepare()
+            } else {
+                playHistoryItem(previous, player.playWhenReady)
+            }
+            // Publish the reset immediately, including when playback is paused.
+            try {
+                api.json("now-playing/position", "PUT", JSONObject().put("position", 0))
+            } catch (e: Exception) {
+                Log.e("HarmonicastMedia", "Failed to save previous-track position", e)
+            }
+        }
+    }
+
     private fun advance(reason: String) {
         scope.launch {
+            if (changingTrack) return@launch
+            changingTrack = true
             try {
                 val currentMediaItem = player.currentMediaItem
                 if (currentMediaItem != null) {
@@ -742,6 +794,12 @@ class HarmonicastMediaService : MediaLibraryService() {
                     } else {
                         recordPlaybackEvent(currentMediaItem, "skip", progress.toDouble())
                     }
+                }
+
+                val replay = playbackHistory.next()
+                if (replay != null) {
+                    playHistoryItem(replay, playWhenReady = true)
+                    return@launch
                 }
 
                 val response = JSONObject(api.json("queue/dequeue", "POST", JSONObject()))
@@ -793,6 +851,8 @@ class HarmonicastMediaService : MediaLibraryService() {
                 }
             } catch (e: Exception) {
                 Log.e("HarmonicastMedia", "advance failed", e)
+            } finally {
+                changingTrack = false
             }
         }
     }
