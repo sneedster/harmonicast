@@ -109,6 +109,11 @@
   over BLE, and a browser request succeeded without dropping either guest. The
   bundled page avoids unsupported newer JavaScript syntax, and an idle or
   half-open browser socket can no longer crash the host process.
+- Nearby discovery now waits briefly for all visible Harmonicast advertisements.
+  A single room still joins automatically; if multiple hosts are nearby, the
+  signed-out guest sees their four-letter room codes and explicitly chooses one.
+  Arrival ordering, duplicate advertisements, selection, and malformed codes are
+  covered by unit tests; real two-host device acceptance remains outstanding.
 - Standalone playback now seeds the weighted automatic mix when personal mode
   starts without a current track and refills it whenever the upcoming queue is
   exhausted. A deliberately paused current track remains paused.

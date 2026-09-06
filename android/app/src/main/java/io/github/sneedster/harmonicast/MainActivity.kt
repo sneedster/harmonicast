@@ -471,6 +471,8 @@ class HarmonicastViewModel : ViewModel() {
         client.scan()
     }
 
+    fun joinNearbyRoom(roomCode: String) = nearbyRoomClient?.connect(roomCode)
+
     fun leaveNearbyRoom() {
         nearbyRoomClient?.close()
         nearbyRoomClient = null
@@ -1202,9 +1204,25 @@ class MainActivity : ComponentActivity() {
                 enabled = !vm.nearbyRoomState.scanning,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (vm.nearbyRoomState.scanning) "Looking for nearby room…" else "Join nearby room")
+                Text(if (vm.nearbyRoomState.scanning) "Looking for nearby rooms…" else if (vm.nearbyRoomState.availableRooms.size > 1) "Scan again" else "Join nearby room")
             }
             val nearby = vm.nearbyRoomState
+            if (!nearby.connected && nearby.availableRooms.size > 1) {
+                Text("Choose a nearby room", style = MaterialTheme.typography.titleMedium)
+                nearby.availableRooms.forEach { roomCode ->
+                    OutlinedButton(
+                        onClick = { vm.joinNearbyRoom(roomCode) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.BluetoothConnected, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Room $roomCode")
+                    }
+                }
+            }
+            if (!nearby.connected && nearby.message.isNotBlank()) {
+                Text(nearby.message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (nearby.connected) {
                 Text("Connected to room ${nearby.roomCode}", style = MaterialTheme.typography.titleMedium)
                 Text(

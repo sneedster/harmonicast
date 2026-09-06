@@ -9,6 +9,19 @@ import org.json.JSONObject
 import java.util.Base64
 
 class NearbyRoomBluetoothTest {
+    @Test fun discoveryKeepsDistinctRoomsInArrivalOrderForExplicitSelection() {
+        val discovery = NearbyRoomDiscovery<String>()
+
+        assertTrue(discovery.add("MUSE", "first-device"))
+        assertFalse(discovery.add("MUSE", "stronger-device"))
+        assertTrue(discovery.add("JAZZ", "second-device"))
+        assertFalse(discovery.add("bad!", "invalid-device"))
+
+        assertEquals(listOf("MUSE", "JAZZ"), discovery.roomCodes())
+        assertEquals("stronger-device", discovery.candidate("MUSE"))
+        assertEquals("second-device", discovery.candidate("JAZZ"))
+    }
+
     @Test fun roomAdvertisementContainsOnlyTheFourLetterRoomCode() {
         val value = NearbyRoomWire.roomAdvertisement("MUSE")
 

@@ -45,6 +45,7 @@ data class NearbyRoomState(
     val scanning: Boolean = false,
     val connected: Boolean = false,
     val roomCode: String = "",
+    val availableRooms: List<String> = emptyList(),
     val artworkKey: String = "",
     val artwork: ByteArray? = null,
     val title: String = "",
@@ -64,6 +65,21 @@ data class NearbyRoomState(
     val error: String = "",
     val vote: Int = 0,
 )
+
+internal class NearbyRoomDiscovery<T> {
+    private val candidates = linkedMapOf<String, T>()
+
+    fun add(roomCode: String, candidate: T): Boolean {
+        if (roomCode.length != 4 || roomCode.any { it !in 'A'..'Z' }) return false
+        val added = roomCode !in candidates
+        candidates[roomCode] = candidate
+        return added
+    }
+
+    fun roomCodes(): List<String> = candidates.keys.toList()
+    fun candidate(roomCode: String): T? = candidates[roomCode]
+    fun clear() = candidates.clear()
+}
 
 internal object NearbyRoomWire {
     val serviceUuid: UUID = UUID.fromString("d8e8f2a0-8c67-4ef1-9db3-2c77b9a15e01")
@@ -413,6 +429,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
     private companion object {
         const val STATUS_REFRESH_MS = 2_000L
         const val SCAN_TIMEOUT_MS = 10_000L
+        const val DISCOVERY_SETTLE_MS = 1_500L
         const val RESPONSE_POLL_MS = 150L
     }
 
@@ -426,6 +443,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
     private var responseCharacteristic: BluetoothGattCharacteristic? = null
     private var scanning = false
     private var advertisedRoom = ""
+    private val discovery = NearbyRoomDiscovery<BluetoothDevice>()
     private var roomState = NearbyRoomState()
     private var nextCommandId = 1
     private var artworkBuffer: ByteArrayOutputStream? = null
@@ -435,8 +453,24 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
 
     private val scanTimeout = Runnable {
         if (scanning) {
-            stopScan()
-            publish(NearbyRoomState(error = "No nearby Harmonicast room found"))
+            if (discovery.roomCodes().isEmpty()) {
+                stopScan()
+                publish(NearbyRoomState(error = "No nearby Harmonicast room found"))
+            } else finishDiscovery.run()
+        }
+    }
+
+    private val finishDiscovery = Runnable {
+        if (!scanning) return@Runnable
+        val rooms = discovery.roomCodes()
+        stopScan()
+        when (rooms.size) {
+            0 -> publish(NearbyRoomState(error = "No nearby Harmonicast room found"))
+            1 -> connect(rooms.single())
+            else -> publish(NearbyRoomState(
+                availableRooms = rooms,
+                message = "Choose the room you want to join",
+            ))
         }
     }
 
@@ -466,16 +500,21 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            val hasService = result.scanRecord?.serviceUuids?.contains(ParcelUuid(NearbyRoomWire.serviceUuid)) == true
             val room = NearbyRoomWire.roomCode(
                 result.scanRecord?.getManufacturerSpecificData(NearbyRoomWire.MANUFACTURER_ID),
             )
-            if (room.isBlank() && !hasService) return
+            if (room.isBlank()) return
             android.util.Log.d("HarmonicastNearby", "Found Harmonicast BLE advertisement")
-            advertisedRoom = room
-            stopScan()
-            publish(NearbyRoomState(roomCode = room.ifBlank { "ROOM" }))
-            gatt = result.device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+            val firstRoom = discovery.add(room, result.device)
+            publish(roomState.copy(
+                scanning = true,
+                availableRooms = discovery.roomCodes(),
+                message = if (discovery.roomCodes().size == 1) "Found room $room. Checking for others…" else "Found multiple nearby rooms",
+                error = "",
+            ))
+            if (firstRoom && discovery.roomCodes().size == 1) {
+                handler.postDelayed(finishDiscovery, DISCOVERY_SETTLE_MS)
+            }
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -575,6 +614,22 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         handler.postDelayed(scanTimeout, SCAN_TIMEOUT_MS)
     }
 
+    fun connect(roomCode: String) {
+        val device = discovery.candidate(roomCode) ?: run {
+            publish(roomState.copy(error = "That nearby room is no longer available"))
+            return
+        }
+        stopScan()
+        advertisedRoom = roomCode
+        publish(roomState.copy(
+            scanning = false,
+            roomCode = roomCode,
+            message = "Connecting to room $roomCode…",
+            error = "",
+        ))
+        gatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+    }
+
     private fun acceptStatus(sourceGatt: BluetoothGatt, value: ByteArray, status: Int) {
         if (gatt !== sourceGatt) return
         if (status != BluetoothGatt.GATT_SUCCESS) {
@@ -591,6 +646,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         publish(roomState.copy(
             connected = true,
             roomCode = state.roomCode,
+            availableRooms = emptyList(),
             artworkKey = state.artworkKey,
             artwork = if (songChanged) null else roomState.artwork,
             title = state.title,
@@ -600,6 +656,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             positionSeconds = state.positionSeconds,
             isPlaying = state.isPlaying,
             vote = if (songChanged) 0 else roomState.vote,
+            message = if (firstStatus) "" else roomState.message,
             error = "",
         ))
         handler.removeCallbacks(refreshStatus)
@@ -752,6 +809,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         if (scanning) runCatching { adapter.bluetoothLeScanner?.stopScan(scanCallback) }
         scanning = false
         handler.removeCallbacks(scanTimeout)
+        handler.removeCallbacks(finishDiscovery)
     }
 
     fun close() {
@@ -764,6 +822,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         pendingCommand = null
         artworkBuffer = null
         loadQueueAfterArtwork = false
+        discovery.clear()
         val activeGatt = gatt
         gatt = null
         activeGatt?.disconnect()

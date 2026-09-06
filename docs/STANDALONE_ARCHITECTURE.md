@@ -265,7 +265,10 @@ second vote from the same participant on the same current track. It also sends
 a resized now-playing JPEG in bounded chunks; no Plex artwork URL or token is
 sent to the guest.
 - Handle network changes, host disappearance, capability expiry and reconnect
-  edge cases, and two nearby hosts without requiring account sign-in.
+  edge cases without requiring account sign-in. Nearby discovery now gathers
+  advertisements for a short window, joins automatically when exactly one room
+  is visible, and presents room codes for explicit selection when multiple hosts
+  are visible. The multi-host chooser still needs real two-host device acceptance.
 
 Acceptance: a nearby guest joins intentionally and quickly, while a device that
 did not receive the current capability cannot control the host.
