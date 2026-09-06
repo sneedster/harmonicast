@@ -118,6 +118,11 @@
   guest. The S7 was a one-time borrowed test device and is not part of the
   ongoing device pool. Joining also dismisses any keyboard left open by the
   migration URL field.
+- Guest room lifetime is now enforced across both transports. Browser requests
+  and connected BLE status refreshes extend the thirty-minute idle window, while
+  the four-hour hard limit cannot be extended. Expiry revokes the capability,
+  stops LAN and BLE listeners, disconnects nearby guests, and explains the stop
+  in host Settings.
 - Standalone playback now seeds the weighted automatic mix when personal mode
   starts without a current track and refills it whenever the upcoming queue is
   exhausted. A deliberately paused current track remains paused.

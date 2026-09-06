@@ -116,6 +116,18 @@ class GuestRoomGatewayTest {
             .route(GuestApiRequest("GET", "/v1/status", fresh.bearer)).status)
     }
 
+    @Test fun nearbyActivityExtendsIdleLifetimeButNeverHardExpiry() {
+        val room = RoomCapability.create(nowMillis = 1_000, lifetimeMillis = 10_000, idleTimeoutMillis = 2_000)
+
+        assertTrue(room.touch(2_500))
+        assertTrue(room.isActive(4_499))
+        assertFalse(room.isActive(4_500))
+
+        val hardLimited = RoomCapability.create(nowMillis = 1_000, lifetimeMillis = 3_000, idleTimeoutMillis = 5_000)
+        assertTrue(hardLimited.touch(3_999))
+        assertFalse(hardLimited.touch(4_000))
+    }
+
     @Test fun backendFailuresDoNotExposeCredentialBearingMessages() = runBlocking {
         val core = FakeCore()
         val capability = RoomCapability.create()

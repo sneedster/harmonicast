@@ -137,13 +137,24 @@ class RoomCapability private constructor(
     @Volatile private var revoked = false
 
     @Synchronized fun authorize(candidate: String?, nowMillis: Long): Boolean {
-        if (revoked || nowMillis >= expiresAtMillis || nowMillis - lastUsedAtMillis >= idleTimeoutMillis) return false
+        if (!activeAt(nowMillis)) return false
         val supplied = candidate?.toByteArray(StandardCharsets.UTF_8) ?: return false
         val expected = bearer.toByteArray(StandardCharsets.UTF_8)
         if (!MessageDigest.isEqual(supplied, expected)) return false
         lastUsedAtMillis = nowMillis
         return true
     }
+
+    @Synchronized fun isActive(nowMillis: Long) = activeAt(nowMillis)
+
+    @Synchronized fun touch(nowMillis: Long): Boolean {
+        if (!activeAt(nowMillis)) return false
+        lastUsedAtMillis = nowMillis
+        return true
+    }
+
+    private fun activeAt(nowMillis: Long) =
+        !revoked && nowMillis < expiresAtMillis && nowMillis - lastUsedAtMillis < idleTimeoutMillis
 
     fun revoke() { revoked = true }
 
@@ -318,6 +329,10 @@ class GuestRoomGateway(
         val activeRouter = router ?: return GuestApiResponse(401, "{\"error\":\"Room closed\"}")
         return activeRouter.route(request.copy(bearer = room.bearer))
     }
+
+    fun isActive(nowMillis: Long = System.currentTimeMillis()) = capability?.isActive(nowMillis) == true
+
+    fun touchNearby(nowMillis: Long = System.currentTimeMillis()) = capability?.touch(nowMillis) == true
 
     fun snapshot(): RoomShareState {
         val room = capability ?: return RoomShareState()

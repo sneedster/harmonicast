@@ -270,6 +270,9 @@ sent to the guest.
   is visible, and presents room codes for explicit selection when multiple hosts
   are visible. The multi-host chooser and selected-room connection are accepted
   with simultaneous Pixel and Samsung hosts and an Android 8 Galaxy S7 guest.
+  Room lifecycle enforcement now covers both transports: authorized browser
+  traffic and BLE status refreshes extend the idle window, the four-hour hard
+  expiry remains fixed, and either expiry path revokes and closes the room.
 
 Acceptance: a nearby guest joins intentionally and quickly, while a device that
 did not receive the current capability cannot control the host.

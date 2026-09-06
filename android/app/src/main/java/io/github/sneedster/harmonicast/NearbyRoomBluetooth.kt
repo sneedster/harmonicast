@@ -200,6 +200,7 @@ class NearbyRoomHost(
     private val core: HarmonicastCore,
     private val roomCode: String,
     private val routeGuest: suspend (GuestApiRequest) -> GuestApiResponse,
+    private val touchRoom: () -> Boolean,
 ) {
     private val appContext = context.applicationContext
     private val manager = appContext.getSystemService(BluetoothManager::class.java)
@@ -251,6 +252,10 @@ class NearbyRoomHost(
         ) {
             if (characteristic.uuid !in setOf(NearbyRoomWire.statusUuid, NearbyRoomWire.responseUuid)) {
                 server?.sendResponse(device, requestId, BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED, offset, null)
+                return
+            }
+            if (characteristic.uuid == NearbyRoomWire.statusUuid && !touchRoom()) {
+                server?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
                 return
             }
             val payload = if (characteristic.uuid == NearbyRoomWire.statusUuid) {

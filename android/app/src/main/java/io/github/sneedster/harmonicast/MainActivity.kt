@@ -1486,6 +1486,11 @@ class MainActivity : ComponentActivity() {
                     if (room.enabled) {
                         Text("Room ${room.roomCode}", style = MaterialTheme.typography.headlineSmall)
                         Text(
+                            "Closes after 30 minutes without guest activity, or after 4 hours total.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
                             if (room.nearbyAvailable) "Bluetooth room is ready" else "Bluetooth is unavailable; same-Wi-Fi access still works",
                             color = if (room.nearbyAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                         )

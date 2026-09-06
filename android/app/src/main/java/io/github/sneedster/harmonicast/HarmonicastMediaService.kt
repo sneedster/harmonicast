@@ -55,6 +55,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     private var changingTrack = false
     private var guestRoomGateway: GuestRoomGateway? = null
     private var nearbyRoomHost: NearbyRoomHost? = null
+    private var guestRoomLifecycleJob: kotlinx.coroutines.Job? = null
 
     companion object {
         private const val ROOT_ID = "harmonicast:root"
@@ -571,9 +572,10 @@ class HarmonicastMediaService : MediaLibraryService() {
             val gateway = GuestRoomGateway(this, core)
             guestRoomGateway = gateway
             val room = gateway.start()
-            val nearby = NearbyRoomHost(this, core, room.roomCode, gateway::routeNearby)
+            val nearby = NearbyRoomHost(this, core, room.roomCode, gateway::routeNearby, gateway::touchNearby)
             nearbyRoomHost = nearby
             roomShareState.value = room.copy(nearbyAvailable = nearby.start())
+            monitorGuestRoom(gateway)
             Log.d("HarmonicastMedia", "Guest room enabled: ${roomShareState.value.roomCode}")
         } catch (e: Exception) {
             guestRoomGateway = null
@@ -582,12 +584,27 @@ class HarmonicastMediaService : MediaLibraryService() {
         }
     }
 
-    private fun disableGuestControl() {
+    private fun monitorGuestRoom(gateway: GuestRoomGateway) {
+        guestRoomLifecycleJob?.cancel()
+        guestRoomLifecycleJob = scope.launch {
+            while (guestRoomGateway === gateway) {
+                delay(10_000)
+                if (!gateway.isActive()) {
+                    disableGuestControl("Guest room expired after being idle or reaching its four-hour limit")
+                    return@launch
+                }
+            }
+        }
+    }
+
+    private fun disableGuestControl(message: String = "") {
+        guestRoomLifecycleJob?.cancel()
+        guestRoomLifecycleJob = null
         guestRoomGateway?.stop()
         guestRoomGateway = null
         nearbyRoomHost?.stop()
         nearbyRoomHost = null
-        roomShareState.value = RoomShareState()
+        roomShareState.value = RoomShareState(error = message)
         Log.d("HarmonicastMedia", "Guest room disabled")
     }
 
