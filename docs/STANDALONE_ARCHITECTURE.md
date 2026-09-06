@@ -288,8 +288,12 @@ kiosk experience without an external Harmonicast server.
   Harmonicast installation where practical.
 - Keep a remote-server profile during development so current users are not cut
   off before personal mode reaches parity.
-- Retire Docker/server deployment only after the on-device path meets the
-  personal and guest acceptance checks.
+- Treat v1.1.0 as the standalone cutover. After the on-device path meets the
+  personal, guest, Android Auto, and room-display acceptance checks, withdraw
+  the F-Droid submission, merge the validated `dev` branch into `main`, publish
+  v1.1.0 from `main`, and retire the Docker/server deployment.
+- Keep the server and its release paths intact throughout the 1.0.x migration;
+  the cutover work belongs to the v1.1.0 release branch and documentation pass.
 
 ## Features that require an explicit decision
 

@@ -118,3 +118,19 @@
 New work is driven by real-use feedback. The standalone redesign is the active
 product direction; existing deployment remains supported until the on-device
 personal-player acceptance slice reaches parity.
+
+## v1.1.0 standalone cutover
+
+Version 1.1.0 is the planned standalone milestone. Once the on-device personal,
+guest, Android Auto, and room-display acceptance checks are complete:
+
+- withdraw the existing F-Droid submission and remove repository automation and
+  metadata that continue publishing Harmonicast through F-Droid;
+- merge the validated `dev` branch into `main` and publish v1.1.0 from `main`;
+- retire the Node/Docker server component and its deployment path after resolving
+  every feature disposition listed in the standalone architecture document;
+- update installation, release, and migration documentation around the Android
+  standalone application as the supported product.
+
+Do not perform these retirement steps during the 1.0.x migration series. The
+server remains supported until the v1.1.0 acceptance gate is satisfied.
