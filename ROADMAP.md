@@ -84,8 +84,21 @@
   code and now-playing status without Plex credentials. Both phones remained on
   their existing `scshub` Wi-Fi connection. The guest actively refreshes room
   status and now clears its connected state when the host ends sharing, validated
-  on the same Pixel/Samsung pair. Search, requests, queue updates, and voting over
-  BLE remain the next transport slice.
+  on the same Pixel/Samsung pair. That completed the discovery and room-lifecycle
+  slice.
+- Bluetooth guest control is implemented and device accepted on the Pixel and
+  clean Samsung through the same allowlisted room router as the browser
+  controller. The native guest room shows now playing and paged queue/search
+  results, submits individual requests and votes, preserves request-first queue
+  order, and keeps both phones on their existing internet connection. Host room
+  shutdown and explicit guest Leave both return the Samsung to its signed-out
+  home screen.
+- Standalone playback now seeds the weighted automatic mix when personal mode
+  starts without a current track and refills it whenever the upcoming queue is
+  exhausted. A deliberately paused current track remains paused.
+- Host Next always skips the current track, including a guest request. Rating a
+  requested/manual track down changes its Plex rating without also skipping it;
+  automatic tracks retain the down-rating-and-skip behavior.
 - Personal-mode Settings now shows the selected Plex source, can reopen the
   server/library picker without another sign-in, and can explicitly sign out.
   Signing out clears Plex credentials and persisted playback records that may

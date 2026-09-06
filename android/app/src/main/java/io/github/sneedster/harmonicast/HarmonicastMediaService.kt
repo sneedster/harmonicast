@@ -549,6 +549,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         }.build()
 
         Log.d("HarmonicastMedia", "Session built successfully")
+        restorePersonalPlaybackIfIdle()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -570,7 +571,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             val gateway = GuestRoomGateway(this, core)
             guestRoomGateway = gateway
             val room = gateway.start()
-            val nearby = NearbyRoomHost(this, core, room.roomCode)
+            val nearby = NearbyRoomHost(this, core, room.roomCode, gateway::routeNearby)
             nearbyRoomHost = nearby
             roomShareState.value = room.copy(nearbyAvailable = nearby.start())
             Log.d("HarmonicastMedia", "Guest room enabled: ${roomShareState.value.roomCode}")
@@ -605,6 +606,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         connectWebSocket()
         refreshAndroidAutoQueue(refreshBrowser = true)
         Log.d("HarmonicastMedia", "Playback profile reloaded: ${api.profile.mode}")
+        restorePersonalPlaybackIfIdle()
     }
 
     private fun connectWebSocket() {
@@ -768,7 +770,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 recordPlaybackEvent(previous, "complete", 1.0)
                 core.playback.scrobble(previous.mediaId, submission = true)
 
-                val response = core.queue.dequeue()
+                val response = core.queue.dequeueWithAutomaticFallback()
                 val dequeued = response.song
                 if (dequeued?.id != current.mediaId) {
                     Log.w("HarmonicastMedia", "Automatic transition did not match the shared queue head")
@@ -882,7 +884,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                     return@launch
                 }
 
-                val response = core.queue.dequeue()
+                val response = core.queue.dequeueWithAutomaticFallback()
                 val song = response.song
                 if (song != null) {
                     val isAuto = !response.isManual
@@ -924,14 +926,52 @@ class HarmonicastMediaService : MediaLibraryService() {
 
     /** Enables the shared auto queue and returns its next playable track. */
     private suspend fun dequeueRandomItem(): MediaItem? = try {
-        core.queue.enableAutomaticPlayback()
-        val response = core.queue.dequeue()
+        val response = core.queue.dequeueWithAutomaticFallback()
         val next = response.song ?: return null
         currentIsAuto.set(!response.isManual)
         createMediaItem(next)
     } catch (e: Exception) {
         Log.e("HarmonicastMedia", "Failed to start random playback", e)
         null
+    }
+
+    /** Restore the persisted personal track, or start the weighted mix when none exists. */
+    private fun restorePersonalPlaybackIfIdle() {
+        if (api.profile.mode != HomeMode.PERSONAL_PLEX) return
+        scope.launch {
+            try {
+                if (player.currentMediaItem != null) return@launch
+                val state = core.playback.snapshot()
+                val savedSong = state.nowPlaying.song
+                if (savedSong != null) {
+                    val playable = if (runCatching { core.library.streamUrl(savedSong) }.isSuccess) {
+                        savedSong
+                    } else {
+                        core.library.track(savedSong.id)
+                    }
+                    if (playable != null) {
+                        currentIsAuto.set(state.isAutoQueue)
+                        player.setMediaItem(createMediaItem(playable), (state.positionSeconds * 1_000).toLong())
+                        player.prepare()
+                        if (state.nowPlaying.isPlaying) player.play()
+                        Log.d("HarmonicastMedia", "Restored personal playback")
+                        return@launch
+                    }
+                }
+                val response = core.queue.dequeueWithAutomaticFallback()
+                val song = response.song ?: return@launch
+                val isAuto = !response.isManual
+                currentIsAuto.set(isAuto)
+                core.playback.publish(song, isPlaying = true, isAutoQueue = isAuto)
+                core.playback.scrobble(song.id, submission = false)
+                player.setMediaItem(createMediaItem(song), 0)
+                player.prepare()
+                player.play()
+                Log.d("HarmonicastMedia", "Started personal automatic queue")
+            } catch (e: Exception) {
+                Log.e("HarmonicastMedia", "Could not start personal automatic queue", e)
+            }
+        }
     }
 
     private fun coverArtUri(coverArt: String): Uri? {

@@ -157,12 +157,13 @@ class LocalHarmonicastCore(
             isSetupOwner = true,
         )
         override suspend fun vote(up: Boolean) {
-            val current = playback.snapshot().nowPlaying.song
+            val state = playback.snapshot()
+            val current = state.nowPlaying.song
                 ?: throw IllegalStateException("No song is currently playing")
             val fresh = plex.track(source, current.id) ?: current
             val points = ((fresh.rating ?: 5.0) * 10).toInt()
             plex.rate(source, current.id, (points + if (up) 10 else -10).coerceIn(0, 100) / 10.0)
-            if (!up) LocalCoreEvents.publish(CoreEvent.FORCE_SKIP)
+            if (shouldSkipAfterVote(up, state.isAutoQueue)) LocalCoreEvents.publish(CoreEvent.FORCE_SKIP)
         }
     }
 
@@ -186,6 +187,8 @@ class LocalHarmonicastCore(
         storage.write(mapOf(key to JSONArray().apply { songs.forEach { put(encodeSong(it)) } }.toString()))
     }
 }
+
+internal fun shouldSkipAfterVote(up: Boolean, isAutoQueue: Boolean) = !up && isAutoQueue
 
 fun harmonicastCore(api: Api): HarmonicastCore = api.profile.personalSource?.let {
     LocalHarmonicastCore(it, api.storage)

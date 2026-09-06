@@ -475,6 +475,11 @@ class HarmonicastViewModel : ViewModel() {
         nearbyRoomState = NearbyRoomState()
     }
 
+    fun loadNearbyQueue(offset: Int = 0) = nearbyRoomClient?.loadQueue(offset)
+    fun searchNearbyRoom(query: String, offset: Int = 0) = nearbyRoomClient?.search(query, offset)
+    fun requestNearbySong(song: Song) = nearbyRoomClient?.request(song)
+    fun voteNearby(up: Boolean) = nearbyRoomClient?.vote(up)
+
     fun loadPlaylists() {
         if (playlistsLoading) return
         viewModelScope.launch {
@@ -872,11 +877,113 @@ class MainActivity : ComponentActivity() {
             contentColor = MaterialTheme.colorScheme.onBackground,
         ) {
             when {
+                vm.nearbyRoomState.connected -> NearbyGuestScreen(vm)
                 vm.personalSetupActive -> PersonalSetupPage(vm)
                 !vm.ready -> Login(vm)
                 else -> Home(vm)
             }
         }
+    }
+}
+
+@Composable private fun NearbyGuestScreen(vm: HarmonicastViewModel) {
+    val room = vm.nearbyRoomState
+    var search by remember { mutableStateOf("") }
+    Column(
+        Modifier.fillMaxSize()
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(WindowInsets.safeDrawing.asPaddingValues())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text("Room ${room.roomCode}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Connected over nearby Bluetooth", color = MaterialTheme.colorScheme.primary)
+        ElevatedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Now playing", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(if (room.title.isBlank()) "Nothing is playing" else room.title, style = MaterialTheme.typography.headlineSmall)
+                if (room.artist.isNotBlank()) Text(room.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = { vm.voteNearby(false) }, enabled = !room.busy, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.ThumbDown, "Vote down")
+                        Spacer(Modifier.width(8.dp))
+                        Text("Down")
+                    }
+                    OutlinedButton(onClick = { vm.voteNearby(true) }, enabled = !room.busy, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.ThumbUp, "Vote up")
+                        Spacer(Modifier.width(8.dp))
+                        Text("Up")
+                    }
+                }
+            }
+        }
+        Text("Request a song", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            label = { Text("Song or artist") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(
+            onClick = { vm.searchNearbyRoom(search) },
+            enabled = search.isNotBlank() && !room.busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Search host library") }
+        room.searchResults.forEach { song ->
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(song.title, fontWeight = FontWeight.SemiBold)
+                        Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Button(onClick = { vm.requestNearbySong(song) }, enabled = !room.busy) { Text("Request") }
+                }
+            }
+        }
+        if (room.searchResults.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(
+                    onClick = { vm.searchNearbyRoom(search, (room.searchOffset - NearbyRoomWire.PAGE_SIZE).coerceAtLeast(0)) },
+                    enabled = room.searchOffset > 0 && !room.busy,
+                ) { Text("Previous results") }
+                TextButton(
+                    onClick = { vm.searchNearbyRoom(search, room.searchOffset + NearbyRoomWire.PAGE_SIZE) },
+                    enabled = room.searchHasMore && !room.busy,
+                ) { Text("More results") }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Up next", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            TextButton(onClick = { vm.loadNearbyQueue(room.queueOffset) }, enabled = !room.busy) { Text("Refresh") }
+        }
+        if (room.queue.isEmpty() && !room.busy) Text("The request queue is empty", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        room.queue.forEach { song ->
+            ListItem(
+                headlineContent = { Text(song.title) },
+                supportingContent = { Text(song.artist) },
+            )
+            HorizontalDivider()
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(
+                onClick = { vm.loadNearbyQueue((room.queueOffset - NearbyRoomWire.PAGE_SIZE).coerceAtLeast(0)) },
+                enabled = room.queueOffset > 0 && !room.busy,
+            ) { Text("Previous") }
+            TextButton(
+                onClick = { vm.loadNearbyQueue(room.queueOffset + NearbyRoomWire.PAGE_SIZE) },
+                enabled = room.queueHasMore && !room.busy,
+            ) { Text("More") }
+        }
+        if (room.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (room.message.isNotBlank()) Text(room.message, color = MaterialTheme.colorScheme.primary)
+        if (room.error.isNotBlank()) Text(room.error, color = MaterialTheme.colorScheme.error)
+        OutlinedButton(onClick = vm::leaveNearbyRoom, modifier = Modifier.fillMaxWidth()) { Text("Leave room") }
     }
 }
 

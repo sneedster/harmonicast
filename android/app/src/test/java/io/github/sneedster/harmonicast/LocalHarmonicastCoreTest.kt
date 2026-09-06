@@ -62,6 +62,31 @@ class LocalHarmonicastCoreTest {
         subscription.close()
     }
 
+    @Test fun emptyQueueSeedsAutomaticMixBeforeDequeueing() = runBlocking {
+        val items = mutableListOf<Song>()
+        var automaticStarts = 0
+        val queue = object : MusicQueue {
+            override suspend fun songs() = items.toList()
+            override suspend fun dequeue() = QueueSelection(items.removeFirstOrNull(), false)
+            override suspend fun add(song: Song) { items += song }
+            override suspend fun addAll(songs: List<Song>, next: Boolean) { items += songs }
+            override suspend fun remove(id: String) { items.removeAll { it.id == id } }
+            override suspend fun clear() = items.clear()
+            override suspend fun radio() = 0
+            override suspend fun enableAutomaticPlayback() {
+                automaticStarts++
+                items += song("auto")
+            }
+            override suspend fun ratedTrackShare() = 8
+            override suspend fun setRatedTrackShare(value: Int) = Unit
+        }
+
+        val selection = queue.dequeueWithAutomaticFallback()
+
+        assertEquals("plex:machine:auto", selection.song?.id)
+        assertEquals(1, automaticStarts)
+    }
+
     @Test fun playNextPreservesPlaylistOrderAheadOfExistingQueue() = runBlocking {
         val core = LocalHarmonicastCore(source, MemoryStorage())
         core.queue.add(song("old"))
@@ -117,5 +142,11 @@ class LocalHarmonicastCoreTest {
         assertEquals(5.1, adjustPersonalRating(null, "complete", 1.0, 0), 0.0)
         assertEquals(4.7, adjustPersonalRating(5.0, "skip", 0.0, 0), 0.0)
         assertEquals(5.0, adjustPersonalRating(5.0, "skip", 0.95, 0), 0.0)
+    }
+
+    @Test fun downRatingOnlyAutoSkipsAutomaticTracks() {
+        assertTrue(shouldSkipAfterVote(up = false, isAutoQueue = true))
+        assertFalse(shouldSkipAfterVote(up = false, isAutoQueue = false))
+        assertFalse(shouldSkipAfterVote(up = true, isAutoQueue = true))
     }
 }

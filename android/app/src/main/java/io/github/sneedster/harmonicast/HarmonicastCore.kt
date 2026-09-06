@@ -29,6 +29,14 @@ interface MusicQueue {
 
 data class QueueSelection(val song: Song?, val isManual: Boolean = true)
 
+/** Consume the current queue, seeding the automatic mix only when nothing is waiting. */
+suspend fun MusicQueue.dequeueWithAutomaticFallback(): QueueSelection {
+    val waiting = dequeue()
+    if (waiting.song != null) return waiting
+    enableAutomaticPlayback()
+    return dequeue()
+}
+
 data class PlaybackSnapshot(
     val nowPlaying: NowPlaying,
     val positionSeconds: Double = 0.0,

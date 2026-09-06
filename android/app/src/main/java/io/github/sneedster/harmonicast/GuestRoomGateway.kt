@@ -280,6 +280,12 @@ class GuestRoomGateway(
         server = null
     }
 
+    /** BLE is itself the proximity bootstrap; it still uses the same allowlisted router. */
+    suspend fun routeNearby(request: GuestApiRequest): GuestApiResponse {
+        val room = capability ?: return GuestApiResponse(401, "{\"error\":\"Room closed\"}")
+        return GuestRoomRouter(core, room).route(request.copy(bearer = room.bearer))
+    }
+
     fun snapshot(): RoomShareState {
         val room = capability ?: return RoomShareState()
         val port = server?.localPort ?: return RoomShareState()

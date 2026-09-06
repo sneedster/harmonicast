@@ -24,8 +24,8 @@ android {
         targetSdk = 35
         // Keep the release version in source so F-Droid builds the metadata's
         // declared APK without relying on the local release helper.
-        versionCode = providers.gradleProperty("versionCode").orElse("42").get().toInt()
-        versionName = providers.gradleProperty("versionName").orElse("1.0.42").get()
+        versionCode = providers.gradleProperty("versionCode").orElse("46").get().toInt()
+        versionName = providers.gradleProperty("versionName").orElse("1.0.46").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

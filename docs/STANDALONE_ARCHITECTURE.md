@@ -251,8 +251,14 @@ credential or owner-only command is available.
 - Advertise the temporary room over BLE and connect through a guest-safe GATT
   service. The first device-validated slice discovers the room and reads its
   code and now-playing status. A short active status refresh detects host room
-  shutdown even when Android does not promptly deliver a GATT disconnect callback;
-  the command protocol for search, requests, queue, and votes follows.
+  shutdown even when Android does not promptly deliver a GATT disconnect callback.
+
+The command protocol now adapts that same guest allowlist to paged GATT
+request/response characteristics. The Android guest screen can read now playing
+and the queue, search the host library, request an individual track, and vote.
+This control slice is device accepted on the Pixel host and clean Samsung guest,
+including request-first ordering, rating without skipping a requested track,
+host-controlled skipping, explicit Leave, and host-shutdown disconnect.
 - Handle network changes, host disappearance, expiry, replay, and two nearby
   hosts without requiring account sign-in.
 
@@ -362,10 +368,10 @@ The first guest-policy slice is implemented and validated over the LAN:
 - Guest-safe song JSON omits stream and artwork URLs so a Plex token embedded in
   either URL cannot cross the room boundary. Backend errors are redacted.
 
-The host join link is currently displayed for development. A guest client,
-disposable participant identities and fairness, realtime updates, QR/deep-link
-onboarding, and network-change handling are still required for step 2 and 3
-acceptance.
+The host join link is currently displayed for development. Disposable
+participant identities and fairness, push-style queue updates, multiple-host
+selection, expiry/reconnect hardening, and QR/deep-link onboarding remain for
+the complete step 2 and 3 acceptance target.
 
 The invitation now uses a versioned join payload with a list of connection
 candidates. Only nearby and temporary LAN-development transports are accepted;

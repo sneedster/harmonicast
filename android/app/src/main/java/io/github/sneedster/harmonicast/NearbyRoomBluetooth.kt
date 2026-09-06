@@ -20,10 +20,17 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 data class NearbyRoomState(
     val scanning: Boolean = false,
@@ -32,13 +39,24 @@ data class NearbyRoomState(
     val title: String = "",
     val artist: String = "",
     val isPlaying: Boolean = false,
+    val queue: List<Song> = emptyList(),
+    val searchResults: List<Song> = emptyList(),
+    val queueOffset: Int = 0,
+    val searchOffset: Int = 0,
+    val queueHasMore: Boolean = false,
+    val searchHasMore: Boolean = false,
+    val busy: Boolean = false,
+    val message: String = "",
     val error: String = "",
 )
 
 internal object NearbyRoomWire {
     val serviceUuid: UUID = UUID.fromString("d8e8f2a0-8c67-4ef1-9db3-2c77b9a15e01")
     val statusUuid: UUID = UUID.fromString("d8e8f2a0-8c67-4ef1-9db3-2c77b9a15e02")
+    val commandUuid: UUID = UUID.fromString("d8e8f2a0-8c67-4ef1-9db3-2c77b9a15e03")
+    val responseUuid: UUID = UUID.fromString("d8e8f2a0-8c67-4ef1-9db3-2c77b9a15e04")
     const val MANUFACTURER_ID = 0x4843
+    const val PAGE_SIZE = 2
 
     fun roomAdvertisement(roomCode: String) = roomCode.take(4).toByteArray(StandardCharsets.US_ASCII)
 
@@ -66,6 +84,42 @@ internal object NearbyRoomWire {
             isPlaying = json.optBoolean("playing"),
         )
     }
+
+    fun command(id: Int, action: String, offset: Int = 0, value: String = "") = JSONObject()
+        .put("id", id)
+        .put("action", action)
+        .put("offset", offset.coerceAtLeast(0))
+        .put("value", value.take(160))
+        .toString().toByteArray(StandardCharsets.UTF_8)
+
+    fun decodeSongs(items: JSONArray): List<Song> = List(items.length()) { index ->
+        val item = items.getJSONObject(index)
+        Song(item.optString("id"), item.optString("title"), item.optString("artist"))
+    }
+
+    private fun utf8Prefix(value: String, maxBytes: Int): String {
+        var end = value.length
+        while (end > 0 && value.substring(0, end).toByteArray(StandardCharsets.UTF_8).size > maxBytes) end--
+        return value.substring(0, end)
+    }
+
+    fun pagedResponse(id: Int, action: String, body: String, offset: Int): ByteArray {
+        val all = JSONArray(body)
+        val start = offset.coerceIn(0, all.length())
+        val end = minOf(start + PAGE_SIZE, all.length())
+        val items = JSONArray()
+        for (index in start until end) {
+            val song = all.getJSONObject(index)
+            items.put(JSONObject()
+                .put("id", utf8Prefix(song.optString("id"), 64))
+                .put("title", utf8Prefix(song.optString("title"), 32))
+                .put("artist", utf8Prefix(song.optString("artist"), 24)))
+        }
+        return JSONObject()
+            .put("id", id).put("action", action).put("ok", true)
+            .put("offset", start).put("more", end < all.length()).put("items", items)
+            .toString().toByteArray(StandardCharsets.UTF_8)
+    }
 }
 
 /** BLE peripheral owned by the host service. It never changes either phone's network route. */
@@ -74,6 +128,7 @@ class NearbyRoomHost(
     context: Context,
     private val core: HarmonicastCore,
     private val roomCode: String,
+    private val routeGuest: suspend (GuestApiRequest) -> GuestApiResponse,
 ) {
     private val appContext = context.applicationContext
     private val manager = appContext.getSystemService(BluetoothManager::class.java)
@@ -81,6 +136,8 @@ class NearbyRoomHost(
     private var server: BluetoothGattServer? = null
     private var advertising = false
     private val connectedDevices = mutableSetOf<BluetoothDevice>()
+    private val responses = ConcurrentHashMap<String, ByteArray>()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
@@ -112,20 +169,72 @@ class NearbyRoomHost(
             offset: Int,
             characteristic: BluetoothGattCharacteristic,
         ) {
-            if (characteristic.uuid != NearbyRoomWire.statusUuid) {
+            if (characteristic.uuid !in setOf(NearbyRoomWire.statusUuid, NearbyRoomWire.responseUuid)) {
                 server?.sendResponse(device, requestId, BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED, offset, null)
                 return
             }
-            val payload = runCatching {
-                NearbyRoomWire.status(roomCode, runBlocking { core.playback.snapshot() })
-            }.getOrElse { "{\"room\":\"$roomCode\"}".toByteArray(StandardCharsets.UTF_8) }
+            val payload = if (characteristic.uuid == NearbyRoomWire.statusUuid) {
+                runCatching { NearbyRoomWire.status(roomCode, runBlocking { core.playback.snapshot() }) }
+                    .getOrElse { "{\"room\":\"$roomCode\"}".toByteArray(StandardCharsets.UTF_8) }
+            } else responses[device.address]
+                ?: "{\"pending\":true}".toByteArray(StandardCharsets.UTF_8)
             if (offset > payload.size) {
                 server?.sendResponse(device, requestId, BluetoothGatt.GATT_INVALID_OFFSET, offset, null)
             } else {
                 server?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, payload.copyOfRange(offset, payload.size))
             }
         }
+
+        override fun onCharacteristicWriteRequest(
+            device: BluetoothDevice,
+            requestId: Int,
+            characteristic: BluetoothGattCharacteristic,
+            preparedWrite: Boolean,
+            responseNeeded: Boolean,
+            offset: Int,
+            value: ByteArray,
+        ) {
+            if (characteristic.uuid != NearbyRoomWire.commandUuid || preparedWrite || offset != 0) {
+                if (responseNeeded) server?.sendResponse(device, requestId, BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED, offset, null)
+                return
+            }
+            if (responseNeeded) server?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
+            val command = runCatching { JSONObject(String(value, StandardCharsets.UTF_8)) }.getOrNull() ?: return
+            val id = command.optInt("id")
+            responses[device.address] = JSONObject().put("id", id).put("pending", true)
+                .toString().toByteArray(StandardCharsets.UTF_8)
+            scope.launch {
+                responses[device.address] = handleCommand(command)
+            }
+        }
     }
+
+    private suspend fun handleCommand(command: JSONObject): ByteArray {
+        val id = command.optInt("id")
+        val action = command.optString("action")
+        val offset = command.optInt("offset", 0).coerceAtLeast(0)
+        val value = command.optString("value")
+        val request = when (action) {
+            "queue" -> GuestApiRequest("GET", "/v1/queue", null)
+            "search" -> GuestApiRequest("GET", "/v1/search", null, mapOf("q" to value))
+            "request" -> GuestApiRequest("POST", "/v1/requests", null, body = JSONObject().put("songId", value).toString())
+            "vote" -> GuestApiRequest("POST", "/v1/votes", null, body = JSONObject().put("direction", value).toString())
+            else -> return errorResponse(id, action, "Guest operation is unavailable")
+        }
+        val response = routeGuest(request)
+        if (response.status !in 200..299) {
+            val message = runCatching { JSONObject(response.body).optString("error") }.getOrDefault("Guest operation failed")
+            return errorResponse(id, action, message)
+        }
+        return if (action in setOf("queue", "search")) {
+            NearbyRoomWire.pagedResponse(id, action, response.body, offset)
+        } else JSONObject().put("id", id).put("action", action).put("ok", true)
+            .toString().toByteArray(StandardCharsets.UTF_8)
+    }
+
+    private fun errorResponse(id: Int, action: String, message: String) = JSONObject()
+        .put("id", id).put("action", action).put("ok", false).put("error", message.take(120))
+        .toString().toByteArray(StandardCharsets.UTF_8)
 
     fun start(): Boolean {
         return try {
@@ -135,8 +244,22 @@ class NearbyRoomHost(
                 BluetoothGattCharacteristic.PROPERTY_READ,
                 BluetoothGattCharacteristic.PERMISSION_READ,
             )
+            val command = BluetoothGattCharacteristic(
+                NearbyRoomWire.commandUuid,
+                BluetoothGattCharacteristic.PROPERTY_WRITE,
+                BluetoothGattCharacteristic.PERMISSION_WRITE,
+            )
+            val response = BluetoothGattCharacteristic(
+                NearbyRoomWire.responseUuid,
+                BluetoothGattCharacteristic.PROPERTY_READ,
+                BluetoothGattCharacteristic.PERMISSION_READ,
+            )
             val service = BluetoothGattService(NearbyRoomWire.serviceUuid, BluetoothGattService.SERVICE_TYPE_PRIMARY)
-                .apply { addCharacteristic(status) }
+                .apply {
+                    addCharacteristic(status)
+                    addCharacteristic(command)
+                    addCharacteristic(response)
+                }
             server = manager.openGattServer(appContext, serverCallback)?.also { it.addService(service) }
             server != null
         } catch (error: SecurityException) {
@@ -172,6 +295,8 @@ class NearbyRoomHost(
             clients.forEach { server?.cancelConnection(it) }
             server?.close()
             server = null
+            responses.clear()
+            scope.cancel()
         }
     }
 }
@@ -182,6 +307,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
     private companion object {
         const val STATUS_REFRESH_MS = 2_000L
         const val SCAN_TIMEOUT_MS = 10_000L
+        const val RESPONSE_POLL_MS = 150L
     }
 
     private val appContext = context.applicationContext
@@ -190,8 +316,14 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
     private var statusCharacteristic: BluetoothGattCharacteristic? = null
+    private var commandCharacteristic: BluetoothGattCharacteristic? = null
+    private var responseCharacteristic: BluetoothGattCharacteristic? = null
     private var scanning = false
     private var advertisedRoom = ""
+    private var roomState = NearbyRoomState()
+    private var nextCommandId = 1
+    private data class PendingCommand(val id: Int, val action: String, val offset: Int, val value: String)
+    private var pendingCommand: PendingCommand? = null
 
     private val scanTimeout = Runnable {
         if (scanning) {
@@ -200,11 +332,27 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         }
     }
 
-    private val refreshStatus = Runnable {
-        val activeGatt = gatt ?: return@Runnable
-        val characteristic = statusCharacteristic ?: return@Runnable
-        if (!activeGatt.readCharacteristic(characteristic)) {
-            failRoom(activeGatt, "Nearby room ended")
+    private val refreshStatus = object : Runnable {
+        override fun run() {
+            if (pendingCommand != null) {
+                handler.postDelayed(this, STATUS_REFRESH_MS)
+                return
+            }
+            val activeGatt = gatt ?: return
+            val characteristic = statusCharacteristic ?: return
+            if (!activeGatt.readCharacteristic(characteristic)) {
+                failRoom(activeGatt, "Nearby room ended")
+            }
+        }
+    }
+
+    private val pollResponse = object : Runnable {
+        override fun run() {
+            val activeGatt = gatt ?: return
+            val characteristic = responseCharacteristic ?: return
+            if (!activeGatt.readCharacteristic(characteristic)) {
+                failCommand("Could not read the host response")
+            }
         }
     }
 
@@ -247,12 +395,16 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            val characteristic = gatt.getService(NearbyRoomWire.serviceUuid)
-                ?.getCharacteristic(NearbyRoomWire.statusUuid)
-            if (status != BluetoothGatt.GATT_SUCCESS || characteristic == null) {
+            val service = gatt.getService(NearbyRoomWire.serviceUuid)
+            val characteristic = service?.getCharacteristic(NearbyRoomWire.statusUuid)
+            val command = service?.getCharacteristic(NearbyRoomWire.commandUuid)
+            val response = service?.getCharacteristic(NearbyRoomWire.responseUuid)
+            if (status != BluetoothGatt.GATT_SUCCESS || characteristic == null || command == null || response == null) {
                 failRoom(gatt, "Harmonicast room service is unavailable")
             } else {
                 statusCharacteristic = characteristic
+                commandCharacteristic = command
+                responseCharacteristic = response
                 if (!gatt.readCharacteristic(characteristic)) {
                     failRoom(gatt, "Harmonicast room service is unavailable")
                 }
@@ -266,7 +418,10 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
-            if (characteristic.uuid == NearbyRoomWire.statusUuid) acceptStatus(gatt, characteristic.value, status)
+            when (characteristic.uuid) {
+                NearbyRoomWire.statusUuid -> acceptStatus(gatt, characteristic.value, status)
+                NearbyRoomWire.responseUuid -> acceptResponse(gatt, characteristic.value, status)
+            }
         }
 
         override fun onCharacteristicRead(
@@ -275,7 +430,20 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             value: ByteArray,
             status: Int,
         ) {
-            if (characteristic.uuid == NearbyRoomWire.statusUuid) acceptStatus(gatt, value, status)
+            when (characteristic.uuid) {
+                NearbyRoomWire.statusUuid -> acceptStatus(gatt, value, status)
+                NearbyRoomWire.responseUuid -> acceptResponse(gatt, value, status)
+            }
+        }
+
+        override fun onCharacteristicWrite(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int,
+        ) {
+            if (characteristic.uuid != NearbyRoomWire.commandUuid || pendingCommand == null) return
+            if (status == BluetoothGatt.GATT_SUCCESS) handler.postDelayed(pollResponse, RESPONSE_POLL_MS)
+            else failCommand("Could not send the guest request")
         }
     }
 
@@ -309,19 +477,113 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             failRoom(sourceGatt, "Room sent an invalid response")
             return
         }
-        publish(state)
+        val firstStatus = !roomState.connected
+        publish(roomState.copy(
+            connected = true,
+            roomCode = state.roomCode,
+            title = state.title,
+            artist = state.artist,
+            isPlaying = state.isPlaying,
+            error = "",
+        ))
         handler.removeCallbacks(refreshStatus)
         handler.postDelayed(refreshStatus, STATUS_REFRESH_MS)
+        if (firstStatus) loadQueue()
     }
 
     private fun publish(state: NearbyRoomState) {
+        roomState = state
         handler.post { onState(state) }
     }
+
+    private fun acceptResponse(sourceGatt: BluetoothGatt, value: ByteArray, status: Int) {
+        if (gatt !== sourceGatt || pendingCommand == null) return
+        if (status != BluetoothGatt.GATT_SUCCESS) {
+            failCommand("Could not read the host response")
+            return
+        }
+        val json = runCatching { JSONObject(String(value, StandardCharsets.UTF_8)) }.getOrElse {
+            failCommand("Host returned an invalid response")
+            return
+        }
+        if (json.optBoolean("pending")) {
+            handler.postDelayed(pollResponse, RESPONSE_POLL_MS)
+            return
+        }
+        val pending = pendingCommand ?: return
+        if (json.optInt("id") != pending.id) {
+            handler.postDelayed(pollResponse, RESPONSE_POLL_MS)
+            return
+        }
+        pendingCommand = null
+        if (!json.optBoolean("ok")) {
+            publish(roomState.copy(busy = false, error = json.optString("error", "Guest operation failed")))
+            return
+        }
+        when (pending.action) {
+            "queue" -> publish(roomState.copy(
+                queue = NearbyRoomWire.decodeSongs(json.optJSONArray("items") ?: JSONArray()),
+                queueOffset = json.optInt("offset"),
+                queueHasMore = json.optBoolean("more"),
+                busy = false,
+                error = "",
+            ))
+            "search" -> publish(roomState.copy(
+                searchResults = NearbyRoomWire.decodeSongs(json.optJSONArray("items") ?: JSONArray()),
+                searchOffset = json.optInt("offset"),
+                searchHasMore = json.optBoolean("more"),
+                busy = false,
+                error = "",
+            ))
+            "request" -> {
+                publish(roomState.copy(busy = false, message = "Request added to the queue", error = ""))
+                loadQueue()
+            }
+            "vote" -> publish(roomState.copy(busy = false, message = "Vote sent", error = ""))
+        }
+        if (pendingCommand == null) handler.postDelayed(refreshStatus, STATUS_REFRESH_MS)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun sendCommand(action: String, offset: Int = 0, value: String = "") {
+        val activeGatt = gatt ?: return
+        val characteristic = commandCharacteristic ?: return
+        if (pendingCommand != null) return
+        val pending = PendingCommand(nextCommandId++, action, offset.coerceAtLeast(0), value)
+        pendingCommand = pending
+        handler.removeCallbacks(refreshStatus)
+        publish(roomState.copy(busy = true, message = "", error = ""))
+        characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        characteristic.value = NearbyRoomWire.command(pending.id, action, pending.offset, value)
+        if (!activeGatt.writeCharacteristic(characteristic)) failCommand("Could not send the guest request")
+    }
+
+    private fun failCommand(message: String) {
+        handler.removeCallbacks(pollResponse)
+        pendingCommand = null
+        publish(roomState.copy(busy = false, error = message))
+        handler.postDelayed(refreshStatus, STATUS_REFRESH_MS)
+    }
+
+    fun loadQueue(offset: Int = 0) = sendCommand("queue", offset)
+    fun search(query: String, offset: Int = 0) {
+        if (query.isBlank()) {
+            publish(roomState.copy(error = "Enter a song or artist to search"))
+            return
+        }
+        sendCommand("search", offset, query.trim())
+    }
+    fun request(song: Song) = sendCommand("request", value = song.id)
+    fun vote(up: Boolean) = sendCommand("vote", value = if (up) "up" else "down")
 
     private fun failRoom(sourceGatt: BluetoothGatt, message: String) {
         if (gatt !== sourceGatt) return
         handler.removeCallbacks(refreshStatus)
+        handler.removeCallbacks(pollResponse)
         statusCharacteristic = null
+        commandCharacteristic = null
+        responseCharacteristic = null
+        pendingCommand = null
         gatt = null
         runCatching { sourceGatt.disconnect() }
         sourceGatt.close()
@@ -337,10 +599,15 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
     fun close() {
         stopScan()
         handler.removeCallbacks(refreshStatus)
+        handler.removeCallbacks(pollResponse)
         statusCharacteristic = null
+        commandCharacteristic = null
+        responseCharacteristic = null
+        pendingCommand = null
         val activeGatt = gatt
         gatt = null
         activeGatt?.disconnect()
         activeGatt?.close()
+        roomState = NearbyRoomState()
     }
 }
