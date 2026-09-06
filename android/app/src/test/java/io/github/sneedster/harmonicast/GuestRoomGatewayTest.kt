@@ -69,11 +69,37 @@ class GuestRoomGatewayTest {
         val requested = router.route(GuestApiRequest("POST", "/v1/requests", capability.bearer, body = JSONObject().put("songId", core.track.id).toString()))
         assertEquals(202, requested.status)
         assertEquals(listOf(core.track.id), core.queued.map(Song::id))
+        assertEquals("Guest", core.queued.single().addedByEmail)
 
         assertEquals(202, router.route(GuestApiRequest("POST", "/v1/votes", capability.bearer, body = "{\"direction\":\"up\"}")).status)
         assertEquals(listOf(true), core.votes)
         assertEquals(404, router.route(GuestApiRequest("DELETE", "/v1/queue", capability.bearer)).status)
         assertEquals(404, router.route(GuestApiRequest("POST", "/v1/player/claim", capability.bearer)).status)
+    }
+
+    @Test fun participantIdentityLimitsRequestsAndPreventsVoteReplay() = runBlocking {
+        val core = FakeCore()
+        val capability = RoomCapability.create()
+        val router = GuestRoomRouter(core, capability)
+        val guestOne = "Nearby guest 1"
+        val guestTwo = "Nearby guest 2"
+
+        repeat(5) { index -> core.queued += core.track.copy(id = "queued-$index", addedByEmail = guestOne) }
+        val limited = router.route(GuestApiRequest(
+            "POST", "/v1/requests", capability.bearer,
+            body = JSONObject().put("songId", core.track.id).toString(),
+            participantId = guestOne,
+        ))
+        assertEquals(429, limited.status)
+
+        val firstVote = GuestApiRequest(
+            "POST", "/v1/votes", capability.bearer,
+            body = "{\"direction\":\"up\"}", participantId = guestOne,
+        )
+        assertEquals(202, router.route(firstVote).status)
+        assertEquals(409, router.route(firstVote).status)
+        assertEquals(202, router.route(firstVote.copy(participantId = guestTwo)).status)
+        assertEquals(listOf(true, true), core.votes)
     }
 
     @Test fun missingExpiredAndRevokedCapabilitiesAreRejected() = runBlocking {

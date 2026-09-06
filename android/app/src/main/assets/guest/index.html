@@ -74,6 +74,13 @@
   const supplied = hash.get('cap');
   if (supplied) sessionStorage.setItem('harmonicast-room-cap', supplied);
   const capability = supplied || sessionStorage.getItem('harmonicast-room-cap') || '';
+  let participant = sessionStorage.getItem('harmonicast-room-participant') || '';
+  if (!participant) {
+    participant = window.crypto && typeof window.crypto.randomUUID === 'function'
+      ? window.crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`;
+    sessionStorage.setItem('harmonicast-room-participant', participant);
+  }
   if (location.hash) history.replaceState(null, '', location.pathname);
 
   const status = document.querySelector('#status');
@@ -85,10 +92,17 @@
 
   async function api(path, options = {}) {
     if (!capability) throw new Error('Scan the room code again to join.');
+    const headers = {
+      'Authorization': `Bearer ${capability}`,
+      'Content-Type': 'application/json',
+      'X-Harmonicast-Participant': participant
+    };
+    Object.keys(options.headers || {}).forEach(key => { headers[key] = options.headers[key]; });
     const response = await fetch(path, {
-      ...options,
+      method: options.method || 'GET',
+      body: options.body,
       cache: 'no-store',
-      headers: { 'Authorization': `Bearer ${capability}`, 'Content-Type': 'application/json', ...(options.headers || {}) }
+      headers
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'The room did not respond.');
@@ -103,35 +117,36 @@
     name.textContent = song.title || 'Unknown track';
     const by = document.createElement('span');
     by.textContent = song.artist || song.album || '';
-    text.append(name, by);
-    item.append(text);
+    text.appendChild(name);
+    text.appendChild(by);
+    item.appendChild(text);
     if (action) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = 'Request';
       button.addEventListener('click', () => requestSong(song, button));
-      item.append(button);
+      item.appendChild(button);
     }
     return item;
   }
 
   function showList(target, songs, requestable = false) {
-    target.replaceChildren();
+    while (target.firstChild) target.removeChild(target.firstChild);
     if (!songs.length) {
       const empty = document.createElement('li');
       empty.className = 'muted';
       empty.textContent = requestable ? 'No matching songs.' : 'The queue is empty.';
-      target.append(empty);
+      target.appendChild(empty);
       return;
     }
-    songs.forEach(song => target.append(trackRow(song, requestable)));
+    songs.forEach(song => target.appendChild(trackRow(song, requestable)));
   }
 
   async function refresh() {
     try {
       const [playing, songs] = await Promise.all([api('/v1/now-playing'), api('/v1/queue')]);
-      title.textContent = playing.song?.title || 'Nothing playing';
-      artist.textContent = playing.song?.artist || '';
+      title.textContent = playing.song && playing.song.title || 'Nothing playing';
+      artist.textContent = playing.song && playing.song.artist || '';
       showList(queue, songs);
       status.textContent = 'Connected';
       status.classList.add('live');

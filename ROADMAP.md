@@ -61,9 +61,8 @@
   can explicitly enable an ephemeral, accountless LAN room. A random capability
   gates an allowlisted API for status, search, requests, queue viewing, and
   voting; responses omit Plex tokens and stream URLs. Disabling sharing closes
-  the listener and revokes the capability immediately. Guest joining, disposable
-  participant fairness, realtime updates, and QR/proximity onboarding remain in
-  the next slices.
+  the listener and revokes the capability immediately. Realtime push updates and
+  QR/proximity onboarding remain in later slices.
 - Guest transport decision: production rooms are proximity-only through direct
   Bluetooth Low Energy, without requiring a shared TCP/IP segment or changing
   either phone's internet route. Remote relays and internet control are excluded.
@@ -99,6 +98,17 @@
   queue use compact music cards; and Leave is immediately available at the top.
   The expanded BLE metadata remains bounded to GATT-sized pages and excludes
   Plex credentials, stream URLs and artwork URLs.
+- Bluetooth guest fairness and basic abuse limits are implemented: the host
+  assigns disposable room-scoped participant labels, interleaves each person's
+  manual requests ahead of the automatic tail, limits each participant to five
+  waiting requests, and accepts one vote per participant and track. The Samsung
+  guest also receives a small now-playing cover image in bounded BLE chunks;
+  the Pixel resolves and resizes the art without sharing its Plex URL or token.
+- Mixed guest transports are device validated concurrently: an Android 7 Fire
+  HD 10 used the same-Wi-Fi browser controller while the Samsung remained joined
+  over BLE, and a browser request succeeded without dropping either guest. The
+  bundled page avoids unsupported newer JavaScript syntax, and an idle or
+  half-open browser socket can no longer crash the host process.
 - Standalone playback now seeds the weighted automatic mix when personal mode
   starts without a current track and refills it whenever the upcoming queue is
   exhausted. A deliberately paused current track remains paused.

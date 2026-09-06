@@ -17,6 +17,8 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
@@ -28,14 +30,23 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 data class NearbyRoomState(
     val scanning: Boolean = false,
     val connected: Boolean = false,
     val roomCode: String = "",
+    val artworkKey: String = "",
+    val artwork: ByteArray? = null,
     val title: String = "",
     val artist: String = "",
     val album: String = "",
@@ -61,6 +72,7 @@ internal object NearbyRoomWire {
     val responseUuid: UUID = UUID.fromString("d8e8f2a0-8c67-4ef1-9db3-2c77b9a15e04")
     const val MANUFACTURER_ID = 0x4843
     const val PAGE_SIZE = 2
+    private const val ARTWORK_CHUNK_SIZE = 240
 
     fun roomAdvertisement(roomCode: String) = roomCode.take(4).toByteArray(StandardCharsets.US_ASCII)
 
@@ -72,6 +84,7 @@ internal object NearbyRoomWire {
         val song = snapshot.nowPlaying.song
         return JSONObject()
             .put("room", roomCode)
+            .put("art", artworkKey(song))
             .put("title", utf8Prefix(song?.title.orEmpty(), 96))
             .put("artist", utf8Prefix(song?.artist.orEmpty(), 72))
             .put("album", utf8Prefix(song?.album.orEmpty(), 64))
@@ -86,6 +99,7 @@ internal object NearbyRoomWire {
         return NearbyRoomState(
             connected = true,
             roomCode = json.optString("room"),
+            artworkKey = json.optString("art"),
             title = json.optString("title"),
             artist = json.optString("artist"),
             album = json.optString("album"),
@@ -101,6 +115,29 @@ internal object NearbyRoomWire {
         .put("offset", offset.coerceAtLeast(0))
         .put("value", value.take(160))
         .toString().toByteArray(StandardCharsets.UTF_8)
+
+    fun artworkKey(song: Song?): String {
+        if (song == null || song.artworkUri.isNullOrBlank()) return ""
+        return MessageDigest.getInstance("SHA-256")
+            .digest(song.id.toByteArray(StandardCharsets.UTF_8))
+            .take(8)
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    fun artworkResponse(id: Int, key: String, artwork: ByteArray, offset: Int): ByteArray {
+        val start = offset.coerceIn(0, artwork.size)
+        val end = minOf(start + ARTWORK_CHUNK_SIZE, artwork.size)
+        return JSONObject()
+            .put("id", id)
+            .put("action", "art")
+            .put("ok", true)
+            .put("key", key)
+            .put("offset", start)
+            .put("next", end)
+            .put("more", end < artwork.size)
+            .put("data", Base64.getEncoder().encodeToString(artwork.copyOfRange(start, end)))
+            .toString().toByteArray(StandardCharsets.UTF_8)
+    }
 
     fun decodeSongs(items: JSONArray): List<Song> = List(items.length()) { index ->
         val item = items.getJSONObject(index)
@@ -155,7 +192,13 @@ class NearbyRoomHost(
     private var advertising = false
     private val connectedDevices = mutableSetOf<BluetoothDevice>()
     private val responses = ConcurrentHashMap<String, ByteArray>()
+    private val participants = ConcurrentHashMap<String, String>()
+    private val participantSequence = AtomicInteger(1)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val artworkHttp = OkHttpClient.Builder().callTimeout(8, TimeUnit.SECONDS).build()
+    private val artworkLock = Any()
+    private var cachedArtworkKey = ""
+    private var cachedArtwork = ByteArray(0)
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
@@ -171,7 +214,10 @@ class NearbyRoomHost(
     private val serverCallback = object : BluetoothGattServerCallback() {
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             synchronized(connectedDevices) {
-                if (newState == BluetoothProfile.STATE_CONNECTED) connectedDevices += device
+                if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    connectedDevices += device
+                    participantFor(device)
+                }
                 else if (newState == BluetoothProfile.STATE_DISCONNECTED) connectedDevices -= device
             }
         }
@@ -222,21 +268,29 @@ class NearbyRoomHost(
             responses[device.address] = JSONObject().put("id", id).put("pending", true)
                 .toString().toByteArray(StandardCharsets.UTF_8)
             scope.launch {
-                responses[device.address] = handleCommand(command)
+                responses[device.address] = handleCommand(command, participantFor(device))
             }
         }
     }
 
-    private suspend fun handleCommand(command: JSONObject): ByteArray {
+    private fun participantFor(device: BluetoothDevice) = participants.computeIfAbsent(device.address) {
+        "Nearby guest ${participantSequence.getAndIncrement()}"
+    }
+
+    private suspend fun handleCommand(command: JSONObject, participantId: String): ByteArray {
         val id = command.optInt("id")
         val action = command.optString("action")
         val offset = command.optInt("offset", 0).coerceAtLeast(0)
         val value = command.optString("value")
+        if (action == "art") {
+            val artwork = loadArtwork(value)
+            return NearbyRoomWire.artworkResponse(id, value, artwork, offset)
+        }
         val request = when (action) {
-            "queue" -> GuestApiRequest("GET", "/v1/queue", null)
-            "search" -> GuestApiRequest("GET", "/v1/search", null, mapOf("q" to value))
-            "request" -> GuestApiRequest("POST", "/v1/requests", null, body = JSONObject().put("songId", value).toString())
-            "vote" -> GuestApiRequest("POST", "/v1/votes", null, body = JSONObject().put("direction", value).toString())
+            "queue" -> GuestApiRequest("GET", "/v1/queue", null, participantId = participantId)
+            "search" -> GuestApiRequest("GET", "/v1/search", null, mapOf("q" to value), participantId = participantId)
+            "request" -> GuestApiRequest("POST", "/v1/requests", null, body = JSONObject().put("songId", value).toString(), participantId = participantId)
+            "vote" -> GuestApiRequest("POST", "/v1/votes", null, body = JSONObject().put("direction", value).toString(), participantId = participantId)
             else -> return errorResponse(id, action, "Guest operation is unavailable")
         }
         val response = routeGuest(request)
@@ -248,6 +302,35 @@ class NearbyRoomHost(
             NearbyRoomWire.pagedResponse(id, action, response.body, offset)
         } else JSONObject().put("id", id).put("action", action).put("ok", true)
             .toString().toByteArray(StandardCharsets.UTF_8)
+    }
+
+    private suspend fun loadArtwork(requestedKey: String): ByteArray {
+        if (requestedKey.isBlank()) return ByteArray(0)
+        synchronized(artworkLock) {
+            if (cachedArtworkKey == requestedKey) return cachedArtwork
+        }
+        val song = core.playback.snapshot().nowPlaying.song ?: return ByteArray(0)
+        if (NearbyRoomWire.artworkKey(song) != requestedKey) return ByteArray(0)
+        val url = core.library.artworkUrl(song) ?: return ByteArray(0)
+        val encoded = runCatching {
+            artworkHttp.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                if (!response.isSuccessful) return@use ByteArray(0)
+                val source = response.body?.bytes() ?: return@use ByteArray(0)
+                val bitmap = BitmapFactory.decodeByteArray(source, 0, source.size) ?: return@use ByteArray(0)
+                val scaled = Bitmap.createScaledBitmap(bitmap, 112, 112, true)
+                ByteArrayOutputStream().use { output ->
+                    scaled.compress(Bitmap.CompressFormat.JPEG, 58, output)
+                    if (scaled !== bitmap) scaled.recycle()
+                    bitmap.recycle()
+                    output.toByteArray()
+                }
+            }
+        }.getOrDefault(ByteArray(0))
+        synchronized(artworkLock) {
+            cachedArtworkKey = requestedKey
+            cachedArtwork = encoded
+        }
+        return encoded
     }
 
     private fun errorResponse(id: Int, action: String, message: String) = JSONObject()
@@ -314,6 +397,11 @@ class NearbyRoomHost(
             server?.close()
             server = null
             responses.clear()
+            participants.clear()
+            synchronized(artworkLock) {
+                cachedArtworkKey = ""
+                cachedArtwork = ByteArray(0)
+            }
             scope.cancel()
         }
     }
@@ -340,6 +428,8 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
     private var advertisedRoom = ""
     private var roomState = NearbyRoomState()
     private var nextCommandId = 1
+    private var artworkBuffer: ByteArrayOutputStream? = null
+    private var loadQueueAfterArtwork = false
     private data class PendingCommand(val id: Int, val action: String, val offset: Int, val value: String)
     private var pendingCommand: PendingCommand? = null
 
@@ -496,10 +586,13 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             return
         }
         val firstStatus = !roomState.connected
-        val songChanged = roomState.title != state.title || roomState.artist != state.artist
+        val songChanged = roomState.title != state.title || roomState.artist != state.artist ||
+            roomState.artworkKey != state.artworkKey
         publish(roomState.copy(
             connected = true,
             roomCode = state.roomCode,
+            artworkKey = state.artworkKey,
+            artwork = if (songChanged) null else roomState.artwork,
             title = state.title,
             artist = state.artist,
             album = state.album,
@@ -511,7 +604,12 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         ))
         handler.removeCallbacks(refreshStatus)
         handler.postDelayed(refreshStatus, STATUS_REFRESH_MS)
-        if (firstStatus) loadQueue()
+        if (firstStatus) loadQueueAfterArtwork = true
+        if ((firstStatus || songChanged) && state.artworkKey.isNotBlank()) loadArtwork(state.artworkKey)
+        else if (firstStatus) {
+            loadQueueAfterArtwork = false
+            loadQueue()
+        }
     }
 
     private fun publish(state: NearbyRoomState) {
@@ -568,6 +666,28 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
                 error = "",
                 vote = if (pending.value == "up") 1 else -1,
             ))
+            "art" -> {
+                val key = json.optString("key")
+                val chunk = runCatching { Base64.getDecoder().decode(json.optString("data")) }.getOrDefault(ByteArray(0))
+                if (pending.offset == 0 || artworkBuffer == null) artworkBuffer = ByteArrayOutputStream()
+                artworkBuffer?.write(chunk)
+                if (json.optBoolean("more")) {
+                    sendCommand("art", json.optInt("next"), key)
+                    return
+                }
+                val artwork = artworkBuffer?.toByteArray()?.takeIf { it.isNotEmpty() }
+                artworkBuffer = null
+                publish(roomState.copy(
+                    artworkKey = key,
+                    artwork = artwork,
+                    busy = false,
+                    error = "",
+                ))
+                if (loadQueueAfterArtwork) {
+                    loadQueueAfterArtwork = false
+                    loadQueue()
+                }
+            }
         }
         if (pendingCommand == null) handler.postDelayed(refreshStatus, STATUS_REFRESH_MS)
     }
@@ -588,12 +708,20 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
 
     private fun failCommand(message: String) {
         handler.removeCallbacks(pollResponse)
+        val artworkFailed = pendingCommand?.action == "art"
         pendingCommand = null
-        publish(roomState.copy(busy = false, error = message))
+        artworkBuffer = null
+        publish(roomState.copy(busy = false, error = if (artworkFailed) roomState.error else message))
+        if (artworkFailed && loadQueueAfterArtwork) {
+            loadQueueAfterArtwork = false
+            loadQueue()
+            return
+        }
         handler.postDelayed(refreshStatus, STATUS_REFRESH_MS)
     }
 
     fun loadQueue(offset: Int = 0) = sendCommand("queue", offset)
+    private fun loadArtwork(key: String) = sendCommand("art", value = key)
     fun search(query: String, offset: Int = 0) {
         if (query.isBlank()) {
             publish(roomState.copy(error = "Enter a song or artist to search"))
@@ -612,6 +740,8 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         commandCharacteristic = null
         responseCharacteristic = null
         pendingCommand = null
+        artworkBuffer = null
+        loadQueueAfterArtwork = false
         gatt = null
         runCatching { sourceGatt.disconnect() }
         sourceGatt.close()
@@ -632,6 +762,8 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         commandCharacteristic = null
         responseCharacteristic = null
         pendingCommand = null
+        artworkBuffer = null
+        loadQueueAfterArtwork = false
         val activeGatt = gatt
         gatt = null
         activeGatt?.disconnect()

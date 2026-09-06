@@ -44,13 +44,8 @@ class LocalHarmonicastCore(
         }
         override suspend fun add(song: Song) {
             val current = songs()
-            val firstAutomatic = current.indexOfFirst { !it.isManual }
             val requested = song.copy(isManual = true)
-            val updated = if (firstAutomatic < 0) {
-                current + requested
-            } else {
-                current.take(firstAutomatic) + requested + current.drop(firstAutomatic)
-            }
+            val updated = fairManualQueue(current + requested)
             writeSongs("local.queue", updated)
             LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
         }
@@ -189,6 +184,22 @@ class LocalHarmonicastCore(
 }
 
 internal fun shouldSkipAfterVote(up: Boolean, isAutoQueue: Boolean) = !up && isAutoQueue
+
+/** Round-robin each participant's requests while keeping the automatic tail last. */
+internal fun fairManualQueue(songs: List<Song>): List<Song> {
+    val manual = songs.filter(Song::isManual)
+    val participantOrder = manual.map { it.addedByEmail.ifBlank { "Owner" } }.distinct()
+    val lanes = participantOrder.associateWith { participant ->
+        manual.filter { it.addedByEmail.ifBlank { "Owner" } == participant }
+    }
+    val fair = buildList {
+        val longest = lanes.values.maxOfOrNull { it.size } ?: 0
+        for (index in 0 until longest) {
+            participantOrder.forEach { participant -> lanes.getValue(participant).getOrNull(index)?.let(::add) }
+        }
+    }
+    return fair + songs.filterNot(Song::isManual)
+}
 
 fun harmonicastCore(api: Api): HarmonicastCore = api.profile.personalSource?.let {
     LocalHarmonicastCore(it, api.storage)

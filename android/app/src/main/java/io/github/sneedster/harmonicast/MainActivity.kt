@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -924,7 +925,7 @@ class MainActivity : ComponentActivity() {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("NOW PLAYING", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xffd0a2ff))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    GuestArtwork(room.title, 116.dp)
+                    GuestArtwork(room.title, 116.dp, room.artwork)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             if (room.title.isBlank()) "Nothing is playing" else room.title,
@@ -1051,12 +1052,20 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun GuestArtwork(seed: String, size: androidx.compose.ui.unit.Dp) {
+@Composable private fun GuestArtwork(seed: String, size: androidx.compose.ui.unit.Dp, artwork: ByteArray? = null) {
     val colors = listOf(Color(0xff6f3b82), Color(0xff315c70), Color(0xff72532d), Color(0xff5b456f), Color(0xff386252))
     val color = colors[(seed.hashCode().toLong().let { if (it < 0) -it else it } % colors.size).toInt()]
-    Surface(Modifier.size(size), shape = RoundedCornerShape(if (size >= 100.dp) 22.dp else 12.dp), color = color) {
+    val shape = RoundedCornerShape(if (size >= 100.dp) 22.dp else 12.dp)
+    val bitmap = remember(artwork) {
+        artwork?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }?.asImageBitmap()
+    }
+    Surface(Modifier.size(size), shape = shape, color = color) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Album, null, Modifier.size(size * 0.52f), tint = Color.White.copy(alpha = 0.9f))
+            if (bitmap == null) {
+                Icon(Icons.Default.Album, null, Modifier.size(size * 0.52f), tint = Color.White.copy(alpha = 0.9f))
+            } else {
+                Image(bitmap, null, Modifier.fillMaxSize().clip(shape), contentScale = ContentScale.Crop)
+            }
         }
     }
 }

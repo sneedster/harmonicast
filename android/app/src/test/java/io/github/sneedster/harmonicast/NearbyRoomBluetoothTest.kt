@@ -6,6 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Base64
 
 class NearbyRoomBluetoothTest {
     @Test fun roomAdvertisementContainsOnlyTheFourLetterRoomCode() {
@@ -23,6 +24,7 @@ class NearbyRoomBluetoothTest {
             album = "Oracular Spectacular",
             duration = 230,
             streamUri = "https://plex.example/secret-token",
+            artworkUri = "https://plex.example/art?X-Plex-Token=owner-secret",
         )
 
         val state = NearbyRoomWire.decodeStatus(
@@ -31,6 +33,7 @@ class NearbyRoomBluetoothTest {
 
         assertTrue(state.connected)
         assertEquals("MUSE", state.roomCode)
+        assertEquals(16, state.artworkKey.length)
         assertEquals("Electric Feel", state.title)
         assertEquals("MGMT", state.artist)
         assertEquals("Oracular Spectacular", state.album)
@@ -38,6 +41,7 @@ class NearbyRoomBluetoothTest {
         assertEquals(42, state.positionSeconds)
         assertTrue(state.isPlaying)
         assertTrue(String(NearbyRoomWire.status("MUSE", PlaybackSnapshot(NowPlaying(song, true)))).contains("secret-token").not())
+        assertFalse(String(NearbyRoomWire.status("MUSE", PlaybackSnapshot(NowPlaying(song, true)))).contains("owner-secret"))
     }
 
     @Test fun guestListsArePagedIntoGattSizedTokenFreeResponses() {
@@ -78,5 +82,21 @@ class NearbyRoomBluetoothTest {
 
         assertTrue(bytes.size <= 512)
         assertFalse(String(bytes).contains("private-id"))
+    }
+
+    @Test fun artworkIsSplitIntoGattSizedTokenFreeChunks() {
+        val artwork = ByteArray(700) { (it % 251).toByte() }
+        val received = ArrayList<Byte>()
+        var offset = 0
+        do {
+            val bytes = NearbyRoomWire.artworkResponse(9, "safe-art-key", artwork, offset)
+            assertTrue(bytes.size <= 512)
+            val response = JSONObject(String(bytes))
+            Base64.getDecoder().decode(response.getString("data")).forEach { received.add(it) }
+            offset = response.getInt("next")
+            val more = response.getBoolean("more")
+        } while (more)
+
+        assertTrue(artwork.contentEquals(received.toByteArray()))
     }
 }

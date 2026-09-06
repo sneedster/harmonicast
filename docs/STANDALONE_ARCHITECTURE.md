@@ -258,9 +258,14 @@ request/response characteristics. The Android guest screen can read now playing
 and the queue, search the host library, request an individual track, and vote.
 This control slice is device accepted on the Pixel host and clean Samsung guest,
 including request-first ordering, rating without skipping a requested track,
-host-controlled skipping, explicit Leave, and host-shutdown disconnect.
-- Handle network changes, host disappearance, expiry, replay, and two nearby
-  hosts without requiring account sign-in.
+host-controlled skipping, explicit Leave, and host-shutdown disconnect. The host
+assigns each BLE connection a disposable room participant label, round-robins
+manual request lanes, caps each lane at five waiting tracks, and rejects a
+second vote from the same participant on the same current track. It also sends
+a resized now-playing JPEG in bounded chunks; no Plex artwork URL or token is
+sent to the guest.
+- Handle network changes, host disappearance, capability expiry and reconnect
+  edge cases, and two nearby hosts without requiring account sign-in.
 
 Acceptance: a nearby guest joins intentionally and quickly, while a device that
 did not receive the current capability cannot control the host.
@@ -372,10 +377,9 @@ The first guest-policy slice is implemented and validated over the LAN:
 - Guest-safe song JSON omits stream and artwork URLs so a Plex token embedded in
   either URL cannot cross the room boundary. Backend errors are redacted.
 
-The host join link is currently displayed for development. Disposable
-participant identities and fairness, push-style queue updates, multiple-host
-selection, expiry/reconnect hardening, and QR/deep-link onboarding remain for
-the complete step 2 and 3 acceptance target.
+The host join link is currently displayed for development. Push-style queue
+updates, multiple-host selection, expiry/reconnect hardening, and QR/deep-link
+onboarding remain for the complete step 2 and 3 acceptance target.
 
 The invitation now uses a versioned join payload with a list of connection
 candidates. Only nearby and temporary LAN-development transports are accepted;
@@ -394,10 +398,14 @@ headers. A forced local-only hotspot was rejected after device testing because
 Wi-Fi-only guests lost their internet route. Cross-network rooms will instead
 use an app-to-app Bluetooth transport so both phones retain their existing
 Wi-Fi or cellular connection. The browser controller remains a same-Wi-Fi
-convenience path.
+convenience path. Its JavaScript is compatible with the Android 7 WebView on a
+Fire HD 10. Each accepted browser connection is isolated so a stalled or
+half-open socket times out without terminating the host or its BLE room.
 
 A clean Samsung with no Harmonicast installation completed the browser flow
 against a Pixel host: room load, live state, search, an individual request, and
-host shutdown. Manual requests are inserted after earlier manual requests but
-before automatic queue entries, so a guest request is next unless another person
-already has an earlier request in the fair request lane.
+host shutdown. Each participant's manual requests retain their own order while
+the queue alternates participant lanes ahead of automatic entries, preventing
+one person from occupying every next slot. A later mixed-transport check kept
+that Samsung connected over BLE while the Fire tablet joined the same room over
+Wi-Fi and successfully submitted a request.

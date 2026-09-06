@@ -109,6 +109,19 @@ class LocalHarmonicastCoreTest {
         )
     }
 
+    @Test fun manualRequestsAlternateDisposableParticipantsAheadOfAutomaticTracks() = runBlocking {
+        val core = LocalHarmonicastCore(source, MemoryStorage())
+        core.queue.addAll(listOf(song("auto").copy(isManual = false)), next = false)
+        core.queue.add(song("guest-1a").copy(addedByEmail = "Nearby guest 1"))
+        core.queue.add(song("guest-1b").copy(addedByEmail = "Nearby guest 1"))
+        core.queue.add(song("guest-2a").copy(addedByEmail = "Nearby guest 2"))
+
+        assertEquals(
+            listOf("guest-1a", "guest-2a", "guest-1b", "auto"),
+            core.queue.songs().map { it.id.substringAfterLast(':') },
+        )
+    }
+
     @Test fun legacyQueueWithoutProvenanceMigratesBehindNewRequests() = runBlocking {
         val storage = MemoryStorage().apply {
             values["local.queue"] = """[{"id":"plex:machine:old","title":"Old auto","artist":"Artist"}]"""

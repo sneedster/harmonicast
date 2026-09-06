@@ -105,6 +105,7 @@ data class GuestApiRequest(
     val bearer: String?,
     val query: Map<String, String> = emptyMap(),
     val body: String = "",
+    val participantId: String = "",
 )
 
 data class GuestApiResponse(
@@ -173,6 +174,8 @@ class GuestRoomRouter(
     private val capability: RoomCapability,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
+    private val votes = mutableSetOf<Pair<String, String>>()
+
     suspend fun route(request: GuestApiRequest): GuestApiResponse {
         if (!capability.authorize(request.bearer, nowMillis())) return json(401, JSONObject().put("error", "Room capability is invalid or expired"))
         return try {
@@ -193,18 +196,33 @@ class GuestRoomRouter(
                     else json(200, JSONArray().apply { core.library.search(query).forEach { put(guestSong(it)) } })
                 }
                 "POST" to "/v1/requests" -> {
+                    val participant = participant(request)
+                    val waiting = core.queue.songs().count { it.isManual && it.addedByEmail == participant }
+                    if (waiting >= MAX_REQUESTS_PER_PARTICIPANT) {
+                        return json(429, JSONObject().put("error", "You already have $MAX_REQUESTS_PER_PARTICIPANT songs in the queue"))
+                    }
                     val id = JSONObject(request.body.ifBlank { "{}" }).optString("songId")
                     val song = id.takeIf { it.isNotBlank() }?.let { core.library.track(it) }
                         ?: return json(404, JSONObject().put("error", "Track was not found"))
-                    core.queue.add(song.copy(isManual = true))
+                    core.queue.add(song.copy(isManual = true, addedByEmail = participant))
                     json(202, JSONObject().put("accepted", true).put("song", guestSong(song)))
                 }
                 "POST" to "/v1/votes" -> {
                     val direction = JSONObject(request.body.ifBlank { "{}" }).optString("direction")
                     if (direction !in setOf("up", "down")) json(400, JSONObject().put("error", "Vote must be up or down"))
                     else {
-                        core.guests.vote(direction == "up")
-                        json(202, JSONObject().put("accepted", true))
+                        val songId = core.playback.snapshot().nowPlaying.song?.id
+                            ?: return json(409, JSONObject().put("error", "Nothing is playing"))
+                        val voteKey = participant(request) to songId
+                        val accepted = synchronized(votes) { votes.add(voteKey) }
+                        if (!accepted) json(409, JSONObject().put("error", "You already voted on this track"))
+                        else try {
+                            core.guests.vote(direction == "up")
+                            json(202, JSONObject().put("accepted", true))
+                        } catch (error: Exception) {
+                            synchronized(votes) { votes.remove(voteKey) }
+                            throw error
+                        }
                     }
                 }
                 else -> json(404, JSONObject().put("error", "Guest operation is not available"))
@@ -216,6 +234,8 @@ class GuestRoomRouter(
 
     private fun json(status: Int, body: Any) = GuestApiResponse(status, body.toString())
 
+    private fun participant(request: GuestApiRequest) = request.participantId.trim().take(64).ifBlank { "Guest" }
+
     private fun guestSong(song: Song) = JSONObject()
         .put("id", song.id)
         .put("title", song.title)
@@ -225,6 +245,10 @@ class GuestRoomRouter(
         .put("year", song.year ?: JSONObject.NULL)
         .put("isManual", song.isManual)
         .put("isRadio", song.isRadio)
+
+    private companion object {
+        const val MAX_REQUESTS_PER_PARTICIPANT = 5
+    }
 }
 
 /** Small HTTP adapter owned by the media service and active only while sharing is enabled. */
@@ -246,6 +270,7 @@ class GuestRoomGateway(
     @Volatile private var running = false
     private var server: ServerSocket? = null
     private var capability: RoomCapability? = null
+    private var router: GuestRoomRouter? = null
 
     fun start(): RoomShareState {
         if (running) return snapshot()
@@ -257,13 +282,19 @@ class GuestRoomGateway(
             bind(InetSocketAddress(bindAddress ?: localDevelopmentAddress(), requestedPort))
         }
         capability = room
+        router = GuestRoomRouter(core, room)
         server = socket
         running = true
         thread(name = "harmonicast-room", isDaemon = true) {
             while (running) {
                 val client = runCatching { socket.accept() }.getOrNull() ?: break
                 try {
-                    workers.execute { client.use(::serve) }
+                    workers.execute {
+                        // Idle or half-open browser sockets are untrusted input. A read timeout
+                        // must close only that connection, never crash the Android process and
+                        // tear down an active Bluetooth room.
+                        runCatching { client.use(::serve) }
+                    }
                 } catch (_: RejectedExecutionException) {
                     runCatching { client.close() }
                 }
@@ -276,6 +307,7 @@ class GuestRoomGateway(
         running = false
         capability?.revoke()
         capability = null
+        router = null
         runCatching { server?.close() }
         server = null
     }
@@ -283,7 +315,8 @@ class GuestRoomGateway(
     /** BLE is itself the proximity bootstrap; it still uses the same allowlisted router. */
     suspend fun routeNearby(request: GuestApiRequest): GuestApiResponse {
         val room = capability ?: return GuestApiResponse(401, "{\"error\":\"Room closed\"}")
-        return GuestRoomRouter(core, room).route(request.copy(bearer = room.bearer))
+        val activeRouter = router ?: return GuestApiResponse(401, "{\"error\":\"Room closed\"}")
+        return activeRouter.route(request.copy(bearer = room.bearer))
     }
 
     fun snapshot(): RoomShareState {
@@ -347,15 +380,22 @@ class GuestRoomGateway(
         }
         val bearer = headers["authorization"]?.takeIf { it.startsWith("Bearer ", true) }?.substring(7)?.trim()
         val response = runBlocking {
-            GuestRoomRouter(core, capability ?: return@runBlocking GuestApiResponse(401, "{\"error\":\"Room closed\"}"))
-                .route(GuestApiRequest(first[0], uri.path, bearer, parseQuery(uri.rawQuery), body))
+            val activeRouter = router ?: return@runBlocking GuestApiResponse(401, "{\"error\":\"Room closed\"}")
+            activeRouter.route(GuestApiRequest(
+                first[0],
+                uri.path,
+                bearer,
+                parseQuery(uri.rawQuery),
+                body,
+                browserParticipant(headers["x-harmonicast-participant"], client.inetAddress.hostAddress.orEmpty()),
+            ))
         }
         writeResponse(client, response)
     }
 
     private fun writeResponse(client: java.net.Socket, response: GuestApiResponse) {
         val bytes = response.body.toByteArray(StandardCharsets.UTF_8)
-        val reason = when (response.status) { 200 -> "OK"; 202 -> "Accepted"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 404 -> "Not Found"; else -> "Bad Gateway" }
+        val reason = when (response.status) { 200 -> "OK"; 202 -> "Accepted"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 404 -> "Not Found"; 409 -> "Conflict"; 429 -> "Too Many Requests"; else -> "Bad Gateway" }
         client.getOutputStream().bufferedWriter(StandardCharsets.UTF_8).use { out ->
             out.write("HTTP/1.1 ${response.status} $reason\r\nContent-Type: ${response.contentType}\r\nContent-Length: ${bytes.size}\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'none'\r\nConnection: close\r\n\r\n")
             out.write(response.body)
@@ -375,4 +415,11 @@ class GuestRoomGateway(
         ?.hostAddress ?: "127.0.0.1"
 
     private fun decode(value: String) = URLDecoder.decode(value, "UTF-8")
+
+    private fun browserParticipant(supplied: String?, address: String): String {
+        val seed = supplied?.trim()?.takeIf { it.length in 8..128 } ?: address
+        val digest = MessageDigest.getInstance("SHA-256").digest(seed.toByteArray(StandardCharsets.UTF_8))
+        val suffix = digest.take(3).joinToString("") { "%02X".format(it) }
+        return "Browser guest $suffix"
+    }
 }
