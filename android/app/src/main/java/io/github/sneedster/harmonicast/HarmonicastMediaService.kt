@@ -2,6 +2,7 @@ package io.github.sneedster.harmonicast
 
 import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -31,17 +32,17 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicReference
+import androidx.compose.runtime.mutableStateOf
 
 class HarmonicastMediaService : MediaLibraryService() {
     private lateinit var player: ExoPlayer
     private var mediaLibrarySession: MediaLibrarySession? = null
     private lateinit var api: Api
+    private lateinit var core: HarmonicastCore
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private var webSocket: okhttp3.WebSocket? = null
+    private var webSocket: CoreSubscription? = null
     private var webSocketReconnectJob: kotlinx.coroutines.Job? = null
     private var webSocketGeneration = 0
     private var webSocketStopped = false
@@ -52,14 +53,24 @@ class HarmonicastMediaService : MediaLibraryService() {
     private data class HistoryItem(val mediaItem: MediaItem, val isAuto: Boolean)
     private val playbackHistory = PlaybackHistory<HistoryItem>()
     private var changingTrack = false
+    private var guestRoomGateway: GuestRoomGateway? = null
+    private var nearbyRoomHost: NearbyRoomHost? = null
 
     companion object {
         private const val ROOT_ID = "harmonicast:root"
         private const val PLAY_RANDOM_ID = "harmonicast:play-random"
         private const val QUEUE_ID = "harmonicast:queue"
+        private const val PLAYLISTS_ID = "harmonicast:playlists"
+        private const val PLAYLIST_ID_PREFIX = "harmonicast:playlist:"
+        private const val PLAY_PLAYLIST_PREFIX = "harmonicast:play-playlist:"
+        private const val SHUFFLE_PLAYLIST_PREFIX = "harmonicast:shuffle-playlist:"
         private const val COMMAND_PLAY_SIMILAR = "io.github.sneedster.harmonicast.PLAY_SIMILAR"
         private const val COMMAND_CLEAR_QUEUE = "io.github.sneedster.harmonicast.CLEAR_QUEUE"
         const val CLAIM_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.CLAIM_PLAYBACK"
+        const val RELOAD_PROFILE_ACTION = "io.github.sneedster.harmonicast.RELOAD_PROFILE"
+        const val ENABLE_GUEST_CONTROL_ACTION = "io.github.sneedster.harmonicast.ENABLE_GUEST_CONTROL"
+        const val DISABLE_GUEST_CONTROL_ACTION = "io.github.sneedster.harmonicast.DISABLE_GUEST_CONTROL"
+        val roomShareState = mutableStateOf(RoomShareState())
         private val PLAY_SIMILAR_COMMAND = SessionCommand(COMMAND_PLAY_SIMILAR, Bundle())
         private val CLEAR_QUEUE_COMMAND = SessionCommand(COMMAND_CLEAR_QUEUE, Bundle())
     }
@@ -78,6 +89,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
         api = Api(getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
+        core = harmonicastCore(api)
 
         exoPlayer.addListener(object : Player.Listener {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -256,6 +268,11 @@ class HarmonicastMediaService : MediaLibraryService() {
                                 .setSubtitle("Tracks added by listeners").setIsPlayable(false).setIsBrowsable(true)
                                 .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST).build()
                         ).build(),
+                        MediaItem.Builder().setMediaId(PLAYLISTS_ID).setMediaMetadata(
+                            MediaMetadata.Builder().setTitle("Plex playlists").setDisplayTitle("Plex playlists")
+                                .setSubtitle("Browse your personal playlists").setIsPlayable(false).setIsBrowsable(true)
+                                .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS).build()
+                        ).build(),
                     )
                     return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))
                 }
@@ -267,6 +284,40 @@ class HarmonicastMediaService : MediaLibraryService() {
                         } catch (e: Exception) {
                             Log.e("HarmonicastMedia", "Get children failed", e)
                             LibraryResult.ofError(SessionError.ERROR_SESSION_AUTHENTICATION_EXPIRED)
+                        }
+                    }
+                }
+                if (parentId == PLAYLISTS_ID) {
+                    return scope.future {
+                        try {
+                            val items = core.library.playlists().map { playlist ->
+                                MediaItem.Builder().setMediaId(PLAYLIST_ID_PREFIX + encode(playlist.id)).setMediaMetadata(
+                                    MediaMetadata.Builder().setTitle(playlist.title).setDisplayTitle(playlist.title)
+                                        .setSubtitle(if (playlist.trackCount > 0) "${playlist.trackCount} tracks" else "Playlist")
+                                        .setIsPlayable(false).setIsBrowsable(true)
+                                        .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST).build()
+                                ).build()
+                            }
+                            LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
+                        } catch (e: Exception) {
+                            Log.e("HarmonicastMedia", "Could not browse Plex playlists", e)
+                            LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
+                        }
+                    }
+                }
+                if (parentId.startsWith(PLAYLIST_ID_PREFIX)) {
+                    return scope.future {
+                        try {
+                            val playlistId = java.net.URLDecoder.decode(parentId.removePrefix(PLAYLIST_ID_PREFIX), "UTF-8")
+                            val tracks = core.library.playlistTracks(playlistId)
+                            val actions = listOf(
+                                playlistActionItem(PLAY_PLAYLIST_PREFIX + encode(playlistId), "Play playlist"),
+                                playlistActionItem(SHUFFLE_PLAYLIST_PREFIX + encode(playlistId), "Shuffle playlist"),
+                            )
+                            LibraryResult.ofItemList(ImmutableList.copyOf(actions + tracks.map(::createMediaItem)), params)
+                        } catch (e: Exception) {
+                            Log.e("HarmonicastMedia", "Could not browse Plex playlist tracks", e)
+                            LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
                         }
                     }
                 }
@@ -296,18 +347,9 @@ class HarmonicastMediaService : MediaLibraryService() {
                 }
                 return scope.future {
                     try {
-                        val npJson = api.json("now-playing")
-                        val np = JSONObject(npJson)
-                        val songObj = np.optJSONObject("song")
-                        if (songObj != null && songObj.optString("id") == mediaId) {
-                            val song = Song(
-                                songObj.optString("id"),
-                                songObj.optString("title"),
-                                songObj.optString("artist"),
-                                songObj.optString("album"),
-                                songObj.optInt("duration"),
-                                songObj.optString("coverArt")
-                            )
+                        val current = core.playback.snapshot().nowPlaying.song
+                        if (current != null && current.id == mediaId) {
+                            val song = current
                             LibraryResult.ofItem(createMediaItem(song), null)
                         } else {
                             val song = Song(mediaId, mediaId, "", "", 0, "")
@@ -326,6 +368,9 @@ class HarmonicastMediaService : MediaLibraryService() {
                 mediaItems: MutableList<MediaItem>
             ): ListenableFuture<MutableList<MediaItem>> {
                 Log.d("HarmonicastMedia", "onAddMediaItems: ${mediaItems.size} items")
+                if (mediaItems.any { it.mediaId.startsWith(PLAY_PLAYLIST_PREFIX) || it.mediaId.startsWith(SHUFFLE_PLAYLIST_PREFIX) }) {
+                    return Futures.immediateFuture(mediaItems)
+                }
                 return scope.future {
                     // Android Auto often sends only a media ID when a user
                     // chooses an item from a browsed queue. Resolve it back
@@ -368,6 +413,21 @@ class HarmonicastMediaService : MediaLibraryService() {
                         MediaSession.MediaItemsWithStartPosition(item?.let(::listOf) ?: emptyList(), 0, 0)
                     }
                 }
+                val actionId = mediaItems.singleOrNull()?.mediaId.orEmpty()
+                if (actionId.startsWith(PLAY_PLAYLIST_PREFIX) || actionId.startsWith(SHUFFLE_PLAYLIST_PREFIX)) {
+                    return scope.future {
+                        val prefix = if (actionId.startsWith(SHUFFLE_PLAYLIST_PREFIX)) SHUFFLE_PLAYLIST_PREFIX else PLAY_PLAYLIST_PREFIX
+                        val playlistId = java.net.URLDecoder.decode(actionId.removePrefix(prefix), "UTF-8")
+                        var tracks = core.library.playlistTracks(playlistId)
+                        if (prefix == SHUFFLE_PLAYLIST_PREFIX) tracks = tracks.shuffled()
+                        core.queue.clear()
+                        core.queue.addAll(tracks)
+                        val selection = core.queue.dequeue()
+                        currentIsAuto.set(false)
+                        val item = selection.song?.let(::createMediaItem)
+                        MediaSession.MediaItemsWithStartPosition(item?.let(::listOf) ?: emptyList(), 0, 0)
+                    }
+                }
                 return super.onSetMediaItems(mediaSession, controller, mediaItems, startIndex, startPositionMs)
             }
 
@@ -375,8 +435,23 @@ class HarmonicastMediaService : MediaLibraryService() {
                 mediaSession: MediaSession,
                 controller: MediaSession.ControllerInfo,
             ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
-                val item = dequeueRandomItem()
-                MediaSession.MediaItemsWithStartPosition(item?.let(::listOf) ?: emptyList(), 0, 0)
+                val state = core.playback.snapshot()
+                val saved = state.nowPlaying.song?.let { song ->
+                    val playable = if (runCatching { core.library.streamUrl(song) }.isSuccess) song
+                        else core.library.track(song.id)
+                    playable?.let(::createMediaItem)
+                }
+                if (saved != null) {
+                    currentIsAuto.set(state.isAutoQueue)
+                    MediaSession.MediaItemsWithStartPosition(
+                        listOf(saved),
+                        0,
+                        (state.positionSeconds * 1_000).toLong().coerceAtLeast(0),
+                    )
+                } else {
+                    val item = dequeueRandomItem()
+                    MediaSession.MediaItemsWithStartPosition(item?.let(::listOf) ?: emptyList(), 0, 0)
+                }
             }
 
             override fun onCustomCommand(
@@ -390,8 +465,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                         when (customCommand.customAction) {
                             COMMAND_PLAY_SIMILAR -> {
                                 Log.d("HarmonicastMedia", "Android Auto requested Track Radio queue")
-                                val result = JSONObject(api.json("queue/similar", "POST", JSONObject()))
-                                val added = result.optInt("added", 0)
+                                val added = core.queue.radio()
                                 updateCustomLayout(added > 0)
                                 refreshAndroidAutoQueue(refreshBrowser = true)
                                 Log.d("HarmonicastMedia", "Queued $added Track Radio songs from Android Auto")
@@ -399,14 +473,14 @@ class HarmonicastMediaService : MediaLibraryService() {
                             }
                             COMMAND_CLEAR_QUEUE -> {
                                 Log.d("HarmonicastMedia", "Android Auto requested queue clear")
-                                api.json("queue", "DELETE", JSONObject())
+                                core.queue.clear()
                                 updateCustomLayout(false)
                                 refreshAndroidAutoQueue(refreshBrowser = true)
                                 SessionResult(SessionResult.RESULT_SUCCESS)
                             }
                             CLAIM_PLAYBACK_ACTION -> {
                                 Log.d("HarmonicastMedia", "Phone requested playback takeover")
-                                api.json("player/claim", "POST", JSONObject())
+                                core.playback.claim()
                                 resumeSharedPlayback()
                                 SessionResult(SessionResult.RESULT_SUCCESS)
                             }
@@ -428,10 +502,9 @@ class HarmonicastMediaService : MediaLibraryService() {
                 Log.d("HarmonicastMedia", "onSearch for: $query")
                 scope.launch {
                     try {
-                        val searchJson = api.json("search?q=" + java.net.URLEncoder.encode(query, "UTF-8"))
-                        val array = JSONArray(searchJson)
-                        Log.d("HarmonicastMedia", "Search results found: ${array.length()}")
-                        session.notifySearchResultChanged(browser, query, array.length(), params)
+                        val results = core.library.search(query)
+                        Log.d("HarmonicastMedia", "Search results found: ${results.size}")
+                        session.notifySearchResultChanged(browser, query, results.size, params)
                     } catch (e: Exception) {
                         Log.e("HarmonicastMedia", "Search failed", e)
                         session.notifySearchResultChanged(browser, query, 0, params)
@@ -451,14 +524,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 Log.d("HarmonicastMedia", "onGetSearchResult for: $query")
                 return scope.future {
                     try {
-                        val searchJson = api.json("search?q=" + java.net.URLEncoder.encode(query, "UTF-8"))
-                        val array = JSONArray(searchJson)
-                        val items = mutableListOf<MediaItem>()
-                        for (i in 0 until array.length()) {
-                            val o = array.getJSONObject(i)
-                            val song = Song(o.optString("id"), o.optString("title"), o.optString("artist"), o.optString("album"), o.optInt("duration"), o.optString("coverArt"))
-                            items.add(createMediaItem(song))
-                        }
+                        val items = core.library.search(query).map(::createMediaItem)
                         Log.d("HarmonicastMedia", "Returning ${items.size} search items")
                         LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                     } catch (e: Exception) {
@@ -485,24 +551,77 @@ class HarmonicastMediaService : MediaLibraryService() {
         Log.d("HarmonicastMedia", "Session built successfully")
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            RELOAD_PROFILE_ACTION -> reloadProfile()
+            ENABLE_GUEST_CONTROL_ACTION -> enableGuestControl()
+            DISABLE_GUEST_CONTROL_ACTION -> disableGuestControl()
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    private fun enableGuestControl() {
+        if (api.profile.mode != HomeMode.PERSONAL_PLEX) {
+            roomShareState.value = RoomShareState()
+            return
+        }
+        if (roomShareState.value.enabled) return
+        try {
+            val gateway = GuestRoomGateway(this, core)
+            guestRoomGateway = gateway
+            val room = gateway.start()
+            val nearby = NearbyRoomHost(this, core, room.roomCode)
+            nearbyRoomHost = nearby
+            roomShareState.value = room.copy(nearbyAvailable = nearby.start())
+            Log.d("HarmonicastMedia", "Guest room enabled: ${roomShareState.value.roomCode}")
+        } catch (e: Exception) {
+            guestRoomGateway = null
+            roomShareState.value = RoomShareState(error = "Could not start the same-Wi-Fi room controller")
+            Log.e("HarmonicastMedia", "Could not enable guest room", e)
+        }
+    }
+
+    private fun disableGuestControl() {
+        guestRoomGateway?.stop()
+        guestRoomGateway = null
+        nearbyRoomHost?.stop()
+        nearbyRoomHost = null
+        roomShareState.value = RoomShareState()
+        Log.d("HarmonicastMedia", "Guest room disabled")
+    }
+
+    private fun reloadProfile() {
+        stopPositionSaving()
+        webSocketGeneration += 1
+        webSocketReconnectJob?.cancel()
+        webSocketReconnectJob = null
+        webSocket?.close()
+        webSocket = null
+        api = Api(getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
+        core = harmonicastCore(api)
+        player.stop()
+        player.clearMediaItems()
+        previousMediaItem = null
+        connectWebSocket()
+        refreshAndroidAutoQueue(refreshBrowser = true)
+        Log.d("HarmonicastMedia", "Playback profile reloaded: ${api.profile.mode}")
+    }
+
     private fun connectWebSocket() {
-        if (webSocketStopped || api.base.isEmpty() || api.token.isEmpty()) return
+        if (webSocketStopped || !api.profile.ready) return
         webSocketReconnectJob?.cancel()
         val generation = ++webSocketGeneration
-        webSocket = api.websocket(onMessage = { text ->
+        webSocket = core.observe(onEvent = { event ->
             try {
-                val msg = JSONObject(text)
-                val type = msg.optString("type")
-                Log.d("HarmonicastMedia", "WS message: $type")
-                if (type == "force_skip") {
+                Log.d("HarmonicastMedia", "Core event: $event")
+                if (event == CoreEvent.FORCE_SKIP) {
                     advance("skip")
-                } else if (type == "queue") {
+                } else if (event == CoreEvent.QUEUE_CHANGED) {
                     refreshAndroidAutoQueue()
-                } else if (type == "player_session") {
+                } else if (event == CoreEvent.PLAYER_SESSION_CHANGED) {
                     scope.launch {
                         try {
-                            val statusJson = api.json("player/status")
-                            val isActive = JSONObject(statusJson).optBoolean("isActivePlayer", false)
+                            val isActive = core.playback.isActivePlayer()
                             if (androidAutoControllers.isNotEmpty() && !isActive) {
                                 // Another client just claimed playback. A
                                 // connected Android Auto host always wins it
@@ -546,7 +665,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         scope.launch {
             try {
                 Log.d("HarmonicastMedia", "Android Auto connected — claiming playback")
-                api.json("player/claim", "POST", JSONObject())
+                core.playback.claim()
                 resumeSharedPlayback()
             } catch (e: Exception) {
                 Log.e("HarmonicastMedia", "Android Auto could not claim playback", e)
@@ -576,26 +695,10 @@ class HarmonicastMediaService : MediaLibraryService() {
         }
     }
 
-    private suspend fun fetchQueueSongs(): List<Song> {
-        val array = JSONArray(api.json("queue"))
-        return buildList {
-            for (i in 0 until array.length()) {
-                val o = array.getJSONObject(i)
-                add(Song(
-                    o.optString("id"), o.optString("title"), o.optString("artist"),
-                    o.optString("album"), o.optInt("duration"), o.optString("coverArt"), isRadio = o.optBoolean("isRadio"),
-                ))
-            }
-        }
-    }
+    private suspend fun fetchQueueSongs(): List<Song> = core.queue.songs()
 
     private suspend fun fetchPlexSong(id: String): Song? = try {
-        val item = JSONObject(api.json("plex/tracks/${java.net.URLEncoder.encode(id, "UTF-8")}"))
-        val title = item.optString("title")
-        if (title.isBlank()) null else Song(
-            item.optString("id", id), title, item.optString("artist"), item.optString("album"),
-            item.optInt("duration"), item.optString("coverArt"),
-        )
+        core.library.track(id)
     } catch (e: Exception) {
         Log.w("HarmonicastMedia", "Could not resolve Plex metadata for $id", e)
         null
@@ -608,22 +711,12 @@ class HarmonicastMediaService : MediaLibraryService() {
      * an actual stream to control.
      */
     private suspend fun resumeSharedPlayback() {
-        val state = JSONObject(api.json("now-playing"))
-        val item = state.optJSONObject("song") ?: return
-        val song = Song(
-            item.optString("id"),
-            item.optString("title"),
-            item.optString("artist"),
-            item.optString("album"),
-            item.optInt("duration"),
-            item.optString("coverArt"),
-        )
+        val state = core.playback.snapshot()
+        val song = state.nowPlaying.song ?: return
         if (song.id.isBlank()) return
 
-        currentIsAuto.set(state.optBoolean("isAutoQueue", false))
-        val positionMs = (state.optDouble("playbackPosition", 0.0) * 1_000)
-            .toLong()
-            .coerceAtLeast(0L)
+        currentIsAuto.set(state.isAutoQueue)
+        val positionMs = (state.positionSeconds * 1_000).toLong().coerceAtLeast(0L)
         if (player.currentMediaItem?.mediaId != song.id) {
             player.setMediaItem(createMediaItem(song), positionMs)
             player.prepare()
@@ -631,7 +724,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             player.seekTo(positionMs)
         }
 
-        if (state.optBoolean("isPlaying", false)) {
+        if (state.nowPlaying.isPlaying) {
             Log.d("HarmonicastMedia", "Resuming shared playback on this device")
             player.play()
         } else {
@@ -652,6 +745,13 @@ class HarmonicastMediaService : MediaLibraryService() {
             .build(),
     )
 
+    private fun playlistActionItem(id: String, title: String) = MediaItem.Builder()
+        .setMediaId(id)
+        .setMediaMetadata(
+            MediaMetadata.Builder().setTitle(title).setDisplayTitle(title)
+                .setIsPlayable(true).setIsBrowsable(false).setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).build()
+        ).build()
+
     private fun updateCustomLayout(radioQueueActive: Boolean) {
         mediaLibrarySession?.setCustomLayout(customLayout(radioQueueActive))
     }
@@ -666,14 +766,14 @@ class HarmonicastMediaService : MediaLibraryService() {
         scope.launch {
             try {
                 recordPlaybackEvent(previous, "complete", 1.0)
-                api.json("scrobble", "POST", JSONObject().put("id", previous.mediaId).put("submission", true))
+                core.playback.scrobble(previous.mediaId, submission = true)
 
-                val response = JSONObject(api.json("queue/dequeue", "POST", JSONObject()))
-                val dequeued = response.optJSONObject("song")
-                if (dequeued?.optString("id") != current.mediaId) {
+                val response = core.queue.dequeue()
+                val dequeued = response.song
+                if (dequeued?.id != current.mediaId) {
                     Log.w("HarmonicastMedia", "Automatic transition did not match the shared queue head")
                 }
-                currentIsAuto.set(!response.optBoolean("isManual", true))
+                currentIsAuto.set(!response.isManual)
                 syncCurrentPlaybackState(player.isPlaying)
             } catch (e: Exception) {
                 Log.e("HarmonicastMedia", "Failed to consume Android Auto queue transition", e)
@@ -687,25 +787,11 @@ class HarmonicastMediaService : MediaLibraryService() {
         val title = item.mediaMetadata.title?.toString() ?: ""
         val artist = item.mediaMetadata.artist?.toString() ?: ""
         val album = item.mediaMetadata.albumTitle?.toString() ?: ""
-        val coverArt = item.mediaMetadata.artworkUri?.toString()?.let {
-            val idParam = it.substringAfter("cover-art/").substringBefore("?")
-            java.net.URLDecoder.decode(idParam, "UTF-8")
-        } ?: ""
+        val coverArt = item.mediaMetadata.extras?.getString("harmonicast.coverArt").orEmpty()
         val isAuto = currentIsAuto.get()
         scope.launch {
             try {
-                api.json(
-                    "now-playing", "POST",
-                    JSONObject()
-                        .put("song", JSONObject()
-                            .put("id", songId)
-                            .put("title", title)
-                            .put("artist", artist)
-                            .put("album", album)
-                            .put("coverArt", coverArt))
-                        .put("isPlaying", isPlaying)
-                        .put("isAutoQueue", isAuto)
-                )
+                core.playback.publish(Song(songId, title, artist, album, coverArt = coverArt), isPlaying, isAuto)
             } catch (e: Exception) {
                 Log.e("HarmonicastMedia", "Failed to sync play state", e)
             }
@@ -722,10 +808,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 val positionSeconds = player.currentPosition / 1000.0
                 if (positionSeconds >= 0) {
                     try {
-                        api.json(
-                            "now-playing/position", "PUT",
-                            JSONObject().put("position", positionSeconds)
-                        )
+                        core.playback.savePosition(positionSeconds)
                     } catch (e: Exception) {
                         Log.e("HarmonicastMedia", "Failed to save position", e)
                     }
@@ -747,7 +830,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         syncCurrentPlaybackState(playWhenReady)
         scope.launch {
             try {
-                api.json("scrobble", "POST", JSONObject().put("id", item.mediaItem.mediaId).put("submission", false))
+                core.playback.scrobble(item.mediaItem.mediaId, submission = false)
             } catch (e: Exception) {
                 Log.e("HarmonicastMedia", "History scrobble failed", e)
             }
@@ -766,7 +849,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             }
             // Publish the reset immediately, including when playback is paused.
             try {
-                api.json("now-playing/position", "PUT", JSONObject().put("position", 0))
+                core.playback.savePosition(0.0)
             } catch (e: Exception) {
                 Log.e("HarmonicastMedia", "Failed to save previous-track position", e)
             }
@@ -787,10 +870,7 @@ class HarmonicastMediaService : MediaLibraryService() {
 
                     if (reason == "ended") {
                         recordPlaybackEvent(currentMediaItem, "complete", 1.0)
-                        api.json(
-                            "scrobble", "POST",
-                            JSONObject().put("id", oldId).put("submission", true)
-                        )
+                        core.playback.scrobble(oldId, submission = true)
                     } else {
                         recordPlaybackEvent(currentMediaItem, "skip", progress.toDouble())
                     }
@@ -802,37 +882,13 @@ class HarmonicastMediaService : MediaLibraryService() {
                     return@launch
                 }
 
-                val response = JSONObject(api.json("queue/dequeue", "POST", JSONObject()))
-                val nextObj = response.optJSONObject("song")
-                val isManual = response.optBoolean("isManual", true)
-
-                if (nextObj != null) {
-                    val song = Song(
-                        nextObj.optString("id"),
-                        nextObj.optString("title"),
-                        nextObj.optString("artist"),
-                        nextObj.optString("album"),
-                        nextObj.optInt("duration"),
-                        nextObj.optString("coverArt")
-                    )
-                    val isAuto = !isManual
+                val response = core.queue.dequeue()
+                val song = response.song
+                if (song != null) {
+                    val isAuto = !response.isManual
                     currentIsAuto.set(isAuto)
-                    api.json(
-                        "now-playing", "POST",
-                        JSONObject()
-                            .put("song", JSONObject()
-                                .put("id", song.id)
-                                .put("title", song.title)
-                                .put("artist", song.artist)
-                                .put("album", song.album)
-                                .put("coverArt", song.coverArt))
-                            .put("isPlaying", true)
-                            .put("isAutoQueue", isAuto)
-                    )
-                    api.json(
-                        "scrobble", "POST",
-                        JSONObject().put("id", song.id).put("submission", false)
-                    )
+                    core.playback.publish(song, isPlaying = true, isAutoQueue = isAuto)
+                    core.playback.scrobble(song.id, submission = false)
                     // Keep the Media3 timeline to one current item. Its
                     // legacy Android Auto Queue screen otherwise jumps to the
                     // active item whenever Media3 republishes playback state.
@@ -843,10 +899,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                     player.play()
                 } else {
                     currentIsAuto.set(false)
-                    api.json(
-                        "now-playing", "POST",
-                        JSONObject().put("song", JSONObject.NULL).put("isPlaying", false)
-                    )
+                    core.playback.publish(null, isPlaying = false)
                     player.stop()
                 }
             } catch (e: Exception) {
@@ -860,16 +913,8 @@ class HarmonicastMediaService : MediaLibraryService() {
     private suspend fun recordPlaybackEvent(item: MediaItem, event: String, progress: Double) {
         val metadata = item.mediaMetadata
         try {
-            api.json(
-                "stats/play-event", "POST",
-                JSONObject()
-                    .put("song_id", item.mediaId)
-                    .put("title", metadata.title ?: "")
-                    .put("artist", metadata.artist ?: "")
-                    .put("album", metadata.albumTitle ?: "")
-                    .put("event", event)
-                    .put("progress", progress.coerceIn(0.0, 1.0))
-            )
+            core.playback.recordEvent(Song(item.mediaId, metadata.title?.toString().orEmpty(),
+                metadata.artist?.toString().orEmpty(), metadata.albumTitle?.toString().orEmpty()), event, progress)
         } catch (e: Exception) {
             // Rating updates are important, but playback must still advance if
             // Plex is temporarily unavailable.
@@ -879,14 +924,11 @@ class HarmonicastMediaService : MediaLibraryService() {
 
     /** Enables the shared auto queue and returns its next playable track. */
     private suspend fun dequeueRandomItem(): MediaItem? = try {
-        api.json("jukebox", "POST", JSONObject().put("enabled", true))
-        val response = JSONObject(api.json("queue/dequeue", "POST", JSONObject()))
-        val next = response.optJSONObject("song") ?: return null
-        currentIsAuto.set(!response.optBoolean("isManual", true))
-        createMediaItem(Song(
-            next.optString("id"), next.optString("title"), next.optString("artist"),
-            next.optString("album"), next.optInt("duration"), next.optString("coverArt"),
-        ))
+        core.queue.enableAutomaticPlayback()
+        val response = core.queue.dequeue()
+        val next = response.song ?: return null
+        currentIsAuto.set(!response.isManual)
+        createMediaItem(next)
     } catch (e: Exception) {
         Log.e("HarmonicastMedia", "Failed to start random playback", e)
         null
@@ -894,13 +936,14 @@ class HarmonicastMediaService : MediaLibraryService() {
 
     private fun coverArtUri(coverArt: String): Uri? {
         if (coverArt.isEmpty()) return null
-        return Uri.parse("${api.base}/api/cover-art/${java.net.URLEncoder.encode(coverArt, "UTF-8")}?token=${java.net.URLEncoder.encode(api.token, "UTF-8")}&size=300")
+        return null
     }
 
     private fun createMediaItem(song: Song): MediaItem {
-        val streamUri = Uri.parse("${api.base}/api/stream/${java.net.URLEncoder.encode(song.id, "UTF-8")}?token=${java.net.URLEncoder.encode(api.token, "UTF-8")}")
-        val artworkUri = coverArtUri(song.coverArt)
+        val streamUri = Uri.parse(core.library.streamUrl(song))
+        val artworkUri = core.library.artworkUrl(song)?.let(Uri::parse) ?: coverArtUri(song.coverArt)
         val metadataBuilder = MediaMetadata.Builder()
+            .setExtras(Bundle().apply { putString("harmonicast.coverArt", song.coverArt) })
             .setTitle(song.title)
             .setArtist(song.artist)
             .setAlbumTitle(song.album)
@@ -928,11 +971,12 @@ class HarmonicastMediaService : MediaLibraryService() {
 
     override fun onDestroy() {
         stopPositionSaving()
+        disableGuestControl()
         webSocketStopped = true
         webSocketGeneration += 1
         webSocketReconnectJob?.cancel()
         webSocketReconnectJob = null
-        webSocket?.close(1000, null)
+        webSocket?.close()
         webSocket = null
         mediaLibrarySession?.run {
             player.release()

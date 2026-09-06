@@ -23,6 +23,7 @@ dist-ssr
 .env
 
 # Android
+android/.kotlin/
 .gradle/
 **/build/
 *.hprof

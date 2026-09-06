@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Harmonicast room __ROOM_CODE__</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #090b10; color: #f6f1e8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #28334b 0, #111522 38%, #090b10 75%); }
+    main { width: min(44rem, 100%); margin: auto; padding: max(1.25rem, env(safe-area-inset-top)) 1rem 4rem; }
+    header { display: flex; justify-content: space-between; gap: 1rem; align-items: start; margin-bottom: 1.25rem; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: clamp(1.7rem, 7vw, 2.6rem); letter-spacing: -.04em; }
+    h2 { font-size: 1.05rem; margin-bottom: .8rem; }
+    .eyebrow { color: #aab9d8; font-size: .76rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    .status { border: 1px solid #53617d; border-radius: 999px; padding: .4rem .7rem; color: #c7d2e8; font-size: .8rem; white-space: nowrap; }
+    .status.live { border-color: #63d69b; color: #82eab2; }
+    .card { background: rgba(27, 33, 47, .92); border: 1px solid #343e55; border-radius: 1.15rem; padding: 1rem; margin: .85rem 0; box-shadow: 0 1rem 2.5rem #0005; }
+    .song { font-size: 1.2rem; font-weight: 760; }
+    .artist, .muted { color: #aeb8ca; margin-top: .2rem; }
+    form { display: flex; gap: .55rem; }
+    input { min-width: 0; flex: 1; border: 1px solid #4a5670; background: #0d111a; color: inherit; border-radius: .75rem; padding: .8rem; font: inherit; }
+    button { border: 0; border-radius: .75rem; padding: .8rem 1rem; background: #d8e2ff; color: #111624; font: inherit; font-weight: 750; cursor: pointer; }
+    button.secondary { background: #303a50; color: #edf1fb; }
+    button:disabled { opacity: .5; }
+    .votes { display: flex; gap: .6rem; margin-top: .9rem; }
+    .votes button { flex: 1; }
+    ul { padding: 0; margin: 0; list-style: none; }
+    li { display: flex; justify-content: space-between; gap: .8rem; align-items: center; border-top: 1px solid #343e55; padding: .8rem 0; }
+    li:first-child { border-top: 0; }
+    li button { padding: .55rem .75rem; }
+    .track { min-width: 0; }
+    .track strong, .track span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .track span { color: #aeb8ca; font-size: .88rem; margin-top: .15rem; }
+    #message { min-height: 1.3rem; margin-top: .65rem; color: #f3bd75; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><div class="eyebrow">Harmonicast guest</div><h1>Room __ROOM_CODE__</h1></div>
+    <div id="status" class="status">Connecting</div>
+  </header>
+
+  <section class="card">
+    <h2>Now playing</h2>
+    <p id="now-title" class="song">Nothing playing</p>
+    <p id="now-artist" class="artist"></p>
+    <div class="votes">
+      <button id="vote-up" class="secondary" type="button">Like this</button>
+      <button id="vote-down" class="secondary" type="button">Not for me</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Request a song</h2>
+    <form id="search-form">
+      <input id="search" type="search" autocomplete="off" placeholder="Song, artist, or album" aria-label="Search">
+      <button type="submit">Search</button>
+    </form>
+    <p id="message"></p>
+    <ul id="results"></ul>
+  </section>
+
+  <section class="card">
+    <h2>Coming up</h2>
+    <ul id="queue"><li class="muted">The queue is empty.</li></ul>
+  </section>
+</main>
+<script>
+(() => {
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const supplied = hash.get('cap');
+  if (supplied) sessionStorage.setItem('harmonicast-room-cap', supplied);
+  const capability = supplied || sessionStorage.getItem('harmonicast-room-cap') || '';
+  if (location.hash) history.replaceState(null, '', location.pathname);
+
+  const status = document.querySelector('#status');
+  const message = document.querySelector('#message');
+  const title = document.querySelector('#now-title');
+  const artist = document.querySelector('#now-artist');
+  const queue = document.querySelector('#queue');
+  const results = document.querySelector('#results');
+
+  async function api(path, options = {}) {
+    if (!capability) throw new Error('Scan the room code again to join.');
+    const response = await fetch(path, {
+      ...options,
+      cache: 'no-store',
+      headers: { 'Authorization': `Bearer ${capability}`, 'Content-Type': 'application/json', ...(options.headers || {}) }
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'The room did not respond.');
+    return data;
+  }
+
+  function trackRow(song, action) {
+    const item = document.createElement('li');
+    const text = document.createElement('div');
+    text.className = 'track';
+    const name = document.createElement('strong');
+    name.textContent = song.title || 'Unknown track';
+    const by = document.createElement('span');
+    by.textContent = song.artist || song.album || '';
+    text.append(name, by);
+    item.append(text);
+    if (action) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Request';
+      button.addEventListener('click', () => requestSong(song, button));
+      item.append(button);
+    }
+    return item;
+  }
+
+  function showList(target, songs, requestable = false) {
+    target.replaceChildren();
+    if (!songs.length) {
+      const empty = document.createElement('li');
+      empty.className = 'muted';
+      empty.textContent = requestable ? 'No matching songs.' : 'The queue is empty.';
+      target.append(empty);
+      return;
+    }
+    songs.forEach(song => target.append(trackRow(song, requestable)));
+  }
+
+  async function refresh() {
+    try {
+      const [playing, songs] = await Promise.all([api('/v1/now-playing'), api('/v1/queue')]);
+      title.textContent = playing.song?.title || 'Nothing playing';
+      artist.textContent = playing.song?.artist || '';
+      showList(queue, songs);
+      status.textContent = 'Connected';
+      status.classList.add('live');
+    } catch (error) {
+      status.textContent = 'Room unavailable';
+      status.classList.remove('live');
+      message.textContent = error.message;
+    }
+  }
+
+  async function requestSong(song, button) {
+    button.disabled = true;
+    try {
+      await api('/v1/requests', { method: 'POST', body: JSON.stringify({ songId: song.id }) });
+      message.textContent = `${song.title} was requested.`;
+      await refresh();
+    } catch (error) {
+      message.textContent = error.message;
+      button.disabled = false;
+    }
+  }
+
+  document.querySelector('#search-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const query = document.querySelector('#search').value.trim();
+    if (!query) return;
+    message.textContent = 'Searching…';
+    try {
+      const songs = await api(`/v1/search?q=${encodeURIComponent(query)}`);
+      showList(results, songs, true);
+      message.textContent = songs.length ? '' : 'No matching songs.';
+    } catch (error) { message.textContent = error.message; }
+  });
+
+  async function vote(direction) {
+    try {
+      await api('/v1/votes', { method: 'POST', body: JSON.stringify({ direction }) });
+      message.textContent = 'Your vote was counted.';
+    } catch (error) { message.textContent = error.message; }
+  }
+  document.querySelector('#vote-up').addEventListener('click', () => vote('up'));
+  document.querySelector('#vote-down').addEventListener('click', () => vote('down'));
+
+  refresh();
+  setInterval(refresh, 4000);
+})();
+</script>
+</body>
+</html>

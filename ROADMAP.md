@@ -31,10 +31,21 @@
   first, with temporary proximity-based guest control as an optional mode. The
   architecture and parity constraints are tracked in
   [`docs/STANDALONE_ARCHITECTURE.md`](docs/STANDALONE_ARCHITECTURE.md).
-- Planned for the first standalone acceptance slice: browse and load playlists
+- Device accepted on Pixel and DHU: Android personal mode now performs
+  Plex PIN sign-in and owner server/library selection on-device, streams from
+  Plex directly, and persists its queue, playback position, and bounded history.
+  Search includes track, artist, and album matches; Track Radio and the existing
+  rated/unrated automatic mix run locally. Thumbs and playback outcomes continue
+  to update Plex ratings. The existing remote-server profile remains available
+  during migration.
+- Device accepted on Pixel and DHU: browse and load playlists
   configured in the selected Plex Music library, including ordered playback,
   shuffle, Play next, and Add to queue across Android, Android Auto, and the
   retained tablet/TV kiosk experience.
+- Implemented and device accepted: browse Plex audio playlists
+  and load them ordered, shuffled, next, or at the queue end. Android Auto can
+  browse playlist tracks and start an ordered or shuffled playlist while keeping
+  the protected current-track-only player timeline.
 - Completed: on-demand Plex artist discovery (biography, genres, and similar
   artists) in Android and the web player. Metadata is fetched only when opened.
 - Completed: on-demand Plex album context (year and summary) in the shared
@@ -46,6 +57,38 @@
   reliable supported path for proxy/headless player sessions.
 - Completed: weighted auto-queue selection using Plex ratings, play history,
   skips, and recency cooldowns.
+- Guest gateway slice 1 completed and device validated: personal-mode Settings
+  can explicitly enable an ephemeral, accountless LAN room. A random capability
+  gates an allowlisted API for status, search, requests, queue viewing, and
+  voting; responses omit Plex tokens and stream URLs. Disabling sharing closes
+  the listener and revokes the capability immediately. Guest joining, disposable
+  participant fairness, realtime updates, and QR/proximity onboarding remain in
+  the next slices.
+- Guest transport decision: production rooms are proximity-only through direct
+  Bluetooth Low Energy, without requiring a shared TCP/IP segment or changing
+  either phone's internet route. Remote relays and internet control are excluded.
+  The current LAN listener remains a same-Wi-Fi browser fallback. The intended
+  room is a shared car or living room.
+- Guest browser slice 1 completed: the host APK bundles and serves a responsive
+  no-install controller for now playing, queue, search, individual requests and
+  voting when guest and host already share Wi-Fi. Its capability stays in the
+  URL fragment, is removed from the visible address after loading, and is sent
+  only in same-origin authorization headers. Responses disable caching,
+  referrers and external content.
+- Rejected after device testing: forcing every guest onto a local-only hotspot.
+  It removed internet access from Wi-Fi-only guests. Cross-network guest control
+  will use the Harmonicast app over Bluetooth while each phone retains its
+  existing Wi-Fi or cellular route; the browser remains the same-Wi-Fi fallback.
+- Bluetooth guest slice 1 completed and device validated: a clean Samsung found
+  the Pixel's advertised room, connected directly over BLE, and read the room
+  code and now-playing status without Plex credentials. Both phones remained on
+  their existing `scshub` Wi-Fi connection. Search, requests, queue updates, and
+  voting over BLE remain the next transport slice.
+- Clean-device validation on a Samsung browser confirmed accountless room load,
+  now-playing and queue updates, search, request submission, and immediate
+  disconnect when the Pixel host ended sharing. The run exposed and fixed local
+  request ordering: manual owner/guest requests now remain in arrival order ahead
+  of automatic upcoming tracks.
 
 New work is driven by real-use feedback. The standalone redesign is the active
 product direction; existing deployment remains supported until the on-device

@@ -1,13 +1,19 @@
 package io.github.sneedster.harmonicast
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -20,12 +26,14 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.*
@@ -34,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -48,11 +57,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.ContextCompat
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.media3.common.MediaItem
 import coil.compose.AsyncImage
 import com.google.common.util.concurrent.MoreExecutors
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import org.json.JSONArray
@@ -65,7 +78,9 @@ import kotlin.math.roundToInt
 class HarmonicastViewModel : ViewModel() {
     private lateinit var context: Context
     private lateinit var api: Api
-    private var socket: okhttp3.WebSocket? = null
+    private lateinit var core: HarmonicastCore
+    private lateinit var plex: LocalPlexClient
+    private var socket: CoreSubscription? = null
     private var socketReconnectJob: kotlinx.coroutines.Job? = null
     private var socketStopped = false
     var ready by mutableStateOf(false); private set
@@ -86,6 +101,8 @@ class HarmonicastViewModel : ViewModel() {
     var plexLibraries by mutableStateOf<List<PlexLibrary>>(emptyList()); private set
     var selectedPlexServer by mutableStateOf<PlexServer?>(null); private set
     var plexSourceLabel by mutableStateOf(""); private set
+    var playlists by mutableStateOf<List<PlexPlaylist>>(emptyList()); private set
+    var playlistsLoading by mutableStateOf(false); private set
     var results by mutableStateOf<List<Song>>(emptyList()); var query by mutableStateOf("")
     var searchLoading by mutableStateOf(false); private set
     var libraryArtistBrowse by mutableStateOf<LibraryArtistBrowse?>(null); private set
@@ -101,17 +118,31 @@ class HarmonicastViewModel : ViewModel() {
     private var searchGeneration = 0
     var controller by mutableStateOf<MediaController?>(null); private set
     var savedBaseUrl by mutableStateOf("")
+    var personalSetupActive by mutableStateOf(false); private set
+    val isPersonalMode: Boolean get() = ::api.isInitialized && api.profile.mode == HomeMode.PERSONAL_PLEX
+    private var personalPin: PlexPin? = null
+    private var personalAuthJob: kotlinx.coroutines.Job? = null
+    private var personalToken = ""
+    private var personalServerBase = ""
+    var nearbyRoomState by mutableStateOf(NearbyRoomState()); private set
+    private var nearbyRoomClient: NearbyRoomClient? = null
 
     fun initialize(appContext: Context) {
         if (::api.isInitialized) return
         context = appContext
         api = Api(context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
+        plex = LocalPlexClient(api.storage)
+        core = harmonicastCore(api)
         savedBaseUrl = api.base
+        ready = api.profile.homeReady
+        if (ready) {
+            connectPlaybackService()
+            refresh()
+        }
+    }
 
-        // Start our own MediaLibraryService while the activity is visible.
-        // MediaController normally binds a service token itself, but on recent
-        // Pixels that bind can remain pending when the service has never been
-        // started. A live service gives the controller a session immediately.
+    private fun connectPlaybackService() {
+        if (controller != null) return
         try {
             context.startService(Intent(context, HarmonicastMediaService::class.java))
         } catch (e: Exception) {
@@ -129,19 +160,37 @@ class HarmonicastViewModel : ViewModel() {
                 error = "Playback service could not start"
             }
         }, MoreExecutors.directExecutor())
-        
-        ready = api.base.isNotBlank() && api.token.isNotBlank()
-        if (ready) {
-            refresh()
-        }
     }
 
     fun serverUrl() = savedBaseUrl
-    fun mediaToken() = if (::api.isInitialized) api.token else ""
-    fun setServer(url: String) { api.setBase(url); savedBaseUrl = api.base; error = "" }
+    fun artworkUrl(song: Song) = core.library.artworkUrl(song)
+    fun setServer(url: String) { api.setBase(url); savedBaseUrl = api.base; ready = api.profile.ready; error = "" }
     fun authUrl(): String = "${api.base}/api/auth/plex?mobile_redirect=harmonicast%3A%2F%2Fauth"
+
+    fun beginPersonalSetup(openUrl: (String) -> Unit) {
+        viewModelScope.launch {
+            loading = true
+            error = ""
+            try {
+                personalSetupActive = true
+                val pending = plex.createPin()
+                personalPin = pending
+                startPersonalSignInPolling(pending)
+                openUrl(plex.authorizationUrl(pending))
+            } catch (e: Exception) {
+                personalSetupActive = false
+                error = e.message ?: "Could not start Plex sign-in"
+            } finally {
+                loading = false
+            }
+        }
+    }
     
     fun receiveAuth(uri: Uri) {
+        if (uri.host == "plex-auth") {
+            completePersonalSignIn()
+            return
+        }
         android.util.Log.d("HarmonicastAuth", "receiveAuth called with: $uri")
         val token = uri.fragment?.split("&")?.firstOrNull { it.startsWith("auth_token=") }?.removePrefix("auth_token=") 
             ?: uri.getQueryParameter("auth_token") 
@@ -152,29 +201,66 @@ class HarmonicastViewModel : ViewModel() {
             return
         }
         api.setToken(token)
-        ready = true
-        refresh()
+        ready = api.profile.ready
+        if (ready) {
+            core = harmonicastCore(api)
+            connectPlaybackService()
+            refresh()
+        }
+    }
+
+    private fun completePersonalSignIn() {
+        val pending = personalPin ?: return
+        if (personalAuthJob?.isActive != true) startPersonalSignInPolling(pending)
+    }
+
+    private fun startPersonalSignInPolling(pending: PlexPin) {
+        personalAuthJob?.cancel()
+        personalAuthJob = viewModelScope.launch {
+            var lastFailure: Exception? = null
+            try {
+                repeat(180) {
+                    val claimed = try {
+                        plex.readPin(pending).also { lastFailure = null }
+                    } catch (e: Exception) {
+                        lastFailure = e
+                        null
+                    }
+                    val token = claimed?.authToken
+                    if (!token.isNullOrBlank()) {
+                        personalToken = token
+                        plexServers = plex.ownedServers(token)
+                        if (plexServers.isEmpty()) error = "No owned Plex servers were found."
+                        return@launch
+                    }
+                    delay(1_000)
+                }
+                error = lastFailure?.message ?: "Plex sign-in timed out. Start it again to get a new PIN."
+            } catch (e: Exception) {
+                error = e.message ?: "Could not finish Plex sign-in"
+            }
+        }
     }
 
     fun refresh() {
         viewModelScope.launch {
             loading = true
             try {
-                val connection = JSONObject(api.json("connection"))
-                configured = connection.optBoolean("configured")
-                isHost = connection.optBoolean("isHost")
-                isActivePlayer = connection.optBoolean("isActivePlayer")
-                needsPlexSetup = connection.optBoolean("needsPlexSetup")
-                isPlexSetupOwner = connection.optBoolean("isSetupOwner")
+                val connection = core.guests.policy()
+                configured = connection.configured
+                isHost = connection.isHost
+                isActivePlayer = connection.isActivePlayer
+                needsPlexSetup = connection.needsPlexSetup
+                isPlexSetupOwner = connection.isSetupOwner
                 if (configured) {
-                    queue = songs(JSONArray(api.json("queue")))
-                    val npJson = api.json("now-playing")
-                    val np = JSONObject(npJson)
-                    nowPlaying = NowPlaying(np.optJSONObject("song")?.let(::song), np.optBoolean("isPlaying"))
-                    playbackPosition = np.optDouble("playbackPosition", 0.0).toFloat().coerceAtLeast(0f)
-                    ratedTrackShare = JSONObject(api.json("settings")).optInt("ratedTrackShare", 8).coerceIn(0, 10)
+                    queue = core.queue.songs()
+                    val state = core.playback.snapshot()
+                    nowPlaying = state.nowPlaying
+                    playbackPosition = state.positionSeconds.toFloat().coerceAtLeast(0f)
+                    ratedTrackShare = core.queue.ratedTrackShare()
                     ensureSocket()
                     if (isHost) loadPlexSource()
+                    if (api.profile.mode == HomeMode.PERSONAL_PLEX && playlists.isEmpty()) loadPlaylists()
                 } else if (needsPlexSetup && isPlexSetupOwner) {
                     loadPlexServers()
                 }
@@ -192,8 +278,8 @@ class HarmonicastViewModel : ViewModel() {
 
     private fun ensureSocket() {
         if (socketStopped || socket != null || !ready) return
-        socket = api.websocket(
-            onMessage = { refresh() },
+        socket = core.observe(
+            onEvent = { refresh() },
             onDisconnected = {
                 socket = null
                 if (!socketStopped) {
@@ -208,6 +294,10 @@ class HarmonicastViewModel : ViewModel() {
     }
 
     private fun loadPlexSource() {
+        api.profile.personalSource?.let {
+            plexSourceLabel = "${it.serverName} · ${it.libraryName}"
+            return
+        }
         viewModelScope.launch {
             runCatching {
                 val source = JSONObject(api.json("plex/source"))
@@ -245,6 +335,12 @@ class HarmonicastViewModel : ViewModel() {
         viewModelScope.launch {
             loading = true
             try {
+                if (personalSetupActive) {
+                    personalServerBase = plex.connect(personalToken, server)
+                    plexLibraries = plex.musicLibraries(personalServerBase, personalToken)
+                    if (plexLibraries.isEmpty()) error = "This Plex server has no Music libraries."
+                    return@launch
+                }
                 val response = JSONObject(api.json("setup/plex/servers/${URLEncoder.encode(server.machineIdentifier, "UTF-8")}/libraries"))
                 val items = response.optJSONArray("libraries") ?: JSONArray()
                 plexLibraries = List(items.length()) { index ->
@@ -262,9 +358,95 @@ class HarmonicastViewModel : ViewModel() {
 
     fun selectPlexLibrary(library: PlexLibrary) {
         val server = selectedPlexServer ?: return
+        if (personalSetupActive) {
+            api.profile.savePersonalSource(PersonalPlexSource(
+                personalToken,
+                personalServerBase,
+                server.machineIdentifier,
+                server.name,
+                library.key,
+                library.title,
+            ))
+            core = harmonicastCore(api)
+            ready = api.profile.homeReady
+            personalSetupActive = false
+            context.startService(
+                Intent(context, HarmonicastMediaService::class.java)
+                    .setAction(HarmonicastMediaService.RELOAD_PROFILE_ACTION)
+            )
+            connectPlaybackService()
+            refresh()
+            return
+        }
         action("setup/plex/select", "POST", JSONObject()
             .put("machineIdentifier", server.machineIdentifier)
             .put("libraryKey", library.key)) { refresh() }
+    }
+
+    fun setGuestControl(enabled: Boolean) {
+        val action = if (enabled) HarmonicastMediaService.ENABLE_GUEST_CONTROL_ACTION
+        else HarmonicastMediaService.DISABLE_GUEST_CONTROL_ACTION
+        context.startService(Intent(context, HarmonicastMediaService::class.java).setAction(action))
+    }
+
+    fun scanNearbyRoom() {
+        if (!::context.isInitialized) return
+        val client = nearbyRoomClient ?: NearbyRoomClient(context) { state -> nearbyRoomState = state }
+            .also { nearbyRoomClient = it }
+        client.scan()
+    }
+
+    fun leaveNearbyRoom() {
+        nearbyRoomClient?.close()
+        nearbyRoomClient = null
+        nearbyRoomState = NearbyRoomState()
+    }
+
+    fun loadPlaylists() {
+        if (playlistsLoading) return
+        viewModelScope.launch {
+            playlistsLoading = true
+            try {
+                playlists = core.library.playlists()
+            } catch (e: Exception) {
+                error = e.message ?: "Could not load Plex playlists"
+            } finally {
+                playlistsLoading = false
+            }
+        }
+    }
+
+    fun loadPlaylist(playlist: PlexPlaylist, action: PlaylistAction) {
+        viewModelScope.launch {
+            playlistsLoading = true
+            try {
+                var tracks = core.library.playlistTracks(playlist.id)
+                if (action == PlaylistAction.SHUFFLE) tracks = tracks.shuffled()
+                if (tracks.isEmpty()) {
+                    error = "${playlist.title} has no playable tracks"
+                    return@launch
+                }
+                when (action) {
+                    PlaylistAction.PLAY, PlaylistAction.SHUFFLE -> {
+                        core.queue.clear()
+                        core.queue.addAll(tracks)
+                        controller?.seekToNext()
+                    }
+                    PlaylistAction.NEXT -> core.queue.addAll(tracks, next = true)
+                    PlaylistAction.QUEUE -> core.queue.addAll(tracks)
+                }
+                val skipped = (playlist.trackCount - tracks.size).coerceAtLeast(0)
+                showTemporaryNotice(
+                    "${playlist.title} · ${tracks.size} tracks" +
+                        if (skipped > 0) " · $skipped unavailable skipped" else "",
+                )
+                refresh()
+            } catch (e: Exception) {
+                error = e.message ?: "Could not load playlist"
+            } finally {
+                playlistsLoading = false
+            }
+        }
     }
 
     fun search() {
@@ -276,15 +458,12 @@ class HarmonicastViewModel : ViewModel() {
             libraryArtistBrowse = null
             try {
                 val term = query.trim()
-                val localResults = songs(JSONArray(api.json("search?q=" + URLEncoder.encode(term, "UTF-8"))))
-                val artist = JSONObject(api.json("search/artist?q=" + URLEncoder.encode(term, "UTF-8")))
-                    .optJSONObject("artist")?.let { item ->
-                        LibraryArtistBrowse(item.optString("name", term), songs(item.optJSONArray("songs") ?: JSONArray()))
-                    }
+                val localResults = core.library.search(term)
+                val artist = core.library.artist(term)
                 if (generation != searchGeneration) return@launch
                 results = localResults
                 libraryArtistBrowse = artist
-                if (localResults.isEmpty() || artist != null) {
+                if (api.profile.mode == HomeMode.REMOTE_SERVER && (localResults.isEmpty() || artist != null)) {
                     val extension = JSONObject(api.json("extensions/music-sources")).optJSONObject("extension")
                         ?.let { MusicSourceExtension(it.optString("id"), it.optString("displayName"), it.optBoolean("available")) }
                     if (generation == searchGeneration) musicSourceExtension = extension?.takeIf { it.available }
@@ -457,20 +636,20 @@ class HarmonicastViewModel : ViewModel() {
         } else closeMusicSource()
     }
 
-    fun add(song: Song) = action("queue", "POST", JSONObject().put("song", songJson(song))) { refresh() }
-    fun remove(song: Song) = action("queue/${URLEncoder.encode(song.id, "UTF-8")}", "DELETE", JSONObject()) { refresh() }
-    fun vote(up: Boolean) = action("vote", "POST", JSONObject().put("vote", if (up) "up" else "down"))
-    fun claim() = action("player/claim", "POST", JSONObject()) { refresh() }
-    fun clearQueue() = action("queue", "DELETE", JSONObject()) { refresh() }
-    fun saveRatedTrackShare(share: Int) {
-        if (!isHost || settingsSaving) return
+    fun add(song: Song) = coreAction { core.queue.add(song); refresh() }
+    fun remove(song: Song) = coreAction { core.queue.remove(song.id); refresh() }
+    fun vote(up: Boolean) = coreAction { core.guests.vote(up) }
+    fun claim() = coreAction { core.playback.claim(); refresh() }
+    fun clearQueue() = coreAction { core.queue.clear(); refresh() }
+    fun saveRatedTrackShare(share: Int, announce: Boolean = true) {
+        if (!isHost) return
+        val value = share.coerceIn(0, 10)
+        ratedTrackShare = value
         viewModelScope.launch {
             settingsSaving = true
             try {
-                val value = share.coerceIn(0, 10)
-                api.json("settings", "PUT", JSONObject().put("ratedTrackShare", value))
-                ratedTrackShare = value
-                showTemporaryNotice("Automatic mix saved")
+                core.queue.setRatedTrackShare(value)
+                if (announce) showTemporaryNotice("Automatic mix saved")
             } catch (e: Exception) {
                 error = e.message ?: "Could not save automatic mix"
             } finally {
@@ -482,7 +661,7 @@ class HarmonicastViewModel : ViewModel() {
     fun queueSimilar() {
         viewModelScope.launch {
             try {
-                val added = JSONObject(api.json("queue/similar", "POST", JSONObject())).optInt("added", 0)
+                val added = core.queue.radio()
                 if (added > 0) showTemporaryNotice("Track Radio ready · $added songs queued")
                 else error = "No Track Radio songs were found"
                 refresh()
@@ -504,7 +683,7 @@ class HarmonicastViewModel : ViewModel() {
     fun startRandomPlayback() {
         viewModelScope.launch {
             try {
-                api.json("jukebox", "POST", JSONObject().put("enabled", true))
+                core.queue.enableAutomaticPlayback()
                 controller?.seekToNext()
             } catch (e: Exception) {
                 error = "Failed to start random playback"
@@ -521,7 +700,7 @@ class HarmonicastViewModel : ViewModel() {
         if (isActivePlayer) controller?.seekToPrevious()
     }
 
-    fun nextSong() = action("player/skip", "POST", JSONObject())
+    fun nextSong() = coreAction { core.playback.skip() }
     fun playQueued(song: Song) {
         if (!isActivePlayer) return
         controller?.setMediaItem(MediaItem.Builder().setMediaId(song.id).build())
@@ -536,20 +715,18 @@ class HarmonicastViewModel : ViewModel() {
             artistDiscovery = null
             artistDiscoveryError = ""
             try {
-                val item = JSONObject(api.json("plex/tracks/${URLEncoder.encode(song.id, "UTF-8")}/discovery"))
-                fun strings(key: String) = item.optJSONArray(key)?.let { a -> List(a.length()) { a.optString(it) }.filter { it.isNotBlank() } } ?: emptyList()
-                val album = item.optJSONObject("album")
-                artistDiscovery = ArtistDiscovery(
-                    item.optString("name", song.artist), item.optString("bio"), strings("genres"), strings("similarArtists"),
-                    album?.optString("name").orEmpty(),
-                    album?.takeIf { it.has("year") && !it.isNull("year") }?.optInt("year"),
-                    album?.optString("summary").orEmpty(),
-                )
+                artistDiscovery = core.library.discovery(song)
             } catch (e: Exception) {
                 artistDiscoveryError = e.message ?: "Could not load artist discovery"
             } finally {
                 artistDiscoveryLoading = false
             }
+        }
+    }
+
+    private fun coreAction(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try { block() } catch (e: Exception) { error = e.message ?: "Request failed" }
         }
     }
 
@@ -567,11 +744,12 @@ class HarmonicastViewModel : ViewModel() {
     override fun onCleared() {
         socketStopped = true
         socketReconnectJob?.cancel()
-        socket?.close(1000, null)
+        socket?.close()
+        nearbyRoomClient?.close()
         controller?.let { MediaController.releaseFuture(com.google.common.util.concurrent.Futures.immediateFuture(it)) }
+        super.onCleared()
     }
 
-    private fun songs(a: JSONArray) = List(a.length()) { song(a.getJSONObject(it)) }
     private fun recordings(a: JSONArray) = List(a.length()) { index ->
         val item = a.getJSONObject(index)
         MusicSourceRecording(item.optString("id"), item.optString("title"), item.optString("artist"),
@@ -582,17 +760,10 @@ class HarmonicastViewModel : ViewModel() {
         val item = a.getJSONObject(index)
         MusicSourceAlbum(item.optString("id"), item.optString("title"), item.optString("year").takeIf { !item.isNull("year") }, item.optString("type").takeIf { !item.isNull("type") })
     }
-    private fun song(o: JSONObject) = Song(
-        o.optString("id"), o.optString("title"), o.optString("artist"), o.optString("album"),
-        o.optInt("duration"), o.optString("coverArt"),
-        if (o.has("rating") && !o.isNull("rating")) o.optDouble("rating").coerceIn(0.0, 10.0) else null,
-        o.optString("addedByEmail"), o.optBoolean("isManual", true),
-        year = if (o.has("year") && !o.isNull("year")) o.optInt("year").takeIf { it > 0 } else null,
-    )
-    private fun songJson(s: Song) = JSONObject().put("id", s.id).put("title", s.title).put("artist", s.artist).put("album", s.album).put("year", s.year).put("duration", s.duration).put("coverArt", s.coverArt)
 }
 
 data class MusicSourceDialog(val id: String, val displayName: String, val mode: String, val query: String, val requestId: String? = null)
+enum class PlaylistAction { PLAY, SHUFFLE, NEXT, QUEUE }
 
 class MainActivity : ComponentActivity() {
     private var authUri by mutableStateOf<Uri?>(null)
@@ -622,24 +793,137 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun HarmonicastApp(vm: HarmonicastViewModel) {
     MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xffd0a2ff))) {
-        if (!vm.ready) Login(vm) else Home(vm)
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+        ) {
+            when {
+                vm.personalSetupActive -> PersonalSetupPage(vm)
+                !vm.ready -> Login(vm)
+                else -> Home(vm)
+            }
+        }
+    }
+}
+
+@Composable private fun PersonalSetupPage(vm: HarmonicastViewModel) {
+    val context = LocalContext.current
+    Box(Modifier.fillMaxSize().padding(28.dp), Alignment.Center) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Set up personal mode", style = MaterialTheme.typography.headlineSmall)
+            Text("Choose the Plex server and Music library this phone will play directly.")
+            PersonalPlexSetup(vm)
+            if (vm.plexServers.isEmpty()) {
+                OutlinedButton(
+                    onClick = {
+                        vm.beginPersonalSetup { url ->
+                            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+                        }
+                    },
+                    enabled = !vm.loading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Restart Plex sign-in")
+                }
+            }
+            if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (vm.error.isNotBlank()) Text(vm.error, color = MaterialTheme.colorScheme.error)
+        }
     }
 }
 
 @Composable private fun Login(vm: HarmonicastViewModel) {
     var server by remember(vm.savedBaseUrl) { mutableStateOf(vm.serverUrl()) }
     val context = LocalContext.current
+    val nearbyPermissions = remember { bluetoothPermissions(advertise = false) }
+    val nearbyPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        if (nearbyPermissions.all {
+                result[it] == true || ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            }) vm.scanNearbyRoom()
+        else vm.error = "Nearby devices permission is required to find a room"
+    }
     Box(Modifier.fillMaxSize().padding(28.dp), Alignment.Center) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Harmonicast", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
-            Text("Connect to your self-hosted jukebox.")
-            OutlinedTextField(server, { server = it }, label = { Text("Server URL") }, placeholder = { Text("https://harmonicast.example.com") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Button(onClick = { vm.setServer(server); CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(vm.authUrl())) }, enabled = server.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+            Text("Your personal Plex music player.")
+            Button(
+                onClick = {
+                    vm.beginPersonalSetup { url ->
+                        CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+                    }
+                },
+                enabled = !vm.loading,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Icon(Icons.AutoMirrored.Filled.Login, null)
                 Spacer(Modifier.width(8.dp))
                 Text("Sign in with Plex")
             }
+            if (vm.personalSetupActive) {
+                PersonalPlexSetup(vm)
+            } else {
+                HorizontalDivider()
+                Text("Existing Harmonicast server", style = MaterialTheme.typography.titleSmall)
+                OutlinedTextField(server, { server = it }, label = { Text("Server URL") }, placeholder = { Text("https://harmonicast.example.com") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedButton(onClick = { vm.setServer(server); CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(vm.authUrl())) }, enabled = server.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                    Text("Connect during migration")
+                }
+            }
+            HorizontalDivider()
+            Text("Guest mode", style = MaterialTheme.typography.titleSmall)
+            Text("Join a nearby host over Bluetooth. This phone keeps its current internet connection and does not need Plex credentials.")
+            Button(
+                onClick = {
+                    if (nearbyPermissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
+                        vm.scanNearbyRoom()
+                    } else nearbyPermissionLauncher.launch(nearbyPermissions)
+                },
+                enabled = !vm.nearbyRoomState.scanning,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (vm.nearbyRoomState.scanning) "Looking for nearby room…" else "Join nearby room")
+            }
+            val nearby = vm.nearbyRoomState
+            if (nearby.connected) {
+                Text("Connected to room ${nearby.roomCode}", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (nearby.title.isBlank()) "Nothing is playing" else "${nearby.title} — ${nearby.artist}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = vm::leaveNearbyRoom, modifier = Modifier.fillMaxWidth()) { Text("Leave room") }
+            } else if (nearby.error.isNotBlank()) {
+                Text(nearby.error, color = MaterialTheme.colorScheme.error)
+            }
+            if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (vm.error.isNotBlank()) Text(vm.error, color = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+@Composable private fun PersonalPlexSetup(vm: HarmonicastViewModel) {
+    when {
+        vm.plexServers.isEmpty() -> Text("Finish signing in with Plex, then return here.")
+        vm.selectedPlexServer == null -> {
+            Text("Choose your Plex server", style = MaterialTheme.typography.titleMedium)
+            vm.plexServers.forEach { server ->
+                OutlinedButton(onClick = { vm.choosePlexServer(server) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(server.name)
+                }
+            }
+        }
+        else -> {
+            Text("${vm.selectedPlexServer?.name} — choose a Music library", style = MaterialTheme.typography.titleMedium)
+            vm.plexLibraries.forEach { library ->
+                Button(onClick = { vm.selectPlexLibrary(library) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(library.title)
+                }
+            }
         }
     }
 }
@@ -692,6 +976,7 @@ class MainActivity : ComponentActivity() {
                         "Now playing" to Icons.Default.MusicNote,
                         "Queue" to Icons.AutoMirrored.Filled.QueueMusic,
                         "Search" to Icons.Default.Search,
+                        "Playlists" to Icons.AutoMirrored.Filled.PlaylistPlay,
                         "Settings" to Icons.Default.Settings,
                     )
                     items.forEachIndexed { index, item ->
@@ -712,6 +997,7 @@ class MainActivity : ComponentActivity() {
                 0 -> Now(vm) { term -> vm.query = term; vm.search(); tab = 2 }
                 1 -> Queue(vm)
                 2 -> Search(vm)
+                3 -> PlaylistsScreen(vm)
                 else -> SettingsScreen(vm)
             }
             if (vm.musicSourceDialog != null) MusicSourceSheet(vm)
@@ -725,14 +1011,147 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable private fun PlaylistsScreen(vm: HarmonicastViewModel) {
+    if (!vm.isPersonalMode) {
+        Box(Modifier.fillMaxSize().padding(24.dp), Alignment.Center) {
+            Text("Plex playlists become available when this device moves to personal mode.", textAlign = TextAlign.Center)
+        }
+        return
+    }
+    LaunchedEffect(Unit) { vm.loadPlaylists() }
+    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Plex playlists", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            IconButton(onClick = vm::loadPlaylists, enabled = !vm.playlistsLoading) {
+                Icon(Icons.Default.Refresh, "Refresh playlists")
+            }
+        }
+        if (vm.playlistsLoading && vm.playlists.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (!vm.playlistsLoading && vm.playlists.isEmpty()) {
+            Text("No audio playlists were found in this Plex account.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(vm.playlists, key = PlexPlaylist::id) { playlist ->
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(playlist.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        if (playlist.trackCount > 0) Text("${playlist.trackCount} tracks", style = MaterialTheme.typography.bodySmall)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.PLAY) }) { Text("Play") }
+                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.SHUFFLE) }) { Text("Shuffle") }
+                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.NEXT) }) { Text("Next") }
+                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.QUEUE) }) { Text("Queue") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable private fun SettingsScreen(vm: HarmonicastViewModel) {
     var share by remember(vm.ratedTrackShare) { mutableFloatStateOf(vm.ratedTrackShare.toFloat()) }
+    val context = LocalContext.current
+    val hostPermissions = remember { bluetoothPermissions(advertise = true) }
+    val hostPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        if (hostPermissions.all {
+                result[it] == true || ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            }) vm.setGuestControl(true)
+        else vm.error = "Nearby devices permission is required to open a Bluetooth room"
+    }
     val value = share.roundToInt().coerceIn(0, 10)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        if (!vm.isPersonalMode) {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Personal mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Play directly from Plex on this phone. Your current server profile remains saved during migration.")
+                    Button(
+                        onClick = {
+                            vm.beginPersonalSetup { url ->
+                                CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+                            }
+                        },
+                        enabled = !vm.loading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Move this device to personal mode")
+                    }
+                }
+            }
+        }
+        if (vm.isPersonalMode) {
+            val room = HarmonicastMediaService.roomShareState.value
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Allow guest control", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Temporary and accountless", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = room.enabled,
+                            onCheckedChange = { enabled ->
+                                if (!enabled) vm.setGuestControl(false)
+                                else if (hostPermissions.all {
+                                        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+                                    }) vm.setGuestControl(true)
+                                else hostPermissionLauncher.launch(hostPermissions)
+                            },
+                        )
+                    }
+                    Text(
+                        "Guests can search, request tracks, view the queue and now playing, and vote. Plex credentials and owner controls stay on this phone.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (room.error.isNotBlank()) {
+                        Text(room.error, color = MaterialTheme.colorScheme.error)
+                    }
+                    if (room.enabled) {
+                        Text("Room ${room.roomCode}", style = MaterialTheme.typography.headlineSmall)
+                        Text(
+                            if (room.nearbyAvailable) "Bluetooth room is ready" else "Bluetooth is unavailable; same-Wi-Fi access still works",
+                            color = if (room.nearbyAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        )
+                        Text(
+                            "Guests already on this Wi-Fi can scan the code below. Bluetooth joining will use the Harmonicast guest app and keep each phone's existing internet connection.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text("Same-Wi-Fi browser controller", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        RoomQrCode(room.joinUrl, "Open Harmonicast room ${room.roomCode}")
+                        Button(
+                            onClick = {
+                                context.startActivity(Intent.createChooser(
+                                    Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, room.joinUrl)
+                                    },
+                                    "Share Harmonicast room",
+                                ))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Share guest link")
+                        }
+                        OutlinedButton(onClick = { vm.setGuestControl(false) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("End guest room")
+                        }
+                    }
+                }
+            }
+        }
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -746,11 +1165,14 @@ class MainActivity : ComponentActivity() {
                 )
                 Slider(
                     value = share,
-                    onValueChange = { share = it.roundToInt().toFloat() },
-                    onValueChangeFinished = { vm.saveRatedTrackShare(value) },
+                    onValueChange = {
+                        share = it.roundToInt().toFloat()
+                        if (vm.isPersonalMode) vm.saveRatedTrackShare(share.roundToInt(), announce = false)
+                    },
+                    onValueChangeFinished = { vm.saveRatedTrackShare(share.roundToInt()) },
                     valueRange = 0f..10f,
                     steps = 9,
-                    enabled = vm.isHost && !vm.settingsSaving,
+                    enabled = vm.isHost,
                 )
                 Text(
                     when (value) {
@@ -1078,6 +1500,39 @@ private fun formatDuration(totalSeconds: Int): String {
     return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
+private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && advertise -> arrayOf(
+        Manifest.permission.BLUETOOTH_ADVERTISE,
+        Manifest.permission.BLUETOOTH_CONNECT,
+    )
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> arrayOf(
+        Manifest.permission.BLUETOOTH_SCAN,
+        Manifest.permission.BLUETOOTH_CONNECT,
+    )
+    else -> arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+}
+
+@Composable private fun RoomQrCode(value: String, description: String) {
+    val bitmap = remember(value) {
+        val matrix = QRCodeWriter().encode(
+            value,
+            BarcodeFormat.QR_CODE,
+            640,
+            640,
+            mapOf(EncodeHintType.MARGIN to 1),
+        )
+        val pixels = IntArray(matrix.width * matrix.height) { index ->
+            if (matrix[index % matrix.width, index / matrix.width]) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+        }
+        Bitmap.createBitmap(matrix.width, matrix.height, Bitmap.Config.RGB_565).apply {
+            setPixels(pixels, 0, matrix.width, 0, 0, matrix.width, matrix.height)
+        }.asImageBitmap()
+    }
+    Surface(color = Color.White, shape = RoundedCornerShape(14.dp)) {
+        Image(bitmap, description, Modifier.fillMaxWidth().aspectRatio(1f).padding(10.dp))
+    }
+}
+
 @Composable private fun Queue(vm: HarmonicastViewModel) {
     var confirmClear by remember { mutableStateOf(false) }
     if (confirmClear) {
@@ -1303,7 +1758,7 @@ private fun formatDuration(totalSeconds: Int): String {
 }
 
 @Composable private fun Cover(vm: HarmonicastViewModel, song: Song, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    val url = if (song.coverArt.isBlank()) null else "${vm.serverUrl()}/api/cover-art/${URLEncoder.encode(song.coverArt, "UTF-8")}?size=300&token=${URLEncoder.encode(vm.mediaToken(), "UTF-8")}"
+    val url = vm.artworkUrl(song)
     val shape = RoundedCornerShape(if (size >= 180.dp) 24.dp else 12.dp)
     val coverModifier = Modifier.size(size).clip(shape).then(modifier)
     if (url == null) Icon(Icons.Default.Album, null, coverModifier) else AsyncImage(url, null, coverModifier, contentScale = ContentScale.Crop)
