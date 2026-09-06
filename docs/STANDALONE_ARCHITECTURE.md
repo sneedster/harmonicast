@@ -292,12 +292,12 @@ did not receive the current capability cannot control the host.
   with D-pad focus and reliable reconnect behavior.
 - Make the kiosk the default UI on Android TV and Shield-class devices while
   retaining an explicit room-display choice on tablets.
-- Default a paired display to remote control with playback on the host. A TV may
-  become the active audio player only when the owner selects **Play on this
-  display** from the host phone; the host phone can revoke that role and take
+- Default a paired native app to remote control with playback on the host.
+  A TV or phone running Harmonicast may become the active audio player only
+  when the owner selects **Play on this device** from the host phone; the host phone can revoke that role and take
   playback back. The display link alone never grants Plex credentials or lets a
-  display promote itself. Interactive kiosk control is the first room-display
-  slice, and this host-initiated player promotion is the next slice.
+  display promote itself. Browser clients are ineligible for audio transfer.
+  The native big-screen interface precedes host-initiated player promotion.
 
 Acceptance: a tablet or Shield can pair with a room and retain the recognizable
 kiosk experience without an external Harmonicast server.
@@ -424,3 +424,12 @@ the queue alternates participant lanes ahead of automatic entries, preventing
 one person from occupying every next slot. A later mixed-transport check kept
 that Samsung connected over BLE while the Fire tablet joined the same room over
 Wi-Fi and successfully submitted a request.
+
+### Native playback destinations
+
+Playback transfer is restricted to native Harmonicast apps: Google TV and phones
+are eligible, including a phone connected to Bluetooth speakers or an audio system.
+The host explicitly approves transfer and can take it back. Browser clients remain
+controllers and are never eligible for audio transfer. Native TV uses the same APK
+and playback core with a landscape layout, large text, and remote navigation.
+The TV UI foundation precedes implementing the native handoff protocol.

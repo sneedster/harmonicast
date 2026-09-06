@@ -146,8 +146,10 @@
   and the upcoming queue, searches and queues music, and controls play/pause and
   Next while audio remains on the host. It cannot vote or access Plex data,
   credentials, source selection, or app settings. A following slice will let
-  the host phone explicitly move audio to a trusted TV display and take it back;
-  the display cannot promote itself.
+  the host phone explicitly move audio to a trusted native app on Google TV or
+  another phone and take it back; browser clients are never audio destinations.
+  The native TV interface comes first: the same APK and playback core, with a
+  landscape big-screen layout, remote focus, and phone-assisted Plex sign-in.
 - Clean-device validation on a Samsung browser confirmed accountless room load,
   now-playing and queue updates, search, request submission, and immediate
   disconnect when the Pixel host ended sharing. The run exposed and fixed local

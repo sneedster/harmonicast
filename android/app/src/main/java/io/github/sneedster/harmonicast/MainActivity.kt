@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -27,6 +28,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -46,6 +48,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -87,6 +93,7 @@ class HarmonicastViewModel : ViewModel() {
     private var socket: CoreSubscription? = null
     private var socketReconnectJob: kotlinx.coroutines.Job? = null
     private var socketStopped = false
+    var tvAuthorizationUrl by mutableStateOf(""); private set
     var ready by mutableStateOf(false); private set
     var loading by mutableStateOf(false); var error by mutableStateOf("")
     var notice by mutableStateOf(""); private set
@@ -185,7 +192,8 @@ class HarmonicastViewModel : ViewModel() {
                 val pending = plex.createPin()
                 personalPin = pending
                 startPersonalSignInPolling(pending)
-                openUrl(plex.authorizationUrl(pending))
+                if (context.isTelevision()) tvAuthorizationUrl = plex.authorizationUrl(pending)
+                else openUrl(plex.authorizationUrl(pending))
             } catch (e: Exception) {
                 personalSetupActive = false
                 error = e.message ?: "Could not start Plex sign-in"
@@ -199,6 +207,7 @@ class HarmonicastViewModel : ViewModel() {
         val source = api.profile.personalSource ?: return
         setGuestControl(false)
         personalAuthJob?.cancel()
+        tvAuthorizationUrl = ""
         personalPin = null
         personalToken = source.accountToken
         personalServerToken = ""
@@ -224,6 +233,7 @@ class HarmonicastViewModel : ViewModel() {
     fun cancelPersonalSetup() {
         if (!api.profile.homeReady) return
         personalAuthJob?.cancel()
+        tvAuthorizationUrl = ""
         personalPin = null
         personalSetupActive = false
         selectedPlexServer = null
@@ -237,6 +247,7 @@ class HarmonicastViewModel : ViewModel() {
         setGuestControl(false)
         leaveNearbyRoom()
         personalAuthJob?.cancel()
+        tvAuthorizationUrl = ""
         personalPin = null
         socketReconnectJob?.cancel()
         socket?.close()
@@ -305,6 +316,7 @@ class HarmonicastViewModel : ViewModel() {
                     }
                     val token = claimed?.authToken
                     if (!token.isNullOrBlank()) {
+                        tvAuthorizationUrl = ""
                         personalToken = token
                         plexServers = plex.accessibleServers(token)
                         if (plexServers.isEmpty()) error = "No accessible Plex servers were found."
@@ -312,6 +324,7 @@ class HarmonicastViewModel : ViewModel() {
                     }
                     delay(1_000)
                 }
+                tvAuthorizationUrl = ""
                 error = lastFailure?.message ?: "Plex sign-in timed out. Start it again to get a new PIN."
             } catch (e: Exception) {
                 error = e.message ?: "Could not finish Plex sign-in"
@@ -873,12 +886,23 @@ class HarmonicastViewModel : ViewModel() {
 data class MusicSourceDialog(val id: String, val displayName: String, val mode: String, val query: String, val requestId: String? = null)
 enum class PlaylistAction { PLAY, SHUFFLE, NEXT, QUEUE }
 
+private fun Context.isTelevision(): Boolean =
+    packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
+        packageManager.hasSystemFeature(PackageManager.FEATURE_TELEVISION)
+
+@Composable private fun useBigScreenLayout(): Boolean {
+    val config = LocalConfiguration.current
+    return LocalContext.current.isTelevision() ||
+        (config.screenWidthDp >= 720 && config.screenWidthDp > config.screenHeightDp)
+}
+
 class MainActivity : ComponentActivity() {
     private var authUri by mutableStateOf<Uri?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         authUri = intent?.data
+        if (isTelevision()) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
             val vm: HarmonicastViewModel = viewModel()
             LaunchedEffect(Unit) { vm.initialize(applicationContext) }
@@ -1153,9 +1177,15 @@ class MainActivity : ComponentActivity() {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(if (vm.personalSetupCanCancel) "Change Plex music" else "Set up personal mode", style = MaterialTheme.typography.headlineSmall)
-            Text("Choose the Plex server and Music library this phone will play directly.")
+            Text("Choose the Plex server and Music library this device will play directly.")
+            if (vm.tvAuthorizationUrl.isNotBlank()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.width(220.dp)) { RoomQrCode(vm.tvAuthorizationUrl, "Sign in to Plex on your phone") }
+                    Text("Scan with your phone to sign in to Plex.\nThis TV will continue automatically.", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                }
+            }
             PersonalPlexSetup(vm)
-            if (vm.plexServers.isEmpty()) {
+            if (vm.plexServers.isEmpty() && vm.tvAuthorizationUrl.isBlank()) {
                 OutlinedButton(
                     onClick = {
                         vm.beginPersonalSetup { url ->
@@ -1304,6 +1334,7 @@ class MainActivity : ComponentActivity() {
         PlexMusicSetup(vm)
         return
     }
+    if (useBigScreenLayout()) { BigScreenHome(vm); return }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1375,6 +1406,96 @@ class MainActivity : ComponentActivity() {
                 Snackbar(modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp), action = {}) {
                     Text(message)
                 }
+            }
+        }
+    }
+}
+
+@Composable private fun TvAction(
+    label: String,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.onFocusChanged { focused = it.isFocused }
+            .border(if (focused) 3.dp else 0.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(12.dp)),
+        shape = RoundedCornerShape(12.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (selected || focused) MaterialTheme.colorScheme.primary else Color(0xff30243a),
+            contentColor = if (selected || focused) Color(0xff211429) else Color.White,
+        ),
+    ) { Text(label, maxLines = 1) }
+}
+
+@Composable private fun BigScreenHome(vm: HarmonicastViewModel) {
+    var tab by remember { mutableIntStateOf(0) }
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { first.requestFocus() }
+    BackHandler(tab != 0) { tab = 0; first.requestFocus() }
+    Row(Modifier.fillMaxSize().padding(WindowInsets.safeDrawing.asPaddingValues()).padding(24.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Column(Modifier.width(156.dp).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Harmonicast", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall)
+            Spacer(Modifier.height(12.dp))
+            listOf("Now playing", "Queue", "Search", "Playlists", "Settings").forEachIndexed { index, label ->
+                TvAction(label, Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(first) else Modifier), selected = tab == index) { tab = index }
+            }
+        }
+        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (tab) {
+                    0 -> BigScreenNow(vm)
+                    1 -> Queue(vm)
+                    2 -> Search(vm)
+                    3 -> PlaylistsScreen(vm)
+                    else -> SettingsScreen(vm)
+                }
+            }
+            if (tab != 0 && vm.nowPlaying.song != null) {
+                Text("${vm.nowPlaying.song?.title} · ${vm.nowPlaying.song?.artist}", maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.primary)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TvAction("Previous", enabled = vm.isActivePlayer) { vm.previousSong() }
+                TvAction(if (vm.nowPlaying.isPlaying) "Pause" else "Play", enabled = vm.isActivePlayer) {
+                    if (vm.nowPlaying.song == null) vm.startRandomPlayback() else vm.toggle()
+                }
+                TvAction("Next", enabled = vm.isActivePlayer) { vm.nextSong() }
+            }
+            val message = vm.error.ifBlank { vm.notice }
+            if (message.isNotBlank()) Text(message, maxLines = 2, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+    if (vm.musicSourceDialog != null) MusicSourceSheet(vm)
+}
+
+@Composable private fun BigScreenNow(vm: HarmonicastViewModel) {
+    val song = vm.nowPlaying.song
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val artSize = minOf(maxHeight * 0.85f, maxWidth * 0.43f)
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (song != null) Cover(vm, song, artSize)
+            else Icon(Icons.Default.Album, null, Modifier.size(artSize), tint = MaterialTheme.colorScheme.primary)
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(if (vm.nowPlaying.isPlaying) "NOW PLAYING" else "READY TO PLAY", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                Text(song?.title ?: "Your music, on the big screen", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Text(song?.artist.orEmpty(), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+                Text(song?.album.orEmpty(), style = MaterialTheme.typography.titleMedium)
+                if (song != null && song.duration > 0) {
+                    LinearProgressIndicator(progress = { (vm.playbackPosition / song.duration.toFloat()).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                    Text("${formatDuration(vm.playbackPosition.toInt())} / ${formatDuration(song.duration.toInt())}")
+                }
+                if (song != null && vm.canWriteToPlex) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TvAction("Vote down") { vm.vote(false) }
+                        TvAction("Vote up") { vm.vote(true) }
+                    }
+                }
+                if (vm.isHost && !vm.isActivePlayer) TvAction("Play on this device") { vm.claim() }
             }
         }
     }
