@@ -82,8 +82,14 @@
 - Bluetooth guest slice 1 completed and device validated: a clean Samsung found
   the Pixel's advertised room, connected directly over BLE, and read the room
   code and now-playing status without Plex credentials. Both phones remained on
-  their existing `scshub` Wi-Fi connection. Search, requests, queue updates, and
-  voting over BLE remain the next transport slice.
+  their existing `scshub` Wi-Fi connection. The guest actively refreshes room
+  status and now clears its connected state when the host ends sharing, validated
+  on the same Pixel/Samsung pair. Search, requests, queue updates, and voting over
+  BLE remain the next transport slice.
+- Personal-mode Settings now shows the selected Plex source, can reopen the
+  server/library picker without another sign-in, and can explicitly sign out.
+  Signing out clears Plex credentials and persisted playback records that may
+  contain authenticated stream URLs.
 - Clean-device validation on a Samsung browser confirmed accountless room load,
   now-playing and queue updates, search, request submission, and immediate
   disconnect when the Pixel host ended sharing. The run exposed and fixed local

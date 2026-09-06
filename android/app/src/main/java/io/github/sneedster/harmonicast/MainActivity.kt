@@ -120,6 +120,7 @@ class HarmonicastViewModel : ViewModel() {
     var savedBaseUrl by mutableStateOf("")
     var personalSetupActive by mutableStateOf(false); private set
     val isPersonalMode: Boolean get() = ::api.isInitialized && api.profile.mode == HomeMode.PERSONAL_PLEX
+    val personalSetupCanCancel: Boolean get() = ::api.isInitialized && api.profile.homeReady
     private var personalPin: PlexPin? = null
     private var personalAuthJob: kotlinx.coroutines.Job? = null
     private var personalToken = ""
@@ -184,6 +185,72 @@ class HarmonicastViewModel : ViewModel() {
                 loading = false
             }
         }
+    }
+
+    fun beginPersonalSourceChange() {
+        val source = api.profile.personalSource ?: return
+        setGuestControl(false)
+        personalAuthJob?.cancel()
+        personalPin = null
+        personalToken = source.token
+        personalServerBase = ""
+        selectedPlexServer = null
+        plexLibraries = emptyList()
+        plexServers = emptyList()
+        error = ""
+        personalSetupActive = true
+        viewModelScope.launch {
+            loading = true
+            try {
+                plexServers = plex.ownedServers(source.token)
+                if (plexServers.isEmpty()) error = "No owned Plex servers were found."
+            } catch (e: Exception) {
+                error = e.message ?: "Could not load owned Plex servers"
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    fun cancelPersonalSetup() {
+        if (!api.profile.homeReady) return
+        personalAuthJob?.cancel()
+        personalPin = null
+        personalSetupActive = false
+        selectedPlexServer = null
+        plexLibraries = emptyList()
+        plexServers = emptyList()
+        error = ""
+    }
+
+    fun signOutPersonalPlex() {
+        if (!isPersonalMode) return
+        setGuestControl(false)
+        leaveNearbyRoom()
+        personalAuthJob?.cancel()
+        personalPin = null
+        socketReconnectJob?.cancel()
+        socket?.close()
+        socket = null
+        api.profile.clearPersonalSource()
+        personalToken = ""
+        personalServerBase = ""
+        personalSetupActive = false
+        selectedPlexServer = null
+        plexServers = emptyList()
+        plexLibraries = emptyList()
+        plexSourceLabel = ""
+        playlists = emptyList()
+        queue = emptyList()
+        nowPlaying = NowPlaying()
+        results = emptyList()
+        core = harmonicastCore(api)
+        ready = false
+        error = ""
+        context.startService(
+            Intent(context, HarmonicastMediaService::class.java)
+                .setAction(HarmonicastMediaService.RELOAD_PROFILE_ACTION)
+        )
     }
     
     fun receiveAuth(uri: Uri) {
@@ -359,6 +426,12 @@ class HarmonicastViewModel : ViewModel() {
     fun selectPlexLibrary(library: PlexLibrary) {
         val server = selectedPlexServer ?: return
         if (personalSetupActive) {
+            val previous = api.profile.personalSource
+            if (previous != null && (
+                    previous.machineIdentifier != server.machineIdentifier || previous.libraryKey != library.key
+                )) {
+                api.profile.clearPersonalPlaybackState()
+            }
             api.profile.savePersonalSource(PersonalPlexSource(
                 personalToken,
                 personalServerBase,
@@ -814,7 +887,7 @@ class MainActivity : ComponentActivity() {
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("Set up personal mode", style = MaterialTheme.typography.headlineSmall)
+            Text(if (vm.personalSetupCanCancel) "Change Plex music" else "Set up personal mode", style = MaterialTheme.typography.headlineSmall)
             Text("Choose the Plex server and Music library this phone will play directly.")
             PersonalPlexSetup(vm)
             if (vm.plexServers.isEmpty()) {
@@ -828,6 +901,11 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Restart Plex sign-in")
+                }
+            }
+            if (vm.personalSetupCanCancel) {
+                OutlinedButton(onClick = vm::cancelPersonalSetup, modifier = Modifier.fillMaxWidth()) {
+                    Text("Cancel")
                 }
             }
             if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -1051,6 +1129,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun SettingsScreen(vm: HarmonicastViewModel) {
     var share by remember(vm.ratedTrackShare) { mutableFloatStateOf(vm.ratedTrackShare.toFloat()) }
+    var confirmPlexSignOut by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val hostPermissions = remember { bluetoothPermissions(advertise = true) }
     val hostPermissionLauncher = rememberLauncherForActivityResult(
@@ -1087,6 +1166,25 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (vm.isPersonalMode) {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Plex music source", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        vm.plexSourceLabel.ifBlank { "Personal Plex library" },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Button(
+                        onClick = vm::beginPersonalSourceChange,
+                        enabled = !vm.loading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Change Plex server or library")
+                    }
+                    TextButton(onClick = { confirmPlexSignOut = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Sign out of Plex", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
             val room = HarmonicastMediaService.roomShareState.value
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1189,6 +1287,22 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+    if (confirmPlexSignOut) {
+        AlertDialog(
+            onDismissRequest = { confirmPlexSignOut = false },
+            title = { Text("Sign out of Plex?") },
+            text = { Text("This removes the Plex account and source from this phone and clears its saved queue and playback history.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmPlexSignOut = false
+                    vm.signOutPersonalPlex()
+                }) { Text("Sign out", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmPlexSignOut = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 

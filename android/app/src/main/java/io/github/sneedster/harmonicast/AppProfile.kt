@@ -70,6 +70,27 @@ class HomeProfileStore(private val storage: ProfileStorage) {
             "home.plex.libraryName" to source.libraryName,
         ))
     }
+    fun clearPersonalPlaybackState() = storage.write(mapOf(
+        "local.queue" to "[]",
+        "local.playback" to "",
+        "local.playbackHistory" to "[]",
+        "local.jukeboxMixIndex" to "",
+    ))
+    fun clearPersonalSource() {
+        storage.write(mapOf(
+            "home.mode" to HomeMode.UNCONFIGURED.name,
+            "home.plex.token" to "",
+            "home.plex.base" to "",
+            "home.plex.machineId" to "",
+            "home.plex.serverName" to "",
+            "home.plex.libraryKey" to "",
+            "home.plex.libraryName" to "",
+            "local.queue" to "[]",
+            "local.playback" to "",
+            "local.playbackHistory" to "[]",
+            "local.jukeboxMixIndex" to "",
+        ))
+    }
     private fun save(base: String, token: String) = storage.write(mapOf(
         "home.mode" to if (base.isNotBlank() && token.isNotBlank()) HomeMode.REMOTE_SERVER.name else HomeMode.UNCONFIGURED.name,
         "home.remote.base" to base,

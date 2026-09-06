@@ -250,8 +250,9 @@ credential or owner-only command is available.
 - Prove the join payload and lifecycle first with visual QR/deep link.
 - Advertise the temporary room over BLE and connect through a guest-safe GATT
   service. The first device-validated slice discovers the room and reads its
-  code and now-playing status; the command protocol for search, requests, queue,
-  and votes follows.
+  code and now-playing status. A short active status refresh detects host room
+  shutdown even when Android does not promptly deliver a GATT disconnect callback;
+  the command protocol for search, requests, queue, and votes follows.
 - Handle network changes, host disappearance, expiry, replay, and two nearby
   hosts without requiring account sign-in.
 

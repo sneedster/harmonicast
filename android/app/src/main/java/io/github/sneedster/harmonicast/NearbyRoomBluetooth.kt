@@ -179,13 +179,34 @@ class NearbyRoomHost(
 /** BLE central used by guest mode for nearby discovery and the first read-only handshake. */
 @SuppressLint("MissingPermission")
 class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) -> Unit) {
+    private companion object {
+        const val STATUS_REFRESH_MS = 2_000L
+        const val SCAN_TIMEOUT_MS = 10_000L
+    }
+
     private val appContext = context.applicationContext
     private val manager = appContext.getSystemService(BluetoothManager::class.java)
     private val adapter get() = manager.adapter
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
+    private var statusCharacteristic: BluetoothGattCharacteristic? = null
     private var scanning = false
     private var advertisedRoom = ""
+
+    private val scanTimeout = Runnable {
+        if (scanning) {
+            stopScan()
+            publish(NearbyRoomState(error = "No nearby Harmonicast room found"))
+        }
+    }
+
+    private val refreshStatus = Runnable {
+        val activeGatt = gatt ?: return@Runnable
+        val characteristic = statusCharacteristic ?: return@Runnable
+        if (!activeGatt.readCharacteristic(characteristic)) {
+            failRoom(activeGatt, "Nearby room ended")
+        }
+    }
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -197,25 +218,27 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             android.util.Log.d("HarmonicastNearby", "Found Harmonicast BLE advertisement")
             advertisedRoom = room
             stopScan()
-            onState(NearbyRoomState(roomCode = room.ifBlank { "ROOM" }))
+            publish(NearbyRoomState(roomCode = room.ifBlank { "ROOM" }))
             gatt = result.device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         }
 
         override fun onScanFailed(errorCode: Int) {
             scanning = false
-            onState(NearbyRoomState(error = "Nearby scan failed ($errorCode)"))
+            publish(NearbyRoomState(error = "Nearby scan failed ($errorCode)"))
         }
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             android.util.Log.d("HarmonicastNearby", "GATT connection status=$status state=$newState")
+            if (this@NearbyRoomClient.gatt !== gatt) {
+                gatt.close()
+                return
+            }
             if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
                 if (!gatt.requestMtu(517)) gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                onState(NearbyRoomState(roomCode = advertisedRoom, error = "Nearby room disconnected"))
-                gatt.close()
-                this@NearbyRoomClient.gatt = null
+                failRoom(gatt, "Nearby room ended")
             }
         }
 
@@ -226,8 +249,13 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             val characteristic = gatt.getService(NearbyRoomWire.serviceUuid)
                 ?.getCharacteristic(NearbyRoomWire.statusUuid)
-            if (status != BluetoothGatt.GATT_SUCCESS || characteristic == null || !gatt.readCharacteristic(characteristic)) {
-                onState(NearbyRoomState(roomCode = advertisedRoom, error = "Harmonicast room service is unavailable"))
+            if (status != BluetoothGatt.GATT_SUCCESS || characteristic == null) {
+                failRoom(gatt, "Harmonicast room service is unavailable")
+            } else {
+                statusCharacteristic = characteristic
+                if (!gatt.readCharacteristic(characteristic)) {
+                    failRoom(gatt, "Harmonicast room service is unavailable")
+                }
             }
         }
 
@@ -238,7 +266,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
-            if (characteristic.uuid == NearbyRoomWire.statusUuid) acceptStatus(characteristic.value, status)
+            if (characteristic.uuid == NearbyRoomWire.statusUuid) acceptStatus(gatt, characteristic.value, status)
         }
 
         override fun onCharacteristicRead(
@@ -247,53 +275,72 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             value: ByteArray,
             status: Int,
         ) {
-            if (characteristic.uuid == NearbyRoomWire.statusUuid) acceptStatus(value, status)
+            if (characteristic.uuid == NearbyRoomWire.statusUuid) acceptStatus(gatt, value, status)
         }
     }
 
     fun scan() {
         close()
         if (!adapter.isEnabled) {
-            onState(NearbyRoomState(error = "Turn on Bluetooth to find a room"))
+            publish(NearbyRoomState(error = "Turn on Bluetooth to find a room"))
             return
         }
         val scanner = adapter.bluetoothLeScanner ?: run {
-            onState(NearbyRoomState(error = "Bluetooth scanning is unavailable"))
+            publish(NearbyRoomState(error = "Bluetooth scanning is unavailable"))
             return
         }
         val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
         scanning = true
-        onState(NearbyRoomState(scanning = true))
+        publish(NearbyRoomState(scanning = true))
         // Some Android BLE chipsets do not apply a 128-bit UUID filter to scan-response
         // packets consistently. Scan for ten seconds, then validate Harmonicast's
         // manufacturer marker before connecting.
         scanner.startScan(null, settings, scanCallback)
-        handler.postDelayed({
-            if (scanning) {
-                stopScan()
-                onState(NearbyRoomState(error = "No nearby Harmonicast room found"))
-            }
-        }, 10_000)
+        handler.postDelayed(scanTimeout, SCAN_TIMEOUT_MS)
     }
 
-    private fun acceptStatus(value: ByteArray, status: Int) {
-        val state = if (status == BluetoothGatt.GATT_SUCCESS) {
-            runCatching { NearbyRoomWire.decodeStatus(value) }.getOrElse {
-                NearbyRoomState(roomCode = advertisedRoom, error = "Room sent an invalid response")
-            }
-        } else NearbyRoomState(roomCode = advertisedRoom, error = "Could not read room status")
+    private fun acceptStatus(sourceGatt: BluetoothGatt, value: ByteArray, status: Int) {
+        if (gatt !== sourceGatt) return
+        if (status != BluetoothGatt.GATT_SUCCESS) {
+            failRoom(sourceGatt, "Nearby room ended")
+            return
+        }
+        val state = runCatching { NearbyRoomWire.decodeStatus(value) }.getOrElse {
+            failRoom(sourceGatt, "Room sent an invalid response")
+            return
+        }
+        publish(state)
+        handler.removeCallbacks(refreshStatus)
+        handler.postDelayed(refreshStatus, STATUS_REFRESH_MS)
+    }
+
+    private fun publish(state: NearbyRoomState) {
         handler.post { onState(state) }
+    }
+
+    private fun failRoom(sourceGatt: BluetoothGatt, message: String) {
+        if (gatt !== sourceGatt) return
+        handler.removeCallbacks(refreshStatus)
+        statusCharacteristic = null
+        gatt = null
+        runCatching { sourceGatt.disconnect() }
+        sourceGatt.close()
+        publish(NearbyRoomState(roomCode = advertisedRoom, error = message))
     }
 
     private fun stopScan() {
         if (scanning) runCatching { adapter.bluetoothLeScanner?.stopScan(scanCallback) }
         scanning = false
+        handler.removeCallbacks(scanTimeout)
     }
 
     fun close() {
         stopScan()
-        gatt?.disconnect()
-        gatt?.close()
+        handler.removeCallbacks(refreshStatus)
+        statusCharacteristic = null
+        val activeGatt = gatt
         gatt = null
+        activeGatt?.disconnect()
+        activeGatt?.close()
     }
 }

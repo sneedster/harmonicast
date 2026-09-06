@@ -98,4 +98,26 @@ class AppProfileTest {
         assertEquals("https://plex.direct", restarted.personalSource?.baseUrl)
         assertEquals("old-session", restarted.token)
     }
+
+    @Test fun signingOutClearsPersonalCredentialsAndTokenBearingPlaybackState() {
+        val storage = MemoryStorage(
+            "local.queue" to "token-bearing queue",
+            "local.playback" to "token-bearing playback",
+            "local.playbackHistory" to "token-bearing history",
+        )
+        val home = HomeProfileStore(storage)
+        home.savePersonalSource(PersonalPlexSource(
+            "plex-owner", "https://plex.direct", "machine", "Living Room", "7", "Music",
+        ))
+
+        home.clearPersonalSource()
+
+        val restarted = HomeProfileStore(storage)
+        assertEquals(HomeMode.UNCONFIGURED, restarted.mode)
+        assertNull(restarted.personalSource)
+        assertEquals("", storage.values["home.plex.token"])
+        assertEquals("[]", storage.values["local.queue"])
+        assertEquals("", storage.values["local.playback"])
+        assertEquals("[]", storage.values["local.playbackHistory"])
+    }
 }
