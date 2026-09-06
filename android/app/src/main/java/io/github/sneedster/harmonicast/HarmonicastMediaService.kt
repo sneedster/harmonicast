@@ -571,7 +571,17 @@ class HarmonicastMediaService : MediaLibraryService() {
         }
         if (roomShareState.value.enabled) return
         try {
-            val gateway = GuestRoomGateway(this, core)
+            val gateway = GuestRoomGateway(
+                this,
+                core,
+                displayToggle = {
+                    scope.launch {
+                        if (player.currentMediaItem == null) advance("skip")
+                        else if (player.isPlaying) player.pause() else player.play()
+                    }
+                },
+                displaySkip = { advance("skip") },
+            )
             guestRoomGateway = gateway
             val room = gateway.start()
             val nearby = NearbyRoomHost(this, core, room.roomCode, gateway::routeNearby, gateway::touchNearby)

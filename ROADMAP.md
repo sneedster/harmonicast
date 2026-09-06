@@ -141,6 +141,13 @@
   Playlist results belong to the signed-in Plex user; playlists created by the
   server owner are not inherited by a shared account. The sole local player can
   skip every current track, including one it manually queued.
+- Room display slice 1 adds a separate same-Wi-Fi display link and scoped kiosk
+  capability. A full-screen tablet/browser view shows live now-playing progress
+  and the upcoming queue, searches and queues music, and controls play/pause and
+  Next while audio remains on the host. It cannot vote or access Plex data,
+  credentials, source selection, or app settings. A following slice will let
+  the host phone explicitly move audio to a trusted TV display and take it back;
+  the display cannot promote itself.
 - Clean-device validation on a Samsung browser confirmed accountless room load,
   now-playing and queue updates, search, request submission, and immediate
   disconnect when the Pixel host ended sharing. The run exposed and fixed local

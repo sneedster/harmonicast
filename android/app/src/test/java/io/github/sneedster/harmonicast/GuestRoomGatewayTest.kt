@@ -116,6 +116,31 @@ class GuestRoomGatewayTest {
             .route(GuestApiRequest("GET", "/v1/status", fresh.bearer)).status)
     }
 
+    @Test fun displayCapabilityHasKioskControlsWithoutGuestVotingOrCredentialAccess() = runBlocking {
+        val core = FakeCore()
+        val capability = RoomCapability.create()
+        var toggles = 0
+        var skips = 0
+        val router = GuestRoomRouter(core, capability, displayToggle = { toggles++ }, displaySkip = { skips++ })
+
+        assertEquals(200, router.route(GuestApiRequest("GET", "/v1/status", capability.displayBearer)).status)
+        assertEquals(200, router.route(GuestApiRequest("GET", "/v1/now-playing", capability.displayBearer)).status)
+        assertEquals(200, router.route(GuestApiRequest("GET", "/v1/queue", capability.displayBearer)).status)
+        assertEquals(200, router.route(GuestApiRequest("GET", "/v1/search", capability.displayBearer, mapOf("q" to "safe"))).status)
+        assertEquals(202, router.route(GuestApiRequest("POST", "/v1/display/queue", capability.displayBearer,
+            body = JSONObject().put("songId", core.track.id).toString())).status)
+        assertEquals(202, router.route(GuestApiRequest("POST", "/v1/display/player/toggle", capability.displayBearer)).status)
+        assertEquals(202, router.route(GuestApiRequest("POST", "/v1/display/player/skip", capability.displayBearer)).status)
+        assertEquals(404, router.route(GuestApiRequest("POST", "/v1/votes", capability.displayBearer,
+            body = "{\"direction\":\"up\"}")).status)
+        assertEquals(listOf("Room display"), core.queued.map(Song::addedByEmail))
+        assertTrue(core.votes.isEmpty())
+        assertEquals(1, toggles)
+        assertEquals(1, skips)
+
+        assertEquals(404, router.route(GuestApiRequest("POST", "/v1/display/player/skip", capability.bearer)).status)
+    }
+
     @Test fun nearbyActivityExtendsIdleLifetimeButNeverHardExpiry() {
         val room = RoomCapability.create(nowMillis = 1_000, lifetimeMillis = 10_000, idleTimeoutMillis = 2_000)
 

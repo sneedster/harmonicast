@@ -1554,6 +1554,27 @@ class MainActivity : ComponentActivity() {
                         ) {
                             Text("Share guest link")
                         }
+                        Text("Same-Wi-Fi room display", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Scan on a tablet or living-room screen for a full-screen view that can browse, queue, and control playback without exposing Plex or app settings.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        RoomQrCode(room.displayUrl, "Open Harmonicast display ${room.roomCode}")
+                        Button(
+                            onClick = {
+                                context.startActivity(Intent.createChooser(
+                                    Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, room.displayUrl)
+                                    },
+                                    "Share Harmonicast display",
+                                ))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Share display link")
+                        }
                         OutlinedButton(onClick = { vm.setGuestControl(false) }, modifier = Modifier.fillMaxWidth()) {
                             Text("End guest room")
                         }

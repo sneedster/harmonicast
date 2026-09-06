@@ -27,6 +27,7 @@ data class RoomShareState(
     val nearbyAvailable: Boolean = false,
     val roomCode: String = "",
     val joinUrl: String = "",
+    val displayUrl: String = "",
     val appJoinUrl: String = "",
     val port: Int = 0,
     val expiresAtMillis: Long = 0,
@@ -126,10 +127,11 @@ object GuestWebPage {
         .replace("'", "&#39;")
 }
 
-/** One room-scoped capability. It is memory-only and dies with the gateway. */
+/** Guest and display capabilities for one room. Both are memory-only and die with the gateway. */
 class RoomCapability private constructor(
     val roomCode: String,
     val bearer: String,
+    val displayBearer: String,
     val expiresAtMillis: Long,
     private val idleTimeoutMillis: Long,
     private var lastUsedAtMillis: Long,
@@ -137,9 +139,17 @@ class RoomCapability private constructor(
     @Volatile private var revoked = false
 
     @Synchronized fun authorize(candidate: String?, nowMillis: Long): Boolean {
+        return authorize(candidate, bearer, nowMillis)
+    }
+
+    @Synchronized fun authorizeDisplay(candidate: String?, nowMillis: Long): Boolean {
+        return authorize(candidate, displayBearer, nowMillis)
+    }
+
+    private fun authorize(candidate: String?, expectedValue: String, nowMillis: Long): Boolean {
         if (!activeAt(nowMillis)) return false
         val supplied = candidate?.toByteArray(StandardCharsets.UTF_8) ?: return false
-        val expected = bearer.toByteArray(StandardCharsets.UTF_8)
+        val expected = expectedValue.toByteArray(StandardCharsets.UTF_8)
         if (!MessageDigest.isEqual(supplied, expected)) return false
         lastUsedAtMillis = nowMillis
         return true
@@ -166,11 +176,13 @@ class RoomCapability private constructor(
             idleTimeoutMillis: Long = 30 * 60 * 1_000L,
             random: SecureRandom = SecureRandom(),
         ): RoomCapability {
-            val secret = ByteArray(32).also(random::nextBytes)
+            fun secret() = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(ByteArray(32).also(random::nextBytes))
             val code = buildString(4) { repeat(4) { append(ALPHABET[random.nextInt(ALPHABET.length)]) } }
             return RoomCapability(
                 code,
-                Base64.getUrlEncoder().withoutPadding().encodeToString(secret),
+                secret(),
+                secret(),
                 nowMillis + lifetimeMillis,
                 idleTimeoutMillis,
                 nowMillis,
@@ -179,16 +191,29 @@ class RoomCapability private constructor(
     }
 }
 
-/** Allowlisted guest surface. No owner token, stream URL, settings, or player claim is serialized. */
+/** Allowlisted guest/display surface. No owner token, stream URL, settings, or player claim is serialized. */
 class GuestRoomRouter(
     private val core: HarmonicastCore,
     private val capability: RoomCapability,
+    private val displayToggle: () -> Unit = {},
+    private val displaySkip: () -> Unit = {},
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
     private val votes = mutableSetOf<Pair<String, String>>()
 
     suspend fun route(request: GuestApiRequest): GuestApiResponse {
-        if (!capability.authorize(request.bearer, nowMillis())) return json(401, JSONObject().put("error", "Room capability is invalid or expired"))
+        val now = nowMillis()
+        val displayOnly = when {
+            capability.authorize(request.bearer, now) -> false
+            capability.authorizeDisplay(request.bearer, now) -> true
+            else -> return json(401, JSONObject().put("error", "Room capability is invalid or expired"))
+        }
+        if (displayOnly && (request.method to request.path) !in DISPLAY_OPERATIONS) {
+            return json(404, JSONObject().put("error", "Display operation is not available"))
+        }
+        if (!displayOnly && request.path.startsWith("/v1/display/")) {
+            return json(404, JSONObject().put("error", "Guest operation is not available"))
+        }
         return try {
             when (request.method to request.path) {
                 "GET" to "/v1/status" -> json(200, JSONObject()
@@ -205,6 +230,21 @@ class GuestRoomRouter(
                     val query = request.query["q"].orEmpty().trim()
                     if (query.isBlank()) json(400, JSONObject().put("error", "Search query is required"))
                     else json(200, JSONArray().apply { core.library.search(query).forEach { put(guestSong(it)) } })
+                }
+                "POST" to "/v1/display/queue" -> {
+                    val id = JSONObject(request.body.ifBlank { "{}" }).optString("songId")
+                    val song = id.takeIf { it.isNotBlank() }?.let { core.library.track(it) }
+                        ?: return json(404, JSONObject().put("error", "Track was not found"))
+                    core.queue.add(song.copy(isManual = true, addedByEmail = "Room display"))
+                    json(202, JSONObject().put("accepted", true).put("song", guestSong(song)))
+                }
+                "POST" to "/v1/display/player/toggle" -> {
+                    displayToggle()
+                    json(202, JSONObject().put("accepted", true))
+                }
+                "POST" to "/v1/display/player/skip" -> {
+                    displaySkip()
+                    json(202, JSONObject().put("accepted", true))
                 }
                 "POST" to "/v1/requests" -> {
                     val participant = participant(request)
@@ -259,6 +299,15 @@ class GuestRoomRouter(
 
     private companion object {
         const val MAX_REQUESTS_PER_PARTICIPANT = 5
+        val DISPLAY_OPERATIONS = setOf(
+            "GET" to "/v1/status",
+            "GET" to "/v1/now-playing",
+            "GET" to "/v1/queue",
+            "GET" to "/v1/search",
+            "POST" to "/v1/display/queue",
+            "POST" to "/v1/display/player/toggle",
+            "POST" to "/v1/display/player/skip",
+        )
     }
 }
 
@@ -268,8 +317,12 @@ class GuestRoomGateway(
     private val core: HarmonicastCore,
     private val requestedPort: Int = 8788,
     private val bindAddress: String? = null,
+    private val displayToggle: () -> Unit = {},
+    private val displaySkip: () -> Unit = {},
 ) {
     private val guestPageTemplate = context.assets.open("guest/index.html")
+        .bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+    private val displayPageTemplate = context.assets.open("display/index.html")
         .bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
     private val workers = ThreadPoolExecutor(
         2,
@@ -293,7 +346,7 @@ class GuestRoomGateway(
             bind(InetSocketAddress(bindAddress ?: localDevelopmentAddress(), requestedPort))
         }
         capability = room
-        router = GuestRoomRouter(core, room)
+        router = GuestRoomRouter(core, room, displayToggle = displayToggle, displaySkip = displaySkip)
         server = socket
         running = true
         thread(name = "harmonicast-room", isDaemon = true) {
@@ -348,10 +401,12 @@ class GuestRoomGateway(
             ),
         )
         val browserJoin = "$base/#cap=${room.bearer}"
+        val displayJoin = "$base/display#cap=${room.displayBearer}"
         return RoomShareState(
             enabled = true,
             roomCode = room.roomCode,
             joinUrl = browserJoin,
+            displayUrl = displayJoin,
             appJoinUrl = appJoin,
             port = port,
             expiresAtMillis = room.expiresAtMillis,
@@ -382,12 +437,13 @@ class GuestRoomGateway(
             }
         }.concatToString()
         val uri = URI(first[1])
-        if (first[0] == "GET" && uri.path in setOf("", "/", "/join")) {
+        if (first[0] == "GET" && uri.path in setOf("", "/", "/join", "/display")) {
+            val template = if (uri.path == "/display") displayPageTemplate else guestPageTemplate
             writeResponse(
                 client,
                 GuestApiResponse(
                     200,
-                    GuestWebPage.render(guestPageTemplate, capability?.roomCode.orEmpty()),
+                    GuestWebPage.render(template, capability?.roomCode.orEmpty()),
                     "text/html; charset=utf-8",
                 ),
             )

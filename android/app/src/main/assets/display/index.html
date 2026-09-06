@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Harmonicast display __ROOM_CODE__</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #07080d; color: #fff8ec; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; overflow-x: hidden; background: radial-gradient(circle at 18% 12%, #563c79 0, #1b2035 34%, #07080d 72%); }
+    main { min-height: 100vh; display: grid; grid-template-columns: minmax(18rem, 1.35fr) minmax(16rem, .8fr); gap: clamp(1.2rem, 3vw, 3rem); padding: clamp(1.2rem, 4vw, 4rem); }
+    .hero { display: flex; flex-direction: column; min-width: 0; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .brand { font-weight: 850; font-size: clamp(1.2rem, 2vw, 1.8rem); letter-spacing: -.04em; }
+    .room { color: #cab9ec; font-size: .85rem; font-weight: 750; letter-spacing: .16em; text-transform: uppercase; }
+    .status { border: 1px solid #706489; border-radius: 999px; color: #c9bedc; padding: .45rem .75rem; font-size: .8rem; white-space: nowrap; }
+    .status.live { border-color: #65d9a2; color: #86e9ba; }
+    .record-wrap { flex: 0 1 auto; display: grid; place-items: center; min-height: 10rem; padding: 2vh 0; }
+    .record { width: 34vh; height: 34vh; max-width: 48vw; max-height: 48vw; border-radius: 50%; display: grid; place-items: center; background: repeating-radial-gradient(circle, #11131c 0 5px, #222534 6px 8px); box-shadow: 0 2.2rem 6rem #000a, inset 0 0 0 2px #ffffff14; }
+    .record.playing { animation: spin 9s linear infinite; }
+    .label { width: 36%; height: 36%; border-radius: 50%; display: grid; place-items: center; text-align: center; padding: .5rem; background: linear-gradient(145deg, #e59a5b, #8f4fd1); color: #140e1a; font-weight: 900; font-size: clamp(1rem, 3vw, 2.3rem); box-shadow: inset 0 0 0 5px #ffffff18; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h1 { margin: 0; max-width: 15ch; font-size: clamp(2.2rem, 6vw, 5.4rem); line-height: .96; letter-spacing: -.055em; overflow-wrap: anywhere; }
+    .artist { margin: .65rem 0 0; color: #cabfd7; font-size: clamp(1.15rem, 2.6vw, 2rem); }
+    .album { margin: .35rem 0 0; color: #9189a1; font-size: clamp(.95rem, 1.8vw, 1.35rem); }
+    .progress { height: .48rem; margin-top: 1.5rem; overflow: hidden; border-radius: 999px; background: #ffffff1c; }
+    .progress span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #e59a5b, #a26ce5); transition: width .5s linear; }
+    .times { display: flex; justify-content: space-between; margin-top: .4rem; color: #958da3; font-variant-numeric: tabular-nums; }
+    .controls { display: flex; gap: .8rem; margin-top: 1.4rem; }
+    button { border: 0; border-radius: .9rem; padding: .85rem 1.25rem; background: #e7a45f; color: #170f18; font: inherit; font-weight: 850; cursor: pointer; }
+    button.secondary { border: 1px solid #ffffff25; background: #24283a; color: #fff8ec; }
+    aside { min-width: 0; align-self: center; max-height: calc(100vh - 8vw); overflow: hidden; border: 1px solid #ffffff18; background: #111522d9; border-radius: 1.4rem; box-shadow: 0 2rem 5rem #0007; }
+    aside h2 { margin: 0; padding: 1.25rem 1.35rem; border-bottom: 1px solid #ffffff14; font-size: clamp(1.2rem, 2vw, 1.7rem); }
+    form { display: flex; gap: .6rem; padding: 1rem 1.2rem; border-bottom: 1px solid #ffffff14; }
+    input { min-width: 0; flex: 1; border: 1px solid #ffffff25; border-radius: .8rem; background: #090c15; color: #fff8ec; padding: .8rem; font: inherit; }
+    #results { max-height: 14rem; overflow-y: auto; border-bottom: 1px solid #ffffff14; }
+    #results:empty { display: none; }
+    #results li { grid-template-columns: 1fr auto; }
+    #results button { padding: .55rem .75rem; }
+    ol { margin: 0; padding: 0; list-style: none; }
+    li { display: grid; grid-template-columns: 2rem 1fr; gap: .8rem; padding: 1rem 1.35rem; border-bottom: 1px solid #ffffff10; }
+    li:last-child { border-bottom: 0; }
+    .number { color: #9a83bd; font-weight: 800; }
+    .track { min-width: 0; }
+    .track strong, .track span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .track span { color: #9e97aa; margin-top: .2rem; font-size: .9rem; }
+    .empty { color: #9e97aa; padding: 1.4rem; }
+    #fullscreen { position: fixed; right: 1rem; top: 1rem; border: 1px solid #ffffff24; border-radius: 999px; background: #161b2bdb; color: #eee7f6; padding: .65rem 1rem; font: inherit; }
+    #message { position: fixed; inset: auto 1rem 1rem 1rem; text-align: center; color: #f2bc78; pointer-events: none; }
+    @media (max-width: 720px), (orientation: portrait) {
+      body { overflow: auto; }
+      main { grid-template-columns: 1fr; }
+      .record { width: 62vw; height: 62vw; max-width: 42vh; max-height: 42vh; }
+      aside { max-height: none; align-self: stretch; }
+      h1 { max-width: none; }
+    }
+    @media (orientation: landscape) and (max-height: 1000px) {
+      main { height: 100vh; min-height: 0; padding: 1.25rem 4vw 2rem; overflow: hidden; }
+      .hero { min-height: 0; }
+      .record-wrap { min-height: 7rem; padding: 1vh 0; }
+      .record { width: 25vh; height: 25vh; }
+      h1 { font-size: clamp(2rem, 5vw, 4.2rem); }
+      .controls { margin-top: .8rem; }
+    }
+    @media (prefers-reduced-motion: reduce) { .record.playing { animation: none; } }
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <header>
+      <div><div class="brand">Harmonicast</div><div class="room">Room __ROOM_CODE__ · Display</div></div>
+      <div id="status" class="status">Connecting</div>
+    </header>
+    <div class="record-wrap"><div id="record" class="record"><div id="label" class="label">H</div></div></div>
+    <h1 id="title">Nothing playing</h1>
+    <p id="artist" class="artist"></p>
+    <p id="album" class="album"></p>
+    <div class="progress"><span id="progress"></span></div>
+    <div class="times"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
+    <div class="controls">
+      <button id="toggle" type="button">Play / pause</button>
+      <button id="skip" class="secondary" type="button">Next</button>
+    </div>
+  </section>
+  <aside>
+    <h2>Find music</h2>
+    <form id="search-form"><input id="search" type="search" autocomplete="off" placeholder="Song, artist, or album" aria-label="Search music"><button type="submit">Search</button></form>
+    <ol id="results"></ol>
+    <h2>Coming up</h2>
+    <ol id="queue"><li class="empty">The queue is empty.</li></ol>
+  </aside>
+</main>
+<button id="fullscreen" type="button">Full screen</button>
+<div id="message"></div>
+<script>
+(function () {
+  var hash = new URLSearchParams(location.hash.slice(1));
+  var supplied = hash.get('cap');
+  if (supplied) sessionStorage.setItem('harmonicast-display-cap', supplied);
+  var capability = supplied || sessionStorage.getItem('harmonicast-display-cap') || '';
+  if (location.hash) history.replaceState(null, '', location.pathname);
+  var status = document.querySelector('#status');
+  var title = document.querySelector('#title');
+  var artist = document.querySelector('#artist');
+  var album = document.querySelector('#album');
+  var record = document.querySelector('#record');
+  var label = document.querySelector('#label');
+  var progress = document.querySelector('#progress');
+  var elapsed = document.querySelector('#elapsed');
+  var duration = document.querySelector('#duration');
+  var queue = document.querySelector('#queue');
+  var message = document.querySelector('#message');
+  var results = document.querySelector('#results');
+  var position = 0;
+  var total = 0;
+  var playing = false;
+
+  function api(path, options) {
+    options = options || {};
+    if (!capability) return Promise.reject(new Error('Scan the room display code again.'));
+    return fetch(path, {
+      method: options.method || 'GET',
+      body: options.body,
+      cache: 'no-store',
+      headers: { 'Authorization': 'Bearer ' + capability, 'Content-Type': 'application/json' }
+    })
+      .then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) throw new Error(data.error || 'The room did not respond.');
+          return data;
+        });
+      });
+  }
+  function clock(seconds) {
+    var value = Math.max(0, Math.floor(Number(seconds) || 0));
+    var secondsPart = value % 60;
+    return Math.floor(value / 60) + ':' + (secondsPart < 10 ? '0' : '') + secondsPart;
+  }
+  function updateProgress() {
+    if (playing && total > 0) position = Math.min(total, position + 1);
+    progress.style.width = total > 0 ? Math.min(100, position / total * 100) + '%' : '0';
+    elapsed.textContent = clock(position);
+    duration.textContent = clock(total);
+  }
+  function showQueue(songs) {
+    while (queue.firstChild) queue.removeChild(queue.firstChild);
+    if (!songs.length) {
+      var empty = document.createElement('li');
+      empty.className = 'empty';
+      empty.textContent = 'The queue is empty.';
+      queue.appendChild(empty);
+      return;
+    }
+    songs.slice(0, 8).forEach(function (song, index) {
+      var item = document.createElement('li');
+      var number = document.createElement('span');
+      number.className = 'number';
+      number.textContent = index < 9 ? '0' + (index + 1) : String(index + 1);
+      var text = document.createElement('div');
+      text.className = 'track';
+      var name = document.createElement('strong');
+      name.textContent = song.title || 'Unknown track';
+      var by = document.createElement('span');
+      by.textContent = song.artist || song.album || '';
+      text.appendChild(name);
+      text.appendChild(by);
+      item.appendChild(number);
+      item.appendChild(text);
+      queue.appendChild(item);
+    });
+  }
+  function showResults(songs) {
+    while (results.firstChild) results.removeChild(results.firstChild);
+    songs.slice(0, 12).forEach(function (song) {
+      var item = document.createElement('li');
+      var text = document.createElement('div');
+      text.className = 'track';
+      var name = document.createElement('strong');
+      name.textContent = song.title || 'Unknown track';
+      var by = document.createElement('span');
+      by.textContent = song.artist || song.album || '';
+      var add = document.createElement('button');
+      add.type = 'button';
+      add.textContent = 'Queue';
+      add.addEventListener('click', function () {
+        add.disabled = true;
+        api('/v1/display/queue', { method: 'POST', body: JSON.stringify({ songId: song.id }) })
+          .then(function () { message.textContent = 'Queued ' + song.title; return refresh(); })
+          .catch(function (error) { message.textContent = error.message; add.disabled = false; });
+      });
+      text.appendChild(name);
+      text.appendChild(by);
+      item.appendChild(text);
+      item.appendChild(add);
+      results.appendChild(item);
+    });
+    if (!songs.length) message.textContent = 'No matching tracks.';
+  }
+  function refresh() {
+    Promise.all([api('/v1/now-playing'), api('/v1/queue')]).then(function (result) {
+      var state = result[0];
+      var song = state.song;
+      title.textContent = song && song.title || 'Nothing playing';
+      artist.textContent = song && song.artist || '';
+      album.textContent = song && song.album || '';
+      label.textContent = song && (song.title || 'H').trim().charAt(0).toUpperCase() || 'H';
+      playing = Boolean(state.isPlaying);
+      position = Number(state.position) || 0;
+      total = song && Number(song.duration) || 0;
+      record.className = playing ? 'record playing' : 'record';
+      showQueue(result[1]);
+      updateProgress();
+      status.textContent = 'Connected';
+      status.className = 'status live';
+      message.textContent = '';
+    }).catch(function (error) {
+      playing = false;
+      record.className = 'record';
+      status.textContent = 'Room unavailable';
+      status.className = 'status';
+      message.textContent = error.message;
+    });
+  }
+  document.querySelector('#fullscreen').addEventListener('click', function () {
+    var root = document.documentElement;
+    var enter = root.requestFullscreen || root.webkitRequestFullscreen;
+    if (enter) enter.call(root);
+    this.style.display = 'none';
+  });
+  document.querySelector('#toggle').addEventListener('click', function () {
+    api('/v1/display/player/toggle', { method: 'POST' }).then(refresh)
+      .catch(function (error) { message.textContent = error.message; });
+  });
+  document.querySelector('#skip').addEventListener('click', function () {
+    api('/v1/display/player/skip', { method: 'POST' }).then(refresh)
+      .catch(function (error) { message.textContent = error.message; });
+  });
+  document.querySelector('#search-form').addEventListener('submit', function (event) {
+    event.preventDefault();
+    var query = document.querySelector('#search').value.trim();
+    if (!query) return;
+    message.textContent = 'Searching…';
+    api('/v1/search?q=' + encodeURIComponent(query)).then(function (songs) {
+      message.textContent = '';
+      showResults(songs);
+    }).catch(function (error) { message.textContent = error.message; });
+  });
+  refresh();
+  setInterval(refresh, 3000);
+  setInterval(updateProgress, 1000);
+}());
+</script>
+</body>
+</html>

@@ -292,8 +292,12 @@ did not receive the current capability cannot control the host.
   with D-pad focus and reliable reconnect behavior.
 - Make the kiosk the default UI on Android TV and Shield-class devices while
   retaining an explicit room-display choice on tablets.
-- Keep playback on the host until trusted display promotion is separately
-  implemented and approved.
+- Default a paired display to remote control with playback on the host. A TV may
+  become the active audio player only when the owner selects **Play on this
+  display** from the host phone; the host phone can revoke that role and take
+  playback back. The display link alone never grants Plex credentials or lets a
+  display promote itself. Interactive kiosk control is the first room-display
+  slice, and this host-initiated player promotion is the next slice.
 
 Acceptance: a tablet or Shield can pair with a room and retain the recognizable
 kiosk experience without an external Harmonicast server.
