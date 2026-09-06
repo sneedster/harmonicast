@@ -93,6 +93,12 @@
   order, and keeps both phones on their existing internet connection. Host room
   shutdown and explicit guest Leave both return the Samsung to its signed-out
   home screen.
+- Bluetooth guest UI is visually aligned with the host player and device
+  accepted on the Samsung: a prominent now-playing card shows album, playback
+  progress and host state; voting has persistent selected feedback; search and
+  queue use compact music cards; and Leave is immediately available at the top.
+  The expanded BLE metadata remains bounded to GATT-sized pages and excludes
+  Plex credentials, stream URLs and artwork URLs.
 - Standalone playback now seeds the weighted automatic mix when personal mode
   starts without a current track and refills it whenever the upcoming queue is
   exhausted. A deliberately paused current track remains paused.

@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.StarBorder
@@ -894,57 +895,113 @@ class MainActivity : ComponentActivity() {
             .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(WindowInsets.safeDrawing.asPaddingValues())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Text("Room ${room.roomCode}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Connected over nearby Bluetooth", color = MaterialTheme.colorScheme.primary)
-        ElevatedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Now playing", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(if (room.title.isBlank()) "Nothing is playing" else room.title, style = MaterialTheme.typography.headlineSmall)
-                if (room.artist.isNotBlank()) Text(room.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Harmonicast", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Text("Room ${room.roomCode}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            }
+            TextButton(onClick = vm::leaveNearbyRoom) {
+                Icon(Icons.AutoMirrored.Filled.Logout, "Leave room")
+                Spacer(Modifier.width(6.dp))
+                Text("Leave")
+            }
+        }
+        Surface(shape = RoundedCornerShape(50), color = Color(0xff30243a)) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.BluetoothConnected, null, Modifier.size(18.dp), tint = Color(0xffd0a2ff))
+                Spacer(Modifier.width(7.dp))
+                Text("Nearby guest · connected", style = MaterialTheme.typography.labelLarge, color = Color(0xffeadcff))
+            }
+        }
+        ElevatedCard(
+            Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = Color(0xff281e32)),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("NOW PLAYING", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xffd0a2ff))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    GuestArtwork(room.title, 116.dp)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            if (room.title.isBlank()) "Nothing is playing" else room.title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (room.artist.isNotBlank()) Text(room.artist, style = MaterialTheme.typography.titleMedium, color = Color(0xffeadcff), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (room.album.isNotBlank()) Text(room.album, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (room.isPlaying) Icons.Default.GraphicEq else Icons.Default.PauseCircle,
+                                null,
+                                Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (room.isPlaying) "Playing on the host" else "Paused on the host", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+                if (room.durationSeconds > 0) {
+                    LinearProgressIndicator(
+                        progress = { (room.positionSeconds.toFloat() / room.durationSeconds).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(50)),
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(formatDuration(room.positionSeconds), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(formatDuration(room.durationSeconds), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = { vm.voteNearby(false) }, enabled = !room.busy, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.ThumbDown, "Vote down")
-                        Spacer(Modifier.width(8.dp))
-                        Text("Down")
-                    }
-                    OutlinedButton(onClick = { vm.voteNearby(true) }, enabled = !room.busy, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.ThumbUp, "Vote up")
-                        Spacer(Modifier.width(8.dp))
-                        Text("Up")
-                    }
+                    FilterChip(
+                        selected = room.vote < 0,
+                        onClick = { vm.voteNearby(false) },
+                        enabled = !room.busy && room.title.isNotBlank(),
+                        label = { Text(if (room.vote < 0) "Voted down" else "Vote down") },
+                        leadingIcon = { Icon(Icons.Default.ThumbDown, null, Modifier.size(18.dp)) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    FilterChip(
+                        selected = room.vote > 0,
+                        onClick = { vm.voteNearby(true) },
+                        enabled = !room.busy && room.title.isNotBlank(),
+                        label = { Text(if (room.vote > 0) "Voted up" else "Vote up") },
+                        leadingIcon = { Icon(Icons.Default.ThumbUp, null, Modifier.size(18.dp)) },
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
         }
-        Text("Request a song", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        OutlinedTextField(
-            value = search,
-            onValueChange = { search = it },
-            label = { Text("Song or artist") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-            onClick = { vm.searchNearbyRoom(search) },
-            enabled = search.isNotBlank() && !room.busy,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Search host library") }
-        room.searchResults.forEach { song ->
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(song.title, fontWeight = FontWeight.SemiBold)
-                        Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Button(onClick = { vm.requestNearbySong(song) }, enabled = !room.busy) { Text("Request") }
-                }
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Request music", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Search the host's library and add something to the shared queue.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(
+                value = search,
+                onValueChange = { search = it },
+                label = { Text("Song, artist, or album") },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = { vm.searchNearbyRoom(search) },
+                enabled = search.isNotBlank() && !room.busy,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Icon(Icons.Default.Search, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Search host library")
             }
+        }
+        room.searchResults.forEach { song ->
+            GuestSongCard(song, actionLabel = "Request", enabled = !room.busy) { vm.requestNearbySong(song) }
         }
         if (room.searchResults.isNotEmpty()) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -959,16 +1016,23 @@ class MainActivity : ComponentActivity() {
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Up next", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            TextButton(onClick = { vm.loadNearbyQueue(room.queueOffset) }, enabled = !room.busy) { Text("Refresh") }
+            Column(Modifier.weight(1f)) {
+                Text("Up next", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Shared request queue", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = { vm.loadNearbyQueue(room.queueOffset) }, enabled = !room.busy) { Icon(Icons.Default.Refresh, "Refresh queue") }
         }
-        if (room.queue.isEmpty() && !room.busy) Text("The request queue is empty", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        room.queue.forEach { song ->
-            ListItem(
-                headlineContent = { Text(song.title) },
-                supportingContent = { Text(song.artist) },
-            )
-            HorizontalDivider()
+        if (room.queue.isEmpty() && !room.busy) {
+            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = Color(0xff242029)) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.AutoMirrored.Filled.QueueMusic, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
+                    Text("The request queue is empty", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        room.queue.forEachIndexed { index, song ->
+            GuestSongCard(song, queueNumber = room.queueOffset + index + 1)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(
@@ -980,10 +1044,67 @@ class MainActivity : ComponentActivity() {
                 enabled = room.queueHasMore && !room.busy,
             ) { Text("More") }
         }
-        if (room.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        if (room.message.isNotBlank()) Text(room.message, color = MaterialTheme.colorScheme.primary)
-        if (room.error.isNotBlank()) Text(room.error, color = MaterialTheme.colorScheme.error)
-        OutlinedButton(onClick = vm::leaveNearbyRoom, modifier = Modifier.fillMaxWidth()) { Text("Leave room") }
+        if (room.busy) LinearProgressIndicator(Modifier.fillMaxWidth().clip(RoundedCornerShape(50)))
+        if (room.message.isNotBlank()) GuestNotice(room.message, false)
+        if (room.error.isNotBlank()) GuestNotice(room.error, true)
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+@Composable private fun GuestArtwork(seed: String, size: androidx.compose.ui.unit.Dp) {
+    val colors = listOf(Color(0xff6f3b82), Color(0xff315c70), Color(0xff72532d), Color(0xff5b456f), Color(0xff386252))
+    val color = colors[(seed.hashCode().toLong().let { if (it < 0) -it else it } % colors.size).toInt()]
+    Surface(Modifier.size(size), shape = RoundedCornerShape(if (size >= 100.dp) 22.dp else 12.dp), color = color) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Album, null, Modifier.size(size * 0.52f), tint = Color.White.copy(alpha = 0.9f))
+        }
+    }
+}
+
+@Composable private fun GuestSongCard(
+    song: Song,
+    queueNumber: Int? = null,
+    actionLabel: String? = null,
+    enabled: Boolean = true,
+    onAction: () -> Unit = {},
+) {
+    ElevatedCard(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color(0xff242029)),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (queueNumber != null) {
+                Surface(Modifier.size(46.dp), shape = RoundedCornerShape(12.dp), color = Color(0xff453259)) {
+                    Box(contentAlignment = Alignment.Center) { Text(queueNumber.toString(), fontWeight = FontWeight.Bold, color = Color(0xffeadcff)) }
+                }
+            } else GuestArtwork(song.title, 48.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(song.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (song.album.isNotBlank()) Text(song.album, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (actionLabel != null) {
+                FilledTonalButton(onClick = onAction, enabled = enabled, contentPadding = PaddingValues(horizontal = 13.dp, vertical = 8.dp)) {
+                    Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text(actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun GuestNotice(message: String, error: Boolean) {
+    val background = if (error) MaterialTheme.colorScheme.errorContainer else Color(0xff30243a)
+    val foreground = if (error) MaterialTheme.colorScheme.onErrorContainer else Color(0xffeadcff)
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = background) {
+        Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (error) Icons.Default.ErrorOutline else Icons.Default.CheckCircle, null, tint = foreground)
+            Spacer(Modifier.width(9.dp))
+            Text(message, color = foreground)
+        }
     }
 }
 

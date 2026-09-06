@@ -38,6 +38,9 @@ data class NearbyRoomState(
     val roomCode: String = "",
     val title: String = "",
     val artist: String = "",
+    val album: String = "",
+    val durationSeconds: Int = 0,
+    val positionSeconds: Int = 0,
     val isPlaying: Boolean = false,
     val queue: List<Song> = emptyList(),
     val searchResults: List<Song> = emptyList(),
@@ -48,6 +51,7 @@ data class NearbyRoomState(
     val busy: Boolean = false,
     val message: String = "",
     val error: String = "",
+    val vote: Int = 0,
 )
 
 internal object NearbyRoomWire {
@@ -68,8 +72,11 @@ internal object NearbyRoomWire {
         val song = snapshot.nowPlaying.song
         return JSONObject()
             .put("room", roomCode)
-            .put("title", song?.title.orEmpty().take(120))
-            .put("artist", song?.artist.orEmpty().take(120))
+            .put("title", utf8Prefix(song?.title.orEmpty(), 96))
+            .put("artist", utf8Prefix(song?.artist.orEmpty(), 72))
+            .put("album", utf8Prefix(song?.album.orEmpty(), 64))
+            .put("duration", song?.duration ?: 0)
+            .put("position", snapshot.positionSeconds.toInt().coerceAtLeast(0))
             .put("playing", snapshot.nowPlaying.isPlaying)
             .toString().toByteArray(StandardCharsets.UTF_8)
     }
@@ -81,6 +88,9 @@ internal object NearbyRoomWire {
             roomCode = json.optString("room"),
             title = json.optString("title"),
             artist = json.optString("artist"),
+            album = json.optString("album"),
+            durationSeconds = json.optInt("duration").coerceAtLeast(0),
+            positionSeconds = json.optInt("position").coerceAtLeast(0),
             isPlaying = json.optBoolean("playing"),
         )
     }
@@ -94,7 +104,13 @@ internal object NearbyRoomWire {
 
     fun decodeSongs(items: JSONArray): List<Song> = List(items.length()) { index ->
         val item = items.getJSONObject(index)
-        Song(item.optString("id"), item.optString("title"), item.optString("artist"))
+        Song(
+            id = item.optString("id"),
+            title = item.optString("title"),
+            artist = item.optString("artist"),
+            album = item.optString("album"),
+            duration = item.optInt("duration").coerceAtLeast(0),
+        )
     }
 
     private fun utf8Prefix(value: String, maxBytes: Int): String {
@@ -113,7 +129,9 @@ internal object NearbyRoomWire {
             items.put(JSONObject()
                 .put("id", utf8Prefix(song.optString("id"), 64))
                 .put("title", utf8Prefix(song.optString("title"), 32))
-                .put("artist", utf8Prefix(song.optString("artist"), 24)))
+                .put("artist", utf8Prefix(song.optString("artist"), 24))
+                .put("album", utf8Prefix(song.optString("album"), 24))
+                .put("duration", song.optInt("duration").coerceAtLeast(0)))
         }
         return JSONObject()
             .put("id", id).put("action", action).put("ok", true)
@@ -478,12 +496,17 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             return
         }
         val firstStatus = !roomState.connected
+        val songChanged = roomState.title != state.title || roomState.artist != state.artist
         publish(roomState.copy(
             connected = true,
             roomCode = state.roomCode,
             title = state.title,
             artist = state.artist,
+            album = state.album,
+            durationSeconds = state.durationSeconds,
+            positionSeconds = state.positionSeconds,
             isPlaying = state.isPlaying,
+            vote = if (songChanged) 0 else roomState.vote,
             error = "",
         ))
         handler.removeCallbacks(refreshStatus)
@@ -539,7 +562,12 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
                 publish(roomState.copy(busy = false, message = "Request added to the queue", error = ""))
                 loadQueue()
             }
-            "vote" -> publish(roomState.copy(busy = false, message = "Vote sent", error = ""))
+            "vote" -> publish(roomState.copy(
+                busy = false,
+                message = if (pending.value == "up") "You voted this track up" else "You voted this track down",
+                error = "",
+                vote = if (pending.value == "up") 1 else -1,
+            ))
         }
         if (pendingCommand == null) handler.postDelayed(refreshStatus, STATUS_REFRESH_MS)
     }
