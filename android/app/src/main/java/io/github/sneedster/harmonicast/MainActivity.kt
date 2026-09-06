@@ -94,6 +94,8 @@ class HarmonicastViewModel : ViewModel() {
     private var socketReconnectJob: kotlinx.coroutines.Job? = null
     private var socketStopped = false
     var tvAuthorizationUrl by mutableStateOf(""); private set
+    var offeringRoomPlayback by mutableStateOf(false)
+        private set
     var ready by mutableStateOf(false); private set
     var loading by mutableStateOf(false); var error by mutableStateOf("")
     var notice by mutableStateOf(""); private set
@@ -140,6 +142,7 @@ class HarmonicastViewModel : ViewModel() {
     private var personalServerBase = ""
     var nearbyRoomState by mutableStateOf(NearbyRoomState()); private set
     private var nearbyRoomClient: NearbyRoomClient? = null
+    private var nearbyRoomGeneration = 0L
 
     fun initialize(appContext: Context) {
         if (::api.isInitialized) return
@@ -482,6 +485,45 @@ class HarmonicastViewModel : ViewModel() {
             .put("libraryKey", library.key)) { refresh() }
     }
 
+    fun offerRoomPlayback() {
+        if (!NativePlaybackProtocol.ownerEligible(context) || !nearbyRoomState.connected || nearbyRoomState.busy) return
+        offeringRoomPlayback = true
+        controller?.let { MediaController.releaseFuture(com.google.common.util.concurrent.Futures.immediateFuture(it)) }
+        controller = null
+        context.stopService(Intent(context, HarmonicastMediaService::class.java))
+        context.startService(Intent(context, NativePlaybackReceiver::class.java))
+        viewModelScope.launch {
+            repeat(40) {
+                if (!offeringRoomPlayback || !nearbyRoomState.connected) return@launch
+                val receiver = NativePlaybackReceiver.state.value
+                if (receiver.code.isNotBlank() && !nearbyRoomState.busy) {
+                    nearbyRoomClient?.offerPlayback(receiver.address, receiver.code)
+                    return@launch
+                }
+                kotlinx.coroutines.delay(100)
+            }
+            stopOfferingRoomPlayback()
+            error = "Could not offer playback. Check that both devices are on the same Wi-Fi."
+        }
+    }
+
+    fun stopOfferingRoomPlayback() {
+        if (!offeringRoomPlayback) return
+        offeringRoomPlayback = false
+        nearbyRoomClient?.withdrawPlayback()
+        context.stopService(Intent(context, NativePlaybackReceiver::class.java))
+    }
+
+    fun transferPlayback(participant: String) {
+        if (!NativePlaybackProtocol.ownerEligible(context)) return
+        context.startService(Intent(context, HarmonicastMediaService::class.java)
+            .setAction(HarmonicastMediaService.TRANSFER_PLAYBACK_ACTION).putExtra("participant", participant))
+    }
+
+    fun takeBackPlayback() {
+        context.startService(Intent(context, HarmonicastMediaService::class.java).setAction(HarmonicastMediaService.TAKE_BACK_PLAYBACK_ACTION))
+    }
+
     fun setGuestControl(enabled: Boolean) {
         val action = if (enabled) HarmonicastMediaService.ENABLE_GUEST_CONTROL_ACTION
         else HarmonicastMediaService.DISABLE_GUEST_CONTROL_ACTION
@@ -490,7 +532,13 @@ class HarmonicastViewModel : ViewModel() {
 
     fun scanNearbyRoom() {
         if (!::context.isInitialized) return
-        val client = nearbyRoomClient ?: NearbyRoomClient(context) { state -> nearbyRoomState = state }
+        val generation = nearbyRoomGeneration
+        val client = nearbyRoomClient ?: NearbyRoomClient(context) { state ->
+            if (generation != nearbyRoomGeneration) return@NearbyRoomClient
+            if (state.connected && !nearbyRoomState.connected) controller?.pause()
+            nearbyRoomState = state
+            if (!state.connected && offeringRoomPlayback) stopOfferingRoomPlayback()
+        }
             .also { nearbyRoomClient = it }
         client.scan()
     }
@@ -498,9 +546,12 @@ class HarmonicastViewModel : ViewModel() {
     fun joinNearbyRoom(roomCode: String) = nearbyRoomClient?.connect(roomCode)
 
     fun leaveNearbyRoom() {
+        nearbyRoomGeneration++
+        stopOfferingRoomPlayback()
         nearbyRoomClient?.close()
         nearbyRoomClient = null
         nearbyRoomState = NearbyRoomState()
+        if (ready) connectPlaybackService()
     }
 
     fun loadNearbyQueue(offset: Int = 0) = nearbyRoomClient?.loadQueue(offset)
@@ -863,9 +914,11 @@ class HarmonicastViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        nearbyRoomGeneration++
         socketStopped = true
         socketReconnectJob?.cancel()
         socket?.close()
+        stopOfferingRoomPlayback()
         nearbyRoomClient?.close()
         controller?.let { MediaController.releaseFuture(com.google.common.util.concurrent.Futures.immediateFuture(it)) }
         super.onCleared()
@@ -962,6 +1015,20 @@ class MainActivity : ComponentActivity() {
                 Text("Leave")
             }
         }
+        if (vm.isPersonalMode && vm.canWriteToPlex) {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Room playback", style = MaterialTheme.typography.titleMedium)
+                    if (vm.offeringRoomPlayback) {
+                        Text(NativePlaybackReceiver.state.value.message)
+                        OutlinedButton(onClick = vm::stopOfferingRoomPlayback, enabled = !room.busy) { Text("Stop playing here") }
+                    } else {
+                        Text("Let the host play the room's music here. Both devices need the same Wi-Fi for audio.")
+                        Button(onClick = vm::offerRoomPlayback, enabled = !room.busy) { Text("Offer this device as player") }
+                    }
+                }
+            }
+        }
         Surface(shape = RoundedCornerShape(50), color = Color(0xff30243a)) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.BluetoothConnected, null, Modifier.size(18.dp), tint = Color(0xffd0a2ff))
@@ -996,7 +1063,7 @@ class MainActivity : ComponentActivity() {
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text(if (room.isPlaying) "Playing on the host" else "Paused on the host", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            Text(if (room.isPlaying) "Room is playing" else "Room is paused", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -1559,12 +1626,33 @@ class MainActivity : ComponentActivity() {
             }) vm.setGuestControl(true)
         else vm.error = "Nearby devices permission is required to open a Bluetooth room"
     }
+    val joinPermissions = remember { bluetoothPermissions(advertise = false) }
+    val joinPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        if (joinPermissions.all { result[it] == true || ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) vm.scanNearbyRoom()
+        else vm.error = "Nearby devices permission is required to find a room"
+    }
     val value = share.roundToInt().coerceIn(0, 10)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        ElevatedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Join a room", style = MaterialTheme.typography.titleMedium)
+                Text("Join a nearby host to request music or offer this device for playback.")
+                Button(onClick = {
+                    if (joinPermissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) vm.scanNearbyRoom()
+                    else joinPermissionLauncher.launch(joinPermissions)
+                }, enabled = !vm.nearbyRoomState.scanning && !HarmonicastMediaService.roomShareState.value.enabled) {
+                    Text(if (vm.nearbyRoomState.scanning) "Looking for nearby rooms…" else "Join nearby room")
+                }
+                if (vm.nearbyRoomState.availableRooms.size > 1) vm.nearbyRoomState.availableRooms.forEach { code ->
+                    OutlinedButton(onClick = { vm.joinNearbyRoom(code) }) { Text("Room $code") }
+                }
+                if (vm.nearbyRoomState.error.isNotBlank()) Text(vm.nearbyRoomState.error, color = MaterialTheme.colorScheme.error)
+            }
+        }
         if (!vm.isPersonalMode) {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1645,6 +1733,17 @@ class MainActivity : ComponentActivity() {
                     }
                     if (room.enabled) {
                         Text("Room ${room.roomCode}", style = MaterialTheme.typography.headlineSmall)
+                        Text("Room playback", style = MaterialTheme.typography.titleMedium)
+                        if (HarmonicastMediaService.nativeOutputActive.value) {
+                            Button(onClick = vm::takeBackPlayback) { Text("Play on this device") }
+                        } else {
+                            val devices = HarmonicastMediaService.roomPlaybackDevices.value
+                            if (devices.isEmpty()) Text("An owner-signed-in app can join this room and offer to play the music.")
+                            devices.forEach { (id, name) ->
+                                OutlinedButton(onClick = { vm.transferPlayback(id) }) { Text("Play on $name") }
+                            }
+                        }
+                        if (HarmonicastMediaService.nativeOutputStatus.value.isNotBlank()) Text(HarmonicastMediaService.nativeOutputStatus.value)
                         Text(
                             "Closes after 30 minutes without guest activity, or after 4 hours total.",
                             style = MaterialTheme.typography.bodySmall,

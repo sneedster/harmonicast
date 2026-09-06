@@ -148,8 +148,14 @@
   credentials, source selection, or app settings. A following slice will let
   the host phone explicitly move audio to a trusted native app on Google TV or
   another phone and take it back; browser clients are never audio destinations.
-  The native TV interface comes first: the same APK and playback core, with a
-  landscape big-screen layout, remote focus, and phone-assisted Plex sign-in.
+- Native room playback is implemented and device accepted on an owner-signed-in
+  Pixel host and Samsung receiver. An owner app joins the existing Bluetooth
+  room, explicitly offers itself as a player, and appears by device name in the
+  host's room controls. The host retains queue selection, pause, skip, automatic
+  advancement, and take-back. Leaving or ending the room revokes the receiver
+  and stops its audio. Both devices must be signed in as Plex owners, while the
+  audio stream stays on the local Wi-Fi/Ethernet network. Google TV hardware and
+  long-duration Doze validation remain in the next slice.
 - Clean-device validation on a Samsung browser confirmed accountless room load,
   now-playing and queue updates, search, request submission, and immediate
   disconnect when the Pixel host ended sharing. The run exposed and fixed local

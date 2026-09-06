@@ -432,4 +432,41 @@ are eligible, including a phone connected to Bluetooth speakers or an audio syst
 The host explicitly approves transfer and can take it back. Browser clients remain
 controllers and are never eligible for audio transfer. Native TV uses the same APK
 and playback core with a landscape layout, large text, and remote navigation.
-The TV UI foundation precedes implementing the native handoff protocol.
+Google TV hardware validation is still outstanding.
+
+### Native transfer owner requirement
+
+Both sending and receiving instances must have a configured personal Plex source
+with owner rights. Shared-server and signed-out profiles cannot send or receive.
+An eligible native app joins the existing Bluetooth room and explicitly offers
+itself as a player. The host selects its device name in the room sharing controls.
+A one-use random pairing secret travels over that room connection; there is no
+separate address or code entry. Browser room capabilities cannot offer a player.
+Leaving or ending the room revokes playback eligibility. The initial transport uses a
+private Wi-Fi/Ethernet connection with a revocable current-track audio proxy;
+Plex stream credentials stay on the sending host. The receiver reports position
+and completion, while the host retains queue selection and rating/scrobble logic.
+Local peer traffic uses the Wi-Fi/Ethernet network explicitly, preserving the
+normal internet route. A VPN that forbids local bypass can prevent audio transfer;
+the room controls report this without changing the user's VPN settings.
+Loss of control traffic stops the receiver after five seconds; host recovery is
+paused unless explicit take-back is acknowledged by the receiver.
+
+### Native room playback validation (1.0.56)
+
+On the Pixel 10 Pro host and owner-signed-in Samsung SM-G998U, verified room
+joining, device offering/selection, receiver playback, host pause and requested
+track skip, natural queue advancement, and explicit playback take-back. Excluding
+Harmonicast from Tailscale app-based split tunneling resolved Android's rejected
+direct Wi-Fi socket. A short 15-second test with both screens off retained receiver
+playback; this is not a long-duration battery/Doze test.
+
+Leaving from the Samsung stopped receiver audio and paused the host. A queued
+Bluetooth update initially restored the departed room screen; the ViewModel now
+ignores callbacks from an earlier room connection generation. The updated build
+was installed on both phones, and leaving now returns the Samsung to its personal
+player. Ending the room from the Pixel also stopped the receiver and dismissed
+the Samsung room screen. Room closure now explicitly restores the host's paused
+state and receiver position, because its local ExoPlayer was already stopped and
+would not otherwise emit a new pause event. Google TV hardware validation remains
+outstanding.

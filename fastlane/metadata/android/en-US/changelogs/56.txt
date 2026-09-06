@@ -1,0 +1,1 @@
+Move playback to another owner-signed-in Harmonicast app through an existing nearby room. The host can pause, skip, advance the queue, and take playback back. Leaving or ending the room stops the receiver. Native phones and TVs can offer playback; browser clients remain controllers only.

@@ -53,6 +53,13 @@ class HarmonicastMediaService : MediaLibraryService() {
     private data class HistoryItem(val mediaItem: MediaItem, val isAuto: Boolean)
     private val playbackHistory = PlaybackHistory<HistoryItem>()
     private var changingTrack = false
+    private data class RoomPlayer(val address: String, val code: String, val name: String)
+    private val roomPlayers = mutableMapOf<String, RoomPlayer>()
+    private var nativeParticipant: String? = null
+    private var nativeOutput: NativePlaybackHost? = null
+    private var nativeWakeLock: android.os.PowerManager.WakeLock? = null
+    private var nativeOutputBusy = false
+    private var nativeRequestGeneration = 0
     private var guestRoomGateway: GuestRoomGateway? = null
     private var nearbyRoomHost: NearbyRoomHost? = null
     private var guestRoomLifecycleJob: kotlinx.coroutines.Job? = null
@@ -71,8 +78,13 @@ class HarmonicastMediaService : MediaLibraryService() {
         const val SKIP_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.SKIP_PLAYBACK"
         const val RELOAD_PROFILE_ACTION = "io.github.sneedster.harmonicast.RELOAD_PROFILE"
         const val ENABLE_GUEST_CONTROL_ACTION = "io.github.sneedster.harmonicast.ENABLE_GUEST_CONTROL"
+        const val TRANSFER_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.TRANSFER_PLAYBACK"
+        const val TAKE_BACK_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.TAKE_BACK_PLAYBACK"
+        val nativeOutputStatus = mutableStateOf("")
+        val nativeOutputActive = mutableStateOf(false)
         const val DISABLE_GUEST_CONTROL_ACTION = "io.github.sneedster.harmonicast.DISABLE_GUEST_CONTROL"
         val roomShareState = mutableStateOf(RoomShareState())
+        val roomPlaybackDevices = mutableStateOf<Map<String, String>>(emptyMap())
         private val PLAY_SIMILAR_COMMAND = SessionCommand(COMMAND_PLAY_SIMILAR, Bundle())
         private val CLEAR_QUEUE_COMMAND = SessionCommand(COMMAND_CLEAR_QUEUE, Bundle())
     }
@@ -103,7 +115,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             }
 
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_ENDED) {
+                if (state == Player.STATE_ENDED && nativeOutput == null) {
                     advance("ended")
                 }
             }
@@ -129,6 +141,20 @@ class HarmonicastMediaService : MediaLibraryService() {
 
         // Handle transport outside the single-item Media3 timeline.
         val forwardingPlayer = object : ForwardingPlayer(exoPlayer) {
+            override fun play() { nativeOutput?.let { it.play(true); return }; super.play() }
+            override fun pause() { nativeOutput?.let { it.play(false); return }; super.pause() }
+            override fun setPlayWhenReady(value: Boolean) { nativeOutput?.let { it.play(value); return }; super.setPlayWhenReady(value) }
+            override fun prepare() {
+                val output = nativeOutput
+                if (output != null) { player.currentMediaItem?.let { output.load(it, player.currentPosition, false) }; return }
+                super.prepare()
+            }
+            override fun seekTo(positionMs: Long) { nativeOutput?.let { it.seek(positionMs); return }; super.seekTo(positionMs) }
+            override fun seekTo(mediaItemIndex: Int, positionMs: Long) {
+                nativeOutput?.let { it.seek(positionMs); return }; super.seekTo(mediaItemIndex, positionMs)
+            }
+            override fun stop() { nativeOutput?.let { it.play(false); return }; super.stop() }
+
             override fun getAvailableCommands(): Player.Commands {
                 return super.getAvailableCommands().buildUpon()
                     .add(COMMAND_SEEK_TO_NEXT)
@@ -556,12 +582,130 @@ class HarmonicastMediaService : MediaLibraryService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            TRANSFER_PLAYBACK_ACTION -> {
+                val participant = intent.getStringExtra("participant").orEmpty()
+                roomPlayers[participant]?.takeIf { roomShareState.value.enabled }?.let {
+                    transferNativePlayback(participant, it.address, it.code)
+                }
+            }
+            TAKE_BACK_PLAYBACK_ACTION -> scope.launch { takeBackNativePlayback(true) }
             SKIP_PLAYBACK_ACTION -> advance("skip")
             RELOAD_PROFILE_ACTION -> reloadProfile()
             ENABLE_GUEST_CONTROL_ACTION -> enableGuestControl()
             DISABLE_GUEST_CONTROL_ACTION -> disableGuestControl()
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        if (nativeOutput != null) showNativeOutputNotification()
+        else super.onUpdateNotification(session, startInForegroundRequired)
+    }
+
+    private fun showNativeOutputNotification() {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        manager.createNotificationChannel(android.app.NotificationChannel("native-output", "Playback on another device", android.app.NotificationManager.IMPORTANCE_LOW))
+        val open = PendingIntent.getActivity(this, 56, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val takeBack = PendingIntent.getService(this, 56, Intent(this, HarmonicastMediaService::class.java).setAction(TAKE_BACK_PLAYBACK_ACTION), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notification = android.app.Notification.Builder(this, "native-output")
+            .setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("Harmonicast")
+            .setContentText("Playing through another device").setOngoing(true).setContentIntent(open)
+            .addAction(android.app.Notification.Action.Builder(null, "Take playback back", takeBack).build()).build()
+        startForeground(1056, notification)
+    }
+
+    private fun transferNativePlayback(participant: String, address: String, code: String) {
+        if (!NativePlaybackProtocol.ownerEligible(this)) {
+            nativeOutputStatus.value = "Playback transfer requires owner Plex access on both devices"
+            return
+        }
+        if (nativeOutputBusy || nativeOutput != null || androidAutoControllers.isNotEmpty()) {
+            nativeOutputStatus.value = "Take playback back first, and disconnect Android Auto before transferring"
+            return
+        }
+        val generation = ++nativeRequestGeneration
+        nativeOutputBusy = true
+        nativeOutputStatus.value = "Connecting to room player…"
+        scope.launch {
+            var candidate: NativePlaybackHost? = null
+            try {
+                require(player.currentMediaItem != null) { "Choose a track before transferring" }
+                val output = NativePlaybackHost.pair(this@HarmonicastMediaService, address.trim(), code.trim())
+                candidate = output
+                if (generation != nativeRequestGeneration || participant !in roomPlayers || !NativePlaybackProtocol.ownerEligible(this@HarmonicastMediaService)) {
+                    output.close(); return@launch
+                }
+                val current = player.currentMediaItem ?: run { output.close(); return@launch }
+                val position = player.currentPosition
+                val playing = player.playWhenReady
+                nativeOutput = output
+                nativeParticipant = participant
+                player.pause()
+                player.stop()
+                stopPositionSaving()
+                output.load(current, position, playing)
+                nativeWakeLock = (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
+                    .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Harmonicast:NativeOutput").also { it.acquire() }
+                showNativeOutputNotification()
+                nativeOutputActive.value = true
+                nativeOutputStatus.value = "Playing on ${roomPlayers[participant]?.name ?: "room device"}"
+                output.monitor(scope, update = { ended ->
+                    if (nativeOutput === output) {
+                        if (!NativePlaybackProtocol.ownerEligible(this@HarmonicastMediaService)) {
+                            scope.launch { takeBackNativePlayback(false) }
+                        } else {
+                            publishNativePlayback(output)
+                            if (ended) advance("ended")
+                        }
+                    }
+                }, failed = {
+                    if (nativeOutput === output) scope.launch { takeBackNativePlayback(false) }
+                })
+            } catch (e: Exception) {
+                if (candidate != null && nativeOutput === candidate) {
+                    nativeOutputBusy = false
+                    takeBackNativePlayback(false)
+                } else candidate?.close()
+                nativeOutputStatus.value = NativePlaybackProtocol.connectionError(e)
+            } finally { nativeOutputBusy = false }
+        }
+    }
+
+    private suspend fun publishNativePlayback(output: NativePlaybackHost) {
+        val item = player.currentMediaItem ?: return
+        val metadata = item.mediaMetadata
+        val saved = core.playback.snapshot().nowPlaying.song
+        val song = if (saved?.id == item.mediaId) saved else core.library.track(item.mediaId)
+            ?: Song(item.mediaId, metadata.title?.toString().orEmpty(), metadata.artist?.toString().orEmpty(), metadata.albumTitle?.toString().orEmpty())
+        core.playback.publish(song, output.playing, currentIsAuto.get())
+        core.playback.savePosition(output.position / 1000.0)
+    }
+
+    private suspend fun takeBackNativePlayback(resume: Boolean) {
+        if (nativeOutputBusy) return
+        val output = nativeOutput ?: return
+        nativeOutputBusy = true
+        nativeParticipant?.let { roomPlayers.remove(it) }
+        roomPlaybackDevices.value = roomPlayers.mapValues { it.value.name }
+        val position = output.position
+        val wasPlaying = output.playing
+        try {
+            val stopped = output.stop()
+            // If the acknowledgement was lost, leave the phone paused. The receiver
+            // has an independent five-second lease and cannot continue indefinitely.
+            nativeOutput = null
+            nativeParticipant = null
+            nativeWakeLock?.let { if (it.isHeld) it.release() }
+            nativeWakeLock = null
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            nativeOutputActive.value = false
+            player.seekTo(position)
+            player.prepare()
+            player.playWhenReady = resume && stopped && wasPlaying
+            syncCurrentPlaybackState(player.isPlaying)
+            core.playback.savePosition(position / 1000.0)
+            nativeOutputStatus.value = if (resume && stopped) "Playback returned to this device" else "Receiver disconnected; playback is paused here"
+        } finally { nativeOutputBusy = false }
     }
 
     private fun enableGuestControl() {
@@ -577,6 +721,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 displayToggle = {
                     scope.launch {
                         if (player.currentMediaItem == null) advance("skip")
+                        else if (nativeOutput != null) nativeOutput?.play(nativeOutput?.playing != true)
                         else if (player.isPlaying) player.pause() else player.play()
                     }
                 },
@@ -584,7 +729,29 @@ class HarmonicastMediaService : MediaLibraryService() {
             )
             guestRoomGateway = gateway
             val room = gateway.start()
-            val nearby = NearbyRoomHost(this, core, room.roomCode, gateway::routeNearby, gateway::touchNearby)
+            val nearby = NearbyRoomHost(this, core, room.roomCode, gateway::routeNearby, gateway::touchNearby,
+                offerPlayer = { id, value ->
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        val data = runCatching { org.json.JSONObject(value) }.getOrNull()
+                        val address = data?.optString("address").orEmpty()
+                        val code = data?.optString("code").orEmpty()
+                        if (guestRoomGateway !== gateway || !NativePlaybackProtocol.isLocalAddress(address) || code.length != 43) false
+                        else {
+                            roomPlayers[id] = RoomPlayer(address, code, data?.optString("name")?.take(40).orEmpty().ifBlank { id })
+                            roomPlaybackDevices.value = roomPlayers.mapValues { it.value.name }
+                            true
+                        }
+                    }
+                },
+                removePlayer = { id -> scope.launch {
+                    roomPlayers.remove(id)
+                    roomPlaybackDevices.value = roomPlayers.mapValues { it.value.name }
+                    if (nativeParticipant == id) {
+                        while (nativeOutputBusy) delay(50)
+                        takeBackNativePlayback(false)
+                    }
+                } },
+            )
             nearbyRoomHost = nearby
             roomShareState.value = room.copy(nearbyAvailable = nearby.start())
             monitorGuestRoom(gateway)
@@ -610,6 +777,25 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun disableGuestControl(message: String = "") {
+        nativeRequestGeneration++
+        roomPlayers.clear()
+        roomPlaybackDevices.value = emptyMap()
+        if (nativeOutput != null) {
+            val position = nativeOutput!!.position
+            nativeOutput?.close()
+            nativeOutput = null
+            nativeParticipant = null
+            nativeWakeLock?.let { if (it.isHeld) it.release() }
+            nativeWakeLock = null
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            nativeOutputActive.value = false
+            nativeOutputStatus.value = "Playback transfer ended"
+            player.pause()
+            player.seekTo(position)
+            player.prepare()
+            syncCurrentPlaybackState(false)
+            scope.launch { core.playback.savePosition(position / 1000.0) }
+        }
         guestRoomLifecycleJob?.cancel()
         guestRoomLifecycleJob = null
         guestRoomGateway?.stop()
@@ -621,6 +807,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun reloadProfile() {
+        disableGuestControl()
         stopPositionSaving()
         webSocketGeneration += 1
         webSocketReconnectJob?.cancel()
@@ -693,6 +880,10 @@ class HarmonicastMediaService : MediaLibraryService() {
         controller.packageName == "com.google.android.projection.gearhead"
 
     private fun claimAndroidAutoPlayback() {
+        if (nativeOutput != null) {
+            scope.launch { while (nativeOutputBusy) delay(50); takeBackNativePlayback(false); claimAndroidAutoPlayback() }
+            return
+        }
         scope.launch {
             try {
                 Log.d("HarmonicastMedia", "Android Auto connected — claiming playback")
@@ -813,6 +1004,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun syncCurrentPlaybackState(isPlaying: Boolean) {
+        if (nativeOutput != null) return
         val item = player.currentMediaItem ?: return
         val songId = item.mediaId
         val title = item.mediaMetadata.title?.toString() ?: ""
@@ -856,8 +1048,9 @@ class HarmonicastMediaService : MediaLibraryService() {
     private fun playHistoryItem(item: HistoryItem, playWhenReady: Boolean) {
         currentIsAuto.set(item.isAuto)
         player.setMediaItem(item.mediaItem, 0)
-        player.prepare()
-        player.playWhenReady = playWhenReady
+        val output = nativeOutput
+        if (output != null) output.load(item.mediaItem, 0, playWhenReady)
+        else { player.prepare(); player.playWhenReady = playWhenReady }
         syncCurrentPlaybackState(playWhenReady)
         scope.launch {
             try {
@@ -871,12 +1064,12 @@ class HarmonicastMediaService : MediaLibraryService() {
     private fun goBack(forcePrevious: Boolean = false) {
         scope.launch {
             if (changingTrack || player.currentMediaItem == null) return@launch
-            val previous = playbackHistory.previous(player.currentPosition, forcePrevious)
+            val previous = playbackHistory.previous(nativeOutput?.position ?: player.currentPosition, forcePrevious)
             if (previous == null) {
-                player.seekTo(0)
-                if (player.playbackState == Player.STATE_ENDED) player.prepare()
+                if (nativeOutput != null) nativeOutput?.seek(0) else player.seekTo(0)
+                if (nativeOutput == null && player.playbackState == Player.STATE_ENDED) player.prepare()
             } else {
-                playHistoryItem(previous, player.playWhenReady)
+                playHistoryItem(previous, nativeOutput?.playing ?: player.playWhenReady)
             }
             // Publish the reset immediately, including when playback is paused.
             try {
@@ -896,7 +1089,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 if (currentMediaItem != null) {
                     val oldId = currentMediaItem.mediaId
                     val progress = if (player.duration > 0) {
-                        (player.currentPosition.toFloat() / player.duration).coerceIn(0f, 1f)
+                        ((nativeOutput?.position ?: player.currentPosition).toFloat() / player.duration).coerceIn(0f, 1f)
                     } else 0f
 
                     if (reason == "ended") {
@@ -926,11 +1119,13 @@ class HarmonicastMediaService : MediaLibraryService() {
                     // The shared Request queue remains the authoritative list
                     // of upcoming songs, and advance() loads its next song.
                     player.setMediaItem(createMediaItem(song), 0)
-                    player.prepare()
-                    player.play()
+                    val output = nativeOutput
+                    if (output != null) output.load(player.currentMediaItem!!, 0, true)
+                    else { player.prepare(); player.play() }
                 } else {
                     currentIsAuto.set(false)
                     core.playback.publish(null, isPlaying = false)
+                    nativeOutput?.play(false)
                     player.stop()
                 }
             } catch (e: Exception) {

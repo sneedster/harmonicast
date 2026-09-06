@@ -201,6 +201,8 @@ class NearbyRoomHost(
     private val roomCode: String,
     private val routeGuest: suspend (GuestApiRequest) -> GuestApiResponse,
     private val touchRoom: () -> Boolean,
+    private val offerPlayer: suspend (String, String) -> Boolean = { _, _ -> false },
+    private val removePlayer: (String) -> Unit = {},
 ) {
     private val appContext = context.applicationContext
     private val manager = appContext.getSystemService(BluetoothManager::class.java)
@@ -235,7 +237,11 @@ class NearbyRoomHost(
                     connectedDevices += device
                     participantFor(device)
                 }
-                else if (newState == BluetoothProfile.STATE_DISCONNECTED) connectedDevices -= device
+                else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                    connectedDevices -= device
+                    participants.remove(device.address)?.let(removePlayer)
+                    responses.remove(device.address)
+                }
             }
         }
 
@@ -289,7 +295,10 @@ class NearbyRoomHost(
             responses[device.address] = JSONObject().put("id", id).put("pending", true)
                 .toString().toByteArray(StandardCharsets.UTF_8)
             scope.launch {
-                responses[device.address] = handleCommand(command, participantFor(device))
+                val participant = participantFor(device)
+                val response = handleCommand(command, participant)
+                if (participants[device.address] == participant) responses[device.address] = response
+                else removePlayer(participant)
             }
         }
     }
@@ -303,6 +312,12 @@ class NearbyRoomHost(
         val action = command.optString("action")
         val offset = command.optInt("offset", 0).coerceAtLeast(0)
         val value = command.optString("value")
+        if (action == "offer-player" || action == "withdraw-player") {
+            if (!touchRoom()) return errorResponse(id, action, "Room has ended")
+            if (action == "withdraw-player") removePlayer(participantId)
+            else if (!offerPlayer(participantId, value)) return errorResponse(id, action, "Player is unavailable")
+            return JSONObject().put("id", id).put("action", action).put("ok", true).toString().toByteArray(StandardCharsets.UTF_8)
+        }
         if (action == "art") {
             val artwork = loadArtwork(value)
             return NearbyRoomWire.artworkResponse(id, value, artwork, offset)
@@ -704,6 +719,8 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             return
         }
         when (pending.action) {
+            "offer-player", "withdraw-player" -> publish(roomState.copy(busy = false, error = "",
+                message = if (pending.action == "offer-player") "The host can now choose this device for playback" else "Playback offer removed"))
             "queue" -> publish(roomState.copy(
                 queue = NearbyRoomWire.decodeSongs(json.optJSONArray("items") ?: JSONArray()),
                 queueOffset = json.optInt("offset"),
@@ -782,6 +799,9 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         handler.postDelayed(refreshStatus, STATUS_REFRESH_MS)
     }
 
+    fun offerPlayback(address: String, code: String) = sendCommand("offer-player", value = JSONObject()
+        .put("address", address).put("code", code).put("name", android.os.Build.MODEL.take(40)).toString())
+    fun withdrawPlayback() = sendCommand("withdraw-player")
     fun loadQueue(offset: Int = 0) = sendCommand("queue", offset)
     private fun loadArtwork(key: String) = sendCommand("art", value = key)
     fun search(query: String, offset: Int = 0) {
