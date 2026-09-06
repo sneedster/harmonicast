@@ -68,6 +68,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         private const val COMMAND_PLAY_SIMILAR = "io.github.sneedster.harmonicast.PLAY_SIMILAR"
         private const val COMMAND_CLEAR_QUEUE = "io.github.sneedster.harmonicast.CLEAR_QUEUE"
         const val CLAIM_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.CLAIM_PLAYBACK"
+        const val SKIP_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.SKIP_PLAYBACK"
         const val RELOAD_PROFILE_ACTION = "io.github.sneedster.harmonicast.RELOAD_PROFILE"
         const val ENABLE_GUEST_CONTROL_ACTION = "io.github.sneedster.harmonicast.ENABLE_GUEST_CONTROL"
         const val DISABLE_GUEST_CONTROL_ACTION = "io.github.sneedster.harmonicast.DISABLE_GUEST_CONTROL"
@@ -555,6 +556,7 @@ class HarmonicastMediaService : MediaLibraryService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            SKIP_PLAYBACK_ACTION -> advance("skip")
             RELOAD_PROFILE_ACTION -> reloadProfile()
             ENABLE_GUEST_CONTROL_ACTION -> enableGuestControl()
             DISABLE_GUEST_CONTROL_ACTION -> disableGuestControl()

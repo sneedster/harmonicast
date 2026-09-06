@@ -799,7 +799,16 @@ class HarmonicastViewModel : ViewModel() {
         if (isActivePlayer) controller?.seekToPrevious()
     }
 
-    fun nextSong() = coreAction { core.playback.skip() }
+    fun nextSong() {
+        if (isActivePlayer) {
+            context.startService(
+                Intent(context, HarmonicastMediaService::class.java)
+                    .setAction(HarmonicastMediaService.SKIP_PLAYBACK_ACTION),
+            )
+        } else {
+            coreAction { core.playback.skip() }
+        }
+    }
     fun playQueued(song: Song) {
         if (!isActivePlayer) return
         controller?.setMediaItem(MediaItem.Builder().setMediaId(song.id).build())
@@ -1388,7 +1397,14 @@ class MainActivity : ComponentActivity() {
         }
         if (vm.playlistsLoading && vm.playlists.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (!vm.playlistsLoading && vm.playlists.isEmpty()) {
-            Text("No audio playlists were found in this Plex account.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (vm.isPersonalMode && !vm.canWriteToPlex) {
+                    "No audio playlists were found for this Plex user. Plex playlists belong to their creator, so the server owner's playlists do not appear automatically."
+                } else {
+                    "No audio playlists were found in this Plex account."
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(vm.playlists, key = PlexPlaylist::id) { playlist ->

@@ -138,6 +138,9 @@
   search, playlists, queues, automatic playback, artwork, and Android Auto.
   Rating controls, adaptive rating writes, scrobbling, and guest-room hosting
   are disabled; local queue, resume, and history state still persist normally.
+  Playlist results belong to the signed-in Plex user; playlists created by the
+  server owner are not inherited by a shared account. The sole local player can
+  skip every current track, including one it manually queued.
 - Clean-device validation on a Samsung browser confirmed accountless room load,
   now-playing and queue updates, search, request submission, and immediate
   disconnect when the Pixel host ended sharing. The run exposed and fixed local
