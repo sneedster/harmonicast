@@ -113,7 +113,11 @@
   A single room still joins automatically; if multiple hosts are nearby, the
   signed-out guest sees their four-letter room codes and explicitly chooses one.
   Arrival ordering, duplicate advertisements, selection, and malformed codes are
-  covered by unit tests; real two-host device acceptance remains outstanding.
+  covered by unit tests. The chooser and selected-room connection are device
+  accepted with simultaneous Pixel and Samsung hosts and an Android 8 Galaxy S7
+  guest. The S7 was a one-time borrowed test device and is not part of the
+  ongoing device pool. Joining also dismisses any keyboard left open by the
+  migration URL field.
 - Standalone playback now seeds the weighted automatic mix when personal mode
   starts without a current track and refills it whenever the upcoming queue is
   exhausted. A deliberately paused current track remains paused.

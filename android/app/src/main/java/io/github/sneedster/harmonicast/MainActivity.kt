@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -1156,6 +1158,12 @@ class MainActivity : ComponentActivity() {
 @Composable private fun Login(vm: HarmonicastViewModel) {
     var server by remember(vm.savedBaseUrl) { mutableStateOf(vm.serverUrl()) }
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val dismissKeyboard = {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+    }
     val nearbyPermissions = remember { bluetoothPermissions(advertise = false) }
     val nearbyPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -1197,6 +1205,7 @@ class MainActivity : ComponentActivity() {
             Text("Join a nearby host over Bluetooth. This phone keeps its current internet connection and does not need Plex credentials.")
             Button(
                 onClick = {
+                    dismissKeyboard()
                     if (nearbyPermissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) {
                         vm.scanNearbyRoom()
                     } else nearbyPermissionLauncher.launch(nearbyPermissions)
@@ -1211,7 +1220,10 @@ class MainActivity : ComponentActivity() {
                 Text("Choose a nearby room", style = MaterialTheme.typography.titleMedium)
                 nearby.availableRooms.forEach { roomCode ->
                     OutlinedButton(
-                        onClick = { vm.joinNearbyRoom(roomCode) },
+                        onClick = {
+                            dismissKeyboard()
+                            vm.joinNearbyRoom(roomCode)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Default.BluetoothConnected, null)

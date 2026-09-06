@@ -268,7 +268,8 @@ sent to the guest.
   edge cases without requiring account sign-in. Nearby discovery now gathers
   advertisements for a short window, joins automatically when exactly one room
   is visible, and presents room codes for explicit selection when multiple hosts
-  are visible. The multi-host chooser still needs real two-host device acceptance.
+  are visible. The multi-host chooser and selected-room connection are accepted
+  with simultaneous Pixel and Samsung hosts and an Android 8 Galaxy S7 guest.
 
 Acceptance: a nearby guest joins intentionally and quickly, while a device that
 did not receive the current capability cannot control the host.
