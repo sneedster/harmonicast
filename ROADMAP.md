@@ -133,6 +133,11 @@
   server/library picker without another sign-in, and can explicitly sign out.
   Signing out clears Plex credentials and persisted playback records that may
   contain authenticated stream URLs.
+- Personal setup accepts both owned and shared Plex servers. Shared resources
+  use their server-scoped access token and run as a read-only local player with
+  search, playlists, queues, automatic playback, artwork, and Android Auto.
+  Rating controls, adaptive rating writes, scrobbling, and guest-room hosting
+  are disabled; local queue, resume, and history state still persist normally.
 - Clean-device validation on a Samsung browser confirmed accountless room load,
   now-playing and queue updates, search, request submission, and immediate
   disconnect when the Pixel host ended sharing. The run exposed and fixed local

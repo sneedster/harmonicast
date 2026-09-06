@@ -43,7 +43,7 @@ class OkHttpPlexHttp(private val client: OkHttpClient = OkHttpClient()) : PlexHt
     }
 }
 
-/** Direct Plex owner authentication and source discovery for personal mode. */
+/** Direct Plex authentication and accessible source discovery for personal mode. */
 class LocalPlexClient(
     private val storage: ProfileStorage,
     private val http: PlexHttp = OkHttpPlexHttp(),
@@ -83,7 +83,7 @@ class LocalPlexClient(
         return "https://app.plex.tv/auth#?$query"
     }
 
-    suspend fun ownedServers(token: String): List<PlexServer> {
+    suspend fun accessibleServers(token: String): List<PlexServer> {
         val resources = JSONArray(http.request(
             "https://plex.tv/api/v2/resources?includeHttps=1&includeRelay=1",
             headers = headers(token),
@@ -92,14 +92,20 @@ class LocalPlexClient(
             val provides = item.optString("provides").split(',')
             val machineId = item.optString("clientIdentifier")
             val name = item.optString("name")
-            if (!item.optBoolean("owned") || "server" !in provides || machineId.isBlank() || name.isBlank()) return@mapNotNull null
+            if ("server" !in provides || machineId.isBlank() || name.isBlank()) return@mapNotNull null
             val rawConnections = item.optJSONArray("connections") ?: JSONArray()
             val connections = List(rawConnections.length()) { rawConnections.getJSONObject(it) }.mapNotNull { connection ->
                 normalizeServerUrl(connection.optString("uri"))?.let {
                     PlexConnection(it, connection.optBoolean("local"), connection.optBoolean("relay"))
                 }
             }
-            PlexServer(machineId, name, connections).takeIf { connections.isNotEmpty() }
+            PlexServer(
+                machineIdentifier = machineId,
+                name = name,
+                connections = connections,
+                owned = item.optBoolean("owned"),
+                accessToken = item.optString("accessToken").takeIf { it.isNotBlank() },
+            ).takeIf { connections.isNotEmpty() }
         }
     }
 

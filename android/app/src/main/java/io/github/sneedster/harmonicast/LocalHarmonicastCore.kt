@@ -126,13 +126,15 @@ class LocalHarmonicastCore(
             storage.write(mapOf("local.playback" to value.toString()))
         }
         override suspend fun scrobble(id: String, submission: Boolean) {
-            if (submission) plex.scrobble(source, id)
+            if (source.canWriteToPlex && submission) plex.scrobble(source, id)
         }
         override suspend fun recordEvent(song: Song, event: String, progress: Double) {
-            val current = runCatching { plex.track(source, song.id) }.getOrNull()
-            if (current != null) {
-                val adjusted = adjustPersonalRating(current.rating, event, progress, current.viewCount)
-                if (adjusted != current.rating) plex.rate(source, song.id, adjusted)
+            if (source.canWriteToPlex) {
+                val current = runCatching { plex.track(source, song.id) }.getOrNull()
+                if (current != null) {
+                    val adjusted = adjustPersonalRating(current.rating, event, progress, current.viewCount)
+                    if (adjusted != current.rating) plex.rate(source, song.id, adjusted)
+                }
             }
             val history = storage.read("local.playbackHistory")?.let { runCatching { JSONArray(it) }.getOrNull() } ?: JSONArray()
             history.put(JSONObject().put("song", encodeSong(song)).put("event", event)
@@ -152,6 +154,7 @@ class LocalHarmonicastCore(
             isSetupOwner = true,
         )
         override suspend fun vote(up: Boolean) {
+            check(source.canWriteToPlex) { "Ratings are unavailable on a shared read-only Plex server" }
             val state = playback.snapshot()
             val current = state.nowPlaying.song
                 ?: throw IllegalStateException("No song is currently playing")

@@ -10,6 +10,8 @@ data class PersonalPlexSource(
     val serverName: String,
     val libraryKey: String,
     val libraryName: String,
+    val accountToken: String = token,
+    val canWriteToPlex: Boolean = true,
 )
 
 interface ProfileStorage {
@@ -41,6 +43,9 @@ class HomeProfileStore(private val storage: ProfileStorage) {
             serverName = storage.read("home.plex.serverName").orEmpty(),
             libraryKey = storage.read("home.plex.libraryKey").orEmpty(),
             libraryName = storage.read("home.plex.libraryName").orEmpty(),
+            accountToken = storage.read("home.plex.accountToken").orEmpty()
+                .ifBlank { storage.read("home.plex.token").orEmpty() },
+            canWriteToPlex = storage.read("home.plex.canWrite")?.toBooleanStrictOrNull() ?: true,
         )
         return source.takeIf {
             it.token.isNotBlank() && it.baseUrl.isNotBlank() && it.machineIdentifier.isNotBlank() &&
@@ -68,6 +73,8 @@ class HomeProfileStore(private val storage: ProfileStorage) {
             "home.plex.serverName" to source.serverName,
             "home.plex.libraryKey" to source.libraryKey,
             "home.plex.libraryName" to source.libraryName,
+            "home.plex.accountToken" to source.accountToken,
+            "home.plex.canWrite" to source.canWriteToPlex.toString(),
         ))
     }
     fun clearPersonalPlaybackState() = storage.write(mapOf(
@@ -85,6 +92,8 @@ class HomeProfileStore(private val storage: ProfileStorage) {
             "home.plex.serverName" to "",
             "home.plex.libraryKey" to "",
             "home.plex.libraryName" to "",
+            "home.plex.accountToken" to "",
+            "home.plex.canWrite" to "",
             "local.queue" to "[]",
             "local.playback" to "",
             "local.playbackHistory" to "[]",

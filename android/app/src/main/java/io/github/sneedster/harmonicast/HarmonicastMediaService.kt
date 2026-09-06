@@ -563,7 +563,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun enableGuestControl() {
-        if (api.profile.mode != HomeMode.PERSONAL_PLEX) {
+        if (api.profile.personalSource?.canWriteToPlex != true) {
             roomShareState.value = RoomShareState()
             return
         }

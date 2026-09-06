@@ -42,6 +42,23 @@ class LocalHarmonicastCoreTest {
         assertTrue(policy.configured)
     }
 
+    @Test fun sharedReadOnlyCoreKeepsLocalPlaybackButSuppressesPlexWrites() = runBlocking {
+        val storage = MemoryStorage()
+        val readOnly = LocalHarmonicastCore(source.copy(canWriteToPlex = false), storage)
+        val track = song("shared")
+
+        readOnly.playback.publish(track, true, false)
+        readOnly.playback.scrobble(track.id, submission = true)
+        readOnly.playback.recordEvent(track, "completed", 1.0)
+
+        assertEquals(track.id, readOnly.playback.snapshot().nowPlaying.song?.id)
+        assertTrue(storage.values["local.playbackHistory"].orEmpty().contains("completed"))
+        val error = assertThrows(IllegalStateException::class.java) {
+            runBlocking { readOnly.guests.vote(true) }
+        }
+        assertTrue(error.message.orEmpty().contains("read-only"))
+    }
+
     @Test fun ratedTrackShareSurvivesCoreRecreation() = runBlocking {
         val storage = MemoryStorage()
         LocalHarmonicastCore(source, storage).queue.setRatedTrackShare(3)

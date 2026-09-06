@@ -124,10 +124,12 @@ class HarmonicastViewModel : ViewModel() {
     var savedBaseUrl by mutableStateOf("")
     var personalSetupActive by mutableStateOf(false); private set
     val isPersonalMode: Boolean get() = ::api.isInitialized && api.profile.mode == HomeMode.PERSONAL_PLEX
+    val canWriteToPlex: Boolean get() = api.profile.personalSource?.canWriteToPlex == true
     val personalSetupCanCancel: Boolean get() = ::api.isInitialized && api.profile.homeReady
     private var personalPin: PlexPin? = null
     private var personalAuthJob: kotlinx.coroutines.Job? = null
     private var personalToken = ""
+    private var personalServerToken = ""
     private var personalServerBase = ""
     var nearbyRoomState by mutableStateOf(NearbyRoomState()); private set
     private var nearbyRoomClient: NearbyRoomClient? = null
@@ -178,6 +180,8 @@ class HarmonicastViewModel : ViewModel() {
             error = ""
             try {
                 personalSetupActive = true
+                personalToken = ""
+                personalServerToken = ""
                 val pending = plex.createPin()
                 personalPin = pending
                 startPersonalSignInPolling(pending)
@@ -196,7 +200,8 @@ class HarmonicastViewModel : ViewModel() {
         setGuestControl(false)
         personalAuthJob?.cancel()
         personalPin = null
-        personalToken = source.token
+        personalToken = source.accountToken
+        personalServerToken = ""
         personalServerBase = ""
         selectedPlexServer = null
         plexLibraries = emptyList()
@@ -206,10 +211,10 @@ class HarmonicastViewModel : ViewModel() {
         viewModelScope.launch {
             loading = true
             try {
-                plexServers = plex.ownedServers(source.token)
-                if (plexServers.isEmpty()) error = "No owned Plex servers were found."
+                plexServers = plex.accessibleServers(source.accountToken)
+                if (plexServers.isEmpty()) error = "No accessible Plex servers were found."
             } catch (e: Exception) {
-                error = e.message ?: "Could not load owned Plex servers"
+                error = e.message ?: "Could not load accessible Plex servers"
             } finally {
                 loading = false
             }
@@ -238,6 +243,7 @@ class HarmonicastViewModel : ViewModel() {
         socket = null
         api.profile.clearPersonalSource()
         personalToken = ""
+        personalServerToken = ""
         personalServerBase = ""
         personalSetupActive = false
         selectedPlexServer = null
@@ -300,8 +306,8 @@ class HarmonicastViewModel : ViewModel() {
                     val token = claimed?.authToken
                     if (!token.isNullOrBlank()) {
                         personalToken = token
-                        plexServers = plex.ownedServers(token)
-                        if (plexServers.isEmpty()) error = "No owned Plex servers were found."
+                        plexServers = plex.accessibleServers(token)
+                        if (plexServers.isEmpty()) error = "No accessible Plex servers were found."
                         return@launch
                     }
                     delay(1_000)
@@ -407,8 +413,9 @@ class HarmonicastViewModel : ViewModel() {
             loading = true
             try {
                 if (personalSetupActive) {
-                    personalServerBase = plex.connect(personalToken, server)
-                    plexLibraries = plex.musicLibraries(personalServerBase, personalToken)
+                    personalServerToken = server.accessToken ?: personalToken
+                    personalServerBase = plex.connect(personalServerToken, server)
+                    plexLibraries = plex.musicLibraries(personalServerBase, personalServerToken)
                     if (plexLibraries.isEmpty()) error = "This Plex server has no Music libraries."
                     return@launch
                 }
@@ -437,12 +444,14 @@ class HarmonicastViewModel : ViewModel() {
                 api.profile.clearPersonalPlaybackState()
             }
             api.profile.savePersonalSource(PersonalPlexSource(
-                personalToken,
-                personalServerBase,
-                server.machineIdentifier,
-                server.name,
-                library.key,
-                library.title,
+                token = personalServerToken,
+                baseUrl = personalServerBase,
+                machineIdentifier = server.machineIdentifier,
+                serverName = server.name,
+                libraryKey = library.key,
+                libraryName = library.title,
+                accountToken = personalToken,
+                canWriteToPlex = server.owned,
             ))
             core = harmonicastCore(api)
             ready = api.profile.homeReady
@@ -722,7 +731,13 @@ class HarmonicastViewModel : ViewModel() {
 
     fun add(song: Song) = coreAction { core.queue.add(song); refresh() }
     fun remove(song: Song) = coreAction { core.queue.remove(song.id); refresh() }
-    fun vote(up: Boolean) = coreAction { core.guests.vote(up) }
+    fun vote(up: Boolean) {
+        if (isPersonalMode && !canWriteToPlex) {
+            notice = "Ratings are unavailable on a shared read-only Plex server"
+            return
+        }
+        coreAction { core.guests.vote(up) }
+    }
     fun claim() = coreAction { core.playback.claim(); refresh() }
     fun clearQueue() = coreAction { core.queue.clear(); refresh() }
     fun saveRatedTrackShare(share: Int, announce: Boolean = true) {
@@ -1258,7 +1273,7 @@ class MainActivity : ComponentActivity() {
             Text("Choose your Plex server", style = MaterialTheme.typography.titleMedium)
             vm.plexServers.forEach { server ->
                 OutlinedButton(onClick = { vm.choosePlexServer(server) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(server.name)
+                    Text(if (server.owned) server.name else "${server.name} · Shared read-only")
                 }
             }
         }
@@ -1440,6 +1455,13 @@ class MainActivity : ComponentActivity() {
                         vm.plexSourceLabel.ifBlank { "Personal Plex library" },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (!vm.canWriteToPlex) {
+                        Text(
+                            "Shared read-only server · playback and local queues are available; Plex ratings and guest hosting are disabled.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     Button(
                         onClick = vm::beginPersonalSourceChange,
                         enabled = !vm.loading,
@@ -1452,8 +1474,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            val room = HarmonicastMediaService.roomShareState.value
-            ElevatedCard(Modifier.fillMaxWidth()) {
+            if (vm.canWriteToPlex) {
+                val room = HarmonicastMediaService.roomShareState.value
+                ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         Modifier.fillMaxWidth(),
@@ -1518,6 +1541,17 @@ class MainActivity : ComponentActivity() {
                         OutlinedButton(onClick = { vm.setGuestControl(false) }, modifier = Modifier.fillMaxWidth()) {
                             Text("End guest room")
                         }
+                    }
+                }
+                }
+            } else {
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Guest hosting unavailable", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Only the Plex server owner can open a Harmonicast room. This shared profile remains a local read-only player.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
@@ -1790,9 +1824,11 @@ class MainActivity : ComponentActivity() {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Default.ThumbDown, "Vote down")
-                }
+                if (vm.canWriteToPlex) {
+                    IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Default.ThumbDown, "Vote down")
+                    }
+                } else Spacer(Modifier.size(48.dp))
                 IconButton(onClick = { vm.previousSong() }, enabled = vm.isActivePlayer, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.SkipPrevious, "Previous track or restart", modifier = Modifier.size(32.dp))
                 }
@@ -1802,9 +1838,11 @@ class MainActivity : ComponentActivity() {
                 IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(32.dp))
                 }
-                IconButton(onClick = { vm.vote(true) }, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Default.ThumbUp, "Vote up")
-                }
+                if (vm.canWriteToPlex) {
+                    IconButton(onClick = { vm.vote(true) }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Default.ThumbUp, "Vote up")
+                    }
+                } else Spacer(Modifier.size(48.dp))
             }
             if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Take control on this device") }
         }

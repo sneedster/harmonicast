@@ -38,22 +38,25 @@ class LocalPlexClientTest {
         assertEquals(1, storage.values.filterKeys { it == "home.plex.clientId" }.size)
     }
 
-    @Test fun sourceDiscoveryKeepsOwnedServersAndMusicLibrariesOnly() = runBlocking {
+    @Test fun sourceDiscoveryKeepsOwnedAndSharedServersWithTheirAccessMode() = runBlocking {
         val http = FakeHttp().apply {
             responses += """[
               {"owned":true,"provides":"server","clientIdentifier":"mine","name":"My Plex","connections":[{"uri":"https://mine.plex.direct/","local":true,"relay":false}]},
-              {"owned":false,"provides":"server","clientIdentifier":"shared","name":"Shared","connections":[{"uri":"https://shared"}]}
+              {"owned":false,"provides":"server","clientIdentifier":"shared","name":"Shared","accessToken":"shared-resource-token","connections":[{"uri":"https://shared"}]}
             ]"""
             responses += """{"MediaContainer":{"machineIdentifier":"mine","friendlyName":"My Plex"}}"""
             responses += """{"MediaContainer":{"Directory":[{"key":"7","title":"Music","type":"artist","uuid":"u"},{"key":"8","title":"Movies","type":"movie"}]}}"""
         }
         val client = LocalPlexClient(MemoryStorage(), http)
-        val server = client.ownedServers("owner").single()
+        val servers = client.accessibleServers("account-token")
+        val server = servers.single { it.owned }
+        val shared = servers.single { !it.owned }
+        assertEquals("shared-resource-token", shared.accessToken)
         assertEquals("mine", server.machineIdentifier)
         val base = client.connect("owner", server)
         assertEquals("https://mine.plex.direct", base)
         assertEquals(listOf(PlexLibrary("7", "Music", "u")), client.musicLibraries(base, "owner"))
-        assertEquals("owner", http.calls.first().headers["X-Plex-Token"])
+        assertEquals("account-token", http.calls.first().headers["X-Plex-Token"])
     }
 
     @Test fun directSearchBuildsPlayableAuthenticatedSongs() = runBlocking {

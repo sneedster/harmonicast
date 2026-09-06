@@ -30,6 +30,8 @@ data class PlexServer(
     val machineIdentifier: String,
     val name: String,
     val connections: List<PlexConnection> = emptyList(),
+    val owned: Boolean = true,
+    val accessToken: String? = null,
 )
 data class PlexLibrary(val key: String, val title: String, val uuid: String? = null)
 data class PlexPlaylist(val id: String, val title: String, val trackCount: Int = 0)

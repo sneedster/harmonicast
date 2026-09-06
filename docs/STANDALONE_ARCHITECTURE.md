@@ -226,6 +226,10 @@ must not be treated as authorization.
   the protected current-track-only Media3 timeline.
 - Persist the personal queue, now-playing state, and listening history locally.
 - Make the app launch directly into the personal player after first-run setup.
+- Allow a Plex account to select a server shared with it. Store that resource's
+  server-scoped token separately from the account token and mark the profile
+  read-only: local playback features remain available, while Plex rating and
+  scrobble writes plus Harmonicast guest hosting are disabled.
 
 Acceptance: after initial Plex setup, one phone can search, play, resume, queue,
 load or shuffle a Plex playlist, use Track Radio, and use Android Auto with no

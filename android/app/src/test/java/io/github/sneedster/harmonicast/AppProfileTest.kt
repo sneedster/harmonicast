@@ -120,4 +120,24 @@ class AppProfileTest {
         assertEquals("", storage.values["local.playback"])
         assertEquals("[]", storage.values["local.playbackHistory"])
     }
+
+    @Test fun sharedPlexSourceKeepsAccountAndServerTokensSeparateAndReadOnly() {
+        val storage = MemoryStorage()
+        val home = HomeProfileStore(storage)
+        home.savePersonalSource(PersonalPlexSource(
+            token = "shared-server-token",
+            baseUrl = "https://shared.plex.direct",
+            machineIdentifier = "shared-machine",
+            serverName = "Family Plex",
+            libraryKey = "7",
+            libraryName = "Music",
+            accountToken = "shared-user-account-token",
+            canWriteToPlex = false,
+        ))
+
+        val source = HomeProfileStore(storage).personalSource
+        assertEquals("shared-server-token", source?.token)
+        assertEquals("shared-user-account-token", source?.accountToken)
+        assertFalse(source?.canWriteToPlex ?: true)
+    }
 }
