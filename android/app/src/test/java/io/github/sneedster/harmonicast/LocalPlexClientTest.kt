@@ -104,4 +104,100 @@ class LocalPlexClientTest {
         } catch (_: IllegalArgumentException) {
         }
     }
+    @Test fun playlistPreviewIsBoundedWithoutChangingFullPlaybackRequest() = runBlocking {
+        val http = FakeHttp().apply {
+            repeat(2) { responses += """{"MediaContainer":{"Metadata":[]}}""" }
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val client = LocalPlexClient(MemoryStorage(), http)
+        client.playlistPage(source, "plex-playlist:machine:9")
+        client.playlistTracks(source, "plex-playlist:machine:9")
+        assertTrue(http.calls[0].url.contains("X-Plex-Container-Size=100"))
+        assertTrue(http.calls[0].url.contains("X-Plex-Container-Start=0"))
+        assertFalse(http.calls[1].url.contains("X-Plex-Container-Size"))
+    }
+
+    @Test fun playlistPagesKeepDuplicatesAndAdvancePastUnavailableEntries() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"totalSize":4,"Metadata":[
+                {"type":"track","ratingKey":"1","title":"Repeat","Media":[{"Part":[{"key":"/one"}]}]},
+                {"type":"track","ratingKey":"2","title":"Unavailable"},
+                {"type":"track","ratingKey":"1","title":"Repeat","Media":[{"Part":[{"key":"/one"}]}]}
+            ]}}"""
+            responses += """{"MediaContainer":{"totalSize":4,"Metadata":[{"type":"track","ratingKey":"3","title":"Last","Media":[{"Part":[{"key":"/last"}]}]}]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val client = LocalPlexClient(MemoryStorage(), http)
+        val first = client.playlistPage(source, "plex-playlist:machine:9")
+        assertEquals(listOf("Repeat", "Repeat"), first.tracks.map { it.title })
+        assertEquals(3, first.nextOffset)
+        val last = client.playlistPage(source, "plex-playlist:machine:9", first.nextOffset!!)
+        assertEquals(listOf("Last"), last.tracks.map { it.title })
+        assertNull(last.nextOffset)
+        assertTrue(http.calls.last().url.contains("X-Plex-Container-Start=3"))
+        try { client.playlistPage(source, "plex-playlist:other:9"); fail("Expected identity rejection") }
+        catch (_: IllegalArgumentException) { }
+        assertEquals(2, http.calls.size)
+    }
+
+    @Test fun collectionSearchUsesSelectedSectionBoundedPagesAndEncodedQuery() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"size":1,"totalSize":1,"Metadata":[{"type":"artist","ratingKey":"7","title":"A & B","summary":"Biography"}]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val page = LocalPlexClient(MemoryStorage(), http).browse(source, BrowseKind.ARTISTS, BrowseOrder.TITLE, query = "A & B")
+        assertTrue(http.calls.single().url.contains("/library/sections/7/search?"))
+        assertTrue(http.calls.single().url.contains("query=A+%26+B"))
+        assertTrue(http.calls.single().url.contains("X-Plex-Container-Size=40"))
+        assertEquals("Biography", page.entries.single().summary)
+    }
+
+    @Test fun collectionPagesUseBoundedOffsetsAndKeepSourceIdentity() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"size":2,"totalSize":5,"Metadata":[
+                {"type":"album","ratingKey":"7","title":"Album","parentTitle":"Artist","thumb":"/art/7","year":2024},
+                {"type":"track","ratingKey":"8","title":"Wrong type"}
+            ]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "3", "Music")
+        val page = LocalPlexClient(MemoryStorage(), http).browse(source, BrowseKind.ALBUMS, BrowseOrder.RECENT, 2)
+        assertEquals(4, page.nextOffset)
+        assertEquals("plex-collection:machine:3:7", page.entries.single().id)
+        assertEquals("https://plex/art/7?X-Plex-Token=token", page.entries.single().artwork)
+        assertTrue(http.calls.single().url.contains("X-Plex-Container-Start=2"))
+        assertTrue(http.calls.single().url.contains("X-Plex-Container-Size=40"))
+    }
+
+    @Test fun collectionIdsCannotCrossServerOrLibraryBoundaries() = runBlocking {
+        val http = FakeHttp()
+        val client = LocalPlexClient(MemoryStorage(), http)
+        val source = PersonalPlexSource("token", "https://plex", "mine", "Server", "3", "Music")
+        for (id in listOf("plex-collection:other:3:7", "plex-collection:mine:4:7", "plex-collection:mine:3:../secret")) {
+            try { client.albumTracks(source, id); fail("Expected invalid collection rejection") }
+            catch (_: IllegalArgumentException) { }
+        }
+        assertTrue(http.calls.isEmpty())
+    }
+
+    @Test fun albumTracksFollowPagesAndKeepTrackOrder() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"Metadata":[{"type":"album","ratingKey":"7","librarySectionID":"3"}]}}"""
+            responses += """{"MediaContainer":{"totalSize":2,"Metadata":[{"type":"track","ratingKey":"8","title":"First","Media":[{"Part":[{"key":"/first"}]}]}]}}"""
+            responses += """{"MediaContainer":{"totalSize":2,"Metadata":[{"type":"track","ratingKey":"9","title":"Second"}]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "mine", "Server", "3", "Music")
+        val tracks = LocalPlexClient(MemoryStorage(), http).albumTracks(source, "plex-collection:mine:3:7")
+        assertEquals(listOf("First", "Second"), tracks.map { it.title })
+        assertNull(tracks.last().streamUri)
+        assertTrue(http.calls.last().url.contains("X-Plex-Container-Start=1"))
+    }
+
+    @Test fun wrongLibraryAlbumIsRejectedBeforeLoadingTracks() = runBlocking {
+        val http = FakeHttp().apply { responses += """{"MediaContainer":{"Metadata":[{"librarySectionID":"99"}]}}""" }
+        val source = PersonalPlexSource("token", "https://plex", "mine", "Server", "3", "Music")
+        try { LocalPlexClient(MemoryStorage(), http).albumTracks(source, "plex-collection:mine:3:7"); fail("Expected library rejection") }
+        catch (_: IllegalArgumentException) { }
+        assertEquals(1, http.calls.size)
+    }
+
 }

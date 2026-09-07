@@ -166,10 +166,63 @@ New work is driven by real-use feedback. The standalone redesign is the active
 product direction; existing deployment remains supported until the on-device
 personal-player acceptance slice reaches parity.
 
+## Active milestone: Nocturne phone and TV redesign
+
+Approved 2026-09-07 after reviewing phone/TV player, Home, Library, artist and
+album mockups. Complete this milestone **before final TV acceptance and the
+v1.1.0 standalone cutover**. Plexamp inspires browsing depth; Harmonicast keeps
+its own behavior and identity. See [the design contract](docs/NOCTURNE_DESIGN.md).
+
+1. Build the shared Nocturne foundation and real Plex-backed Home/Library:
+   artwork shelves, paginated album/artist browsing, album drill-down, persistent
+   mini-player, phone navigation, TV remote focus and persistent user-selectable
+   color schemes (Nocturne default). **In progress.**
+   First slice implemented and installed on Pixel/Shield: live album shelves,
+   paginated artist/album grids, album tracks/actions and saved palettes.
+   64 unit tests pass; Home/grid rendering and palette persistence observed.
+   Broader browse/playback/focus acceptance remains pending.
+   Owner accepted the TV depth refinement on 2026-09-07: black backdrop,
+   ambient accents, richer cards, shadows and animated focus lift.
+2. Complete artist/release and playlist destinations, browse filtering/sorting,
+   discovery shelves, search and queue presentation; use actual available
+   metadata and explicit loading/empty/error states.
+   **In progress:** artist artwork headers, filterable A–Z playlist cards and
+   playlist detail previews, search/queue typography and rounded track rows are
+   implemented. Playlist browsing loads 100 entries at a time with explicit
+   load-more/retry controls; full playlist actions retain their existing
+   behavior. Broader library filters, richer artist metadata and device action parity
+   remain pending.
+3. Finish the immersive player, artwork/page transitions, phone gestures and TV
+   focus motion; apply the system to setup, Settings and room/guest interfaces.
+   **In progress:** responsive immersive player visually checked on Pixel and
+   Shield; guest/display palettes and connection-loss controls implemented.
+   Collection search, reverse sorting and available artist biographies added.
+4. Verify visual quality and feature parity on phone and Shield, including
+   browse-to-play, back/scroll restoration, room transfer, reconnect, Android Auto
+   and long-duration playback. A build alone is not visual acceptance.
+   Include Fire HD browser guest/display coverage: existing web UI passed join,
+   search, request submission, queue synchronization and fullscreen checks on
+   2026-09-07. Polish shutdown messaging and stale controls during web redesign.
+   Auto Library now shares the collection backend through a dedicated browse
+   hierarchy; DHU album-to-track playback passed. Artwork grid and voice checks
+   remain. The first longer screen-off run exposed a track-boundary failure;
+   background wake handling and scrobble isolation are under device retest.
+
+Preserve weighted automatic mixes, adaptive ratings, Track Radio, request-first
+queues, guest fairness/voting, optional BLE rooms, browser guest controls, room
+displays, native playback transfer/take-back, personal Plex playback, shared
+read-only profiles and Android Auto. Do not replace these with generic player
+behavior or remove them to simplify the redesign.
+
 ## v1.1.0 standalone cutover
 
+Before final room-display acceptance, revisit host control of the TV player
+(owner follow-up, 2026-09-07). Review the intended controls and actual behavior
+together; this is an explicit follow-up, not a request to change playback
+authority during the Nocturne browse/library slice.
+
 Version 1.1.0 is the planned standalone milestone. Once the on-device personal,
-guest, Android Auto, and room-display acceptance checks are complete:
+guest, Android Auto, room-display and Nocturne design/parity acceptance checks are complete:
 
 - withdraw the existing F-Droid submission and remove repository automation and
   metadata that continue publishing Harmonicast through F-Droid;

@@ -136,6 +136,58 @@ class LocalPlexClient(
             ?: throw IllegalStateException("Plex server returned an invalid response")
     }
 
+    suspend fun browse(source: PersonalPlexSource, kind: BrowseKind, order: BrowseOrder, offset: Int = 0, parent: String? = null, query: String = ""): LibraryPage {
+        require(offset >= 0)
+        val path = if (parent == null) "/library/sections/${source.libraryKey}/${if (query.isBlank()) "all" else "search"}"
+            else {
+                val key = collectionKey(source, parent)
+                val item = metadataArray(serverContainer(source.baseUrl, source.token, "/library/metadata/$key")).firstOrNull()
+                require(item?.optString("librarySectionID") == source.libraryKey) { "Artist belongs to another library" }
+                "/library/metadata/$key/children"
+            }
+        val container = serverContainer(source.baseUrl, source.token,
+            "$path?type=${kind.plexType}&sort=${encodePlex(order.plexSort)}&X-Plex-Container-Start=$offset&X-Plex-Container-Size=40" +
+                if (query.isNotBlank() && parent == null) "&query=${encodePlex(query.trim())}" else "")
+        val raw = metadataArray(container)
+        val entries = raw.mapNotNull { item ->
+            if (order == BrowseOrder.PLAYED && item.optLong("lastViewedAt") <= 0L) return@mapNotNull null
+            val key = item.optString("ratingKey")
+            val expected = if (kind == BrowseKind.ALBUMS) "album" else "artist"
+            if (!key.matches(Regex("\\d+")) || item.optString("title").isBlank() ||
+                (item.optString("type") != expected && item.optInt("type") != kind.plexType)) null
+            else LibraryEntry("plex-collection:${encodePlex(source.machineIdentifier)}:${source.libraryKey}:$key",
+                item.getString("title"), item.optString("parentTitle"),
+                item.optString("thumb").takeIf { it.startsWith('/') }?.let { authenticatedUrl(source, it) },
+                kind, item.optInt("year").takeIf { it > 0 }, item.optString("summary"))
+        }
+        val consumed = container.optInt("size", raw.size).coerceAtLeast(raw.size)
+        val next = offset + consumed
+        val more = if (container.has("totalSize")) next < container.optInt("totalSize") else raw.size >= 40
+        return LibraryPage(entries, next.takeIf { consumed > 0 && more })
+    }
+
+    suspend fun albumTracks(source: PersonalPlexSource, id: String): List<Song> {
+        val key = collectionKey(source, id)
+        val album = metadataArray(serverContainer(source.baseUrl, source.token, "/library/metadata/$key")).firstOrNull()
+        require(album?.optString("librarySectionID") == source.libraryKey) { "Album belongs to another library" }
+        val result = mutableListOf<Song>()
+        var offset = 0
+        do {
+            val container = serverContainer(source.baseUrl, source.token,
+                "/library/metadata/$key/children?X-Plex-Container-Start=$offset&X-Plex-Container-Size=100")
+            val raw = metadataArray(container)
+            result += songs(source, container)
+            offset += raw.size
+        } while (raw.isNotEmpty() && offset < container.optInt("totalSize", offset))
+        return result
+    }
+
+    private fun collectionKey(source: PersonalPlexSource, id: String): String {
+        val prefix = "plex-collection:${encodePlex(source.machineIdentifier)}:${source.libraryKey}:"
+        require(id.startsWith(prefix)) { "Collection belongs to another Plex source" }
+        return id.removePrefix(prefix).also { require(it.matches(Regex("\\d+"))) { "Invalid collection" } }
+    }
+
     suspend fun search(source: PersonalPlexSource, query: String): List<Song> {
         val term = query.trim()
         if (term.isBlank()) return emptyList()
@@ -209,8 +261,24 @@ class LocalPlexClient(
         require(id.startsWith(prefix)) { "Plex playlist belongs to another server" }
         val key = id.removePrefix(prefix).takeIf { it.matches(Regex("\\d+")) }
             ?: throw IllegalArgumentException("Invalid Plex playlist id")
-        return songs(source, serverContainer(source.baseUrl, source.token, "/playlists/$key/items"))
+        val path = "/playlists/$key/items"
+        return songs(source, serverContainer(source.baseUrl, source.token, path))
             .filter { it.id.startsWith("plex:${encodePlex(source.machineIdentifier)}:") && it.streamUri != null }
+    }
+
+    suspend fun playlistPage(source: PersonalPlexSource, id: String, offset: Int = 0): PlaylistTrackPage {
+        require(offset >= 0) { "Invalid playlist offset" }
+        val prefix = "plex-playlist:${encodePlex(source.machineIdentifier)}:"
+        require(id.startsWith(prefix)) { "Plex playlist belongs to another server" }
+        val key = id.removePrefix(prefix).takeIf { it.matches(Regex("\\d+")) }
+            ?: throw IllegalArgumentException("Invalid Plex playlist id")
+        val container = serverContainer(source.baseUrl, source.token,
+            "/playlists/$key/items?X-Plex-Container-Start=$offset&X-Plex-Container-Size=100")
+        val count = metadataArray(container).size
+        val next = offset + count
+        val total = container.optInt("totalSize", -1)
+        return PlaylistTrackPage(songs(source, container).filter { it.streamUri != null },
+            if (count == 0 || (total >= 0 && next >= total) || (total < 0 && count < 100)) null else next)
     }
 
     suspend fun artist(source: PersonalPlexSource, query: String): LibraryArtistBrowse? {

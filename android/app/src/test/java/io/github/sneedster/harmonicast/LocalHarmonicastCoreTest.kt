@@ -34,6 +34,20 @@ class LocalHarmonicastCoreTest {
         assertEquals(listOf("plex:machine:2"), restarted.queue.songs().map(Song::id))
     }
 
+    @Test fun transportStateChangesRetainPlayableMetadataWithoutNetwork() = runBlocking {
+        val core = LocalHarmonicastCore(source, MemoryStorage())
+        val original = song("1").copy(rating = 8.0)
+        core.playback.publish(original, true, false)
+        core.playback.savePosition(25.0)
+        // Media3 callbacks carry only display metadata, even while offline.
+        core.playback.publish(Song(original.id, original.title, original.artist), false, false)
+        val paused = core.playback.snapshot()
+        assertEquals(original.streamUri, paused.nowPlaying.song?.streamUri)
+        assertEquals(original.rating, paused.nowPlaying.song?.rating)
+        assertEquals(25.0, paused.positionSeconds, 0.0)
+        assertFalse(paused.nowPlaying.isPlaying)
+    }
+
     @Test fun localCoreIsAlwaysOwnerAndDoesNotRequireGuestCredentials() = runBlocking {
         val core = LocalHarmonicastCore(source, MemoryStorage())
         val policy = core.guests.policy()

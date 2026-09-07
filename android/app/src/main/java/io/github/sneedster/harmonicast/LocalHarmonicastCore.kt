@@ -22,12 +22,15 @@ class LocalHarmonicastCore(
     }
 
     override val library: MusicLibrary = object : MusicLibrary {
+        override suspend fun browse(kind: BrowseKind, order: BrowseOrder, offset: Int, parent: String?, query: String) = plex.browse(source, kind, order, offset, parent, query)
+        override suspend fun albumTracks(id: String) = plex.albumTracks(source, id)
         override suspend fun search(query: String) = plex.search(source, query)
         override suspend fun track(id: String) = plex.track(source, id)
         override suspend fun artist(query: String) = plex.artist(source, query)
         override suspend fun discovery(song: Song) = plex.discovery(source, song)
         override suspend fun playlists() = plex.playlists(source)
         override suspend fun playlistTracks(id: String) = plex.playlistTracks(source, id)
+        override suspend fun playlistPage(id: String, offset: Int) = plex.playlistPage(source, id, offset)
         override fun streamUrl(song: Song) = song.streamUri
             ?: throw IllegalStateException("Plex track needs fresh playback metadata")
         override fun artworkUrl(song: Song) = song.artworkUri
@@ -106,7 +109,9 @@ class LocalHarmonicastCore(
         override suspend fun publish(song: Song?, isPlaying: Boolean, isAutoQueue: Boolean) {
             val previous = snapshot()
             val persistedSong = song?.let { value ->
-                if (value.streamUri != null) value else plex.track(source, value.id) ?: value
+                if (value.streamUri != null) value
+                else previous.nowPlaying.song?.takeIf { it.id == value.id && it.streamUri != null }
+                    ?: plex.track(source, value.id) ?: value
             }
             val value = JSONObject()
                 .put("song", persistedSong?.let(::encodeSong) ?: JSONObject.NULL)

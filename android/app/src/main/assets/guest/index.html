@@ -34,6 +34,22 @@
     .track strong, .track span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .track span { color: #aeb8ca; font-size: .88rem; margin-top: .15rem; }
     #message { min-height: 1.3rem; margin-top: .65rem; color: #f3bd75; }
+
+    :root { --accent: #bfa7f5; --ink: #1d1430; --glow: #211b33; }
+    :root[data-palette="Aurora"] { --accent: #8bdcc7; --ink: #062b24; --glow: #12332e; }
+    :root[data-palette="Ember"] { --accent: #f6b590; --ink: #371909; --glow: #352017; }
+    #palette { background: #141320; color: var(--accent); border: 1px solid #ffffff25; border-radius: 1rem; padding: .4rem .6rem; font: inherit; max-width: 8rem; }
+    .palette-choice { display: flex; align-items: center; gap: .5rem; margin-top: .75rem; font-size: .8rem; color: #b9b3c6; }
+    body { background: radial-gradient(ellipse at 70% 0, var(--glow), #08090f 55%, #000); }
+    h1 { font-family: Georgia, serif; font-weight: 400; letter-spacing: -.035em; }
+    button { background: var(--accent); color: var(--ink); transition: transform .18s, box-shadow .18s; }
+    button:focus { outline: 2px solid var(--accent); outline-offset: 4px; box-shadow: 0 8px 24px #bfa7f530; }
+    button:disabled { opacity: .4; cursor: default; }
+    .card, aside { background: #141320e8; border-color: #bfa7f525; box-shadow: 0 20px 50px #0008; }
+    .progress span, .label { background: linear-gradient(120deg, #d1baff, #8e74ba); }
+    #message, .room, .eyebrow { color: var(--accent); }
+    .progress span, .label { background: var(--accent); }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
   </style>
 </head>
 <body>
@@ -42,6 +58,7 @@
     <div><div class="eyebrow">Harmonicast guest</div><h1>Room __ROOM_CODE__</h1></div>
     <div id="status" class="status">Connecting</div>
   </header>
+    <label class="palette-choice">Appearance <select id="palette" aria-label="Color scheme"><option>Nocturne</option><option>Aurora</option><option>Ember</option></select></label>
 
   <section class="card">
     <h2>Now playing</h2>
@@ -142,18 +159,35 @@
     songs.forEach(song => target.appendChild(trackRow(song, requestable)));
   }
 
+  var palette = document.querySelector('#palette');
+  try { palette.value = localStorage.getItem('harmonicast.palette') || 'Nocturne'; } catch (_) {}
+  if (!palette.value) palette.value = 'Nocturne';
+  document.documentElement.setAttribute('data-palette', palette.value);
+  palette.addEventListener('change', function () {
+    document.documentElement.setAttribute('data-palette', palette.value);
+    try { localStorage.setItem('harmonicast.palette', palette.value); } catch (_) {}
+  });
+  function roomControls(enabled) {
+    if (!enabled) while (results.firstChild) results.removeChild(results.firstChild);
+    var controls = document.querySelectorAll('#search-form button, #search, #vote-up, #vote-down, #toggle, #skip');
+    for (var i = 0; i < controls.length; i++) {
+      controls[i].disabled = !enabled;
+    }
+  }
   async function refresh() {
     try {
       const [playing, songs] = await Promise.all([api('/v1/now-playing'), api('/v1/queue')]);
       title.textContent = playing.song && playing.song.title || 'Nothing playing';
       artist.textContent = playing.song && playing.song.artist || '';
       showList(queue, songs);
+      roomControls(true);
       status.textContent = 'Connected';
       status.classList.add('live');
     } catch (error) {
+      roomControls(false);
       status.textContent = 'Room unavailable';
       status.classList.remove('live');
-      message.textContent = error.message;
+      message.textContent = 'Connection lost. Reconnecting… If the room ended, ask the host for a new invitation.';
     }
   }
 

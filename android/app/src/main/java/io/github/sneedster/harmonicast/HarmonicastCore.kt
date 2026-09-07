@@ -2,12 +2,15 @@ package io.github.sneedster.harmonicast
 
 /** In-process contracts. Remote transport and JSON belong in adapters, not callers. */
 interface MusicLibrary {
+    suspend fun browse(kind: BrowseKind, order: BrowseOrder, offset: Int = 0, parent: String? = null, query: String = ""): LibraryPage = LibraryPage(emptyList(), null)
+    suspend fun albumTracks(id: String): List<Song> = emptyList()
     suspend fun search(query: String): List<Song>
     suspend fun track(id: String): Song?
     suspend fun artist(query: String): LibraryArtistBrowse?
     suspend fun discovery(song: Song): ArtistDiscovery
     suspend fun playlists(): List<PlexPlaylist> = emptyList()
     suspend fun playlistTracks(id: String): List<Song> = emptyList()
+    suspend fun playlistPage(id: String, offset: Int = 0): PlaylistTrackPage = PlaylistTrackPage(emptyList(), null)
     fun streamUrl(song: Song): String
     fun artworkUrl(song: Song): String?
 }

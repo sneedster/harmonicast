@@ -63,6 +63,22 @@
       .controls { margin-top: .8rem; }
     }
     @media (prefers-reduced-motion: reduce) { .record.playing { animation: none; } }
+
+    :root { --accent: #bfa7f5; --ink: #1d1430; --glow: #211b33; }
+    :root[data-palette="Aurora"] { --accent: #8bdcc7; --ink: #062b24; --glow: #12332e; }
+    :root[data-palette="Ember"] { --accent: #f6b590; --ink: #371909; --glow: #352017; }
+    #palette { background: #141320; color: var(--accent); border: 1px solid #ffffff25; border-radius: 1rem; padding: .4rem .6rem; font: inherit; max-width: 8rem; }
+    .palette-choice { display: flex; align-items: center; gap: .5rem; margin-top: .75rem; font-size: .8rem; color: #b9b3c6; }
+    body { background: radial-gradient(ellipse at 70% 0, var(--glow), #08090f 55%, #000); }
+    h1 { font-family: Georgia, serif; font-weight: 400; letter-spacing: -.035em; }
+    button { background: var(--accent); color: var(--ink); transition: transform .18s, box-shadow .18s; }
+    button:focus { outline: 2px solid var(--accent); outline-offset: 4px; box-shadow: 0 8px 24px #bfa7f530; }
+    button:disabled { opacity: .4; cursor: default; }
+    .card, aside { background: #141320e8; border-color: #bfa7f525; box-shadow: 0 20px 50px #0008; }
+    .progress span, .label { background: linear-gradient(120deg, #d1baff, #8e74ba); }
+    #message, .room, .eyebrow { color: var(--accent); }
+    .progress span, .label { background: var(--accent); }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
   </style>
 </head>
 <body>
@@ -72,6 +88,7 @@
       <div><div class="brand">Harmonicast</div><div class="room">Room __ROOM_CODE__ · Display</div></div>
       <div id="status" class="status">Connecting</div>
     </header>
+    <label class="palette-choice">Appearance <select id="palette" aria-label="Color scheme"><option>Nocturne</option><option>Aurora</option><option>Ember</option></select></label>
     <div class="record-wrap"><div id="record" class="record"><div id="label" class="label">H</div></div></div>
     <h1 id="title">Nothing playing</h1>
     <p id="artist" class="artist"></p>
@@ -197,6 +214,21 @@
     });
     if (!songs.length) message.textContent = 'No matching tracks.';
   }
+  var palette = document.querySelector('#palette');
+  try { palette.value = localStorage.getItem('harmonicast.palette') || 'Nocturne'; } catch (_) {}
+  if (!palette.value) palette.value = 'Nocturne';
+  document.documentElement.setAttribute('data-palette', palette.value);
+  palette.addEventListener('change', function () {
+    document.documentElement.setAttribute('data-palette', palette.value);
+    try { localStorage.setItem('harmonicast.palette', palette.value); } catch (_) {}
+  });
+  function roomControls(enabled) {
+    if (!enabled) while (results.firstChild) results.removeChild(results.firstChild);
+    var controls = document.querySelectorAll('#search-form button, #search, #vote-up, #vote-down, #toggle, #skip');
+    for (var i = 0; i < controls.length; i++) {
+      controls[i].disabled = !enabled;
+    }
+  }
   function refresh() {
     Promise.all([api('/v1/now-playing'), api('/v1/queue')]).then(function (result) {
       var state = result[0];
@@ -211,15 +243,17 @@
       record.className = playing ? 'record playing' : 'record';
       showQueue(result[1]);
       updateProgress();
+      roomControls(true);
       status.textContent = 'Connected';
       status.className = 'status live';
       message.textContent = '';
     }).catch(function (error) {
       playing = false;
       record.className = 'record';
+      roomControls(false);
       status.textContent = 'Room unavailable';
       status.className = 'status';
-      message.textContent = error.message;
+      message.textContent = 'Connection lost. Reconnecting… If the room ended, ask the host for a new invitation.';
     });
   }
   document.querySelector('#fullscreen').addEventListener('click', function () {

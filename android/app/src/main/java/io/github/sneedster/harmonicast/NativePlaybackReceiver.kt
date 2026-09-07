@@ -130,6 +130,7 @@ class NativePlaybackReceiver : MediaSessionService() {
         if (!latch.await(2, TimeUnit.SECONDS)) status = 503
         NativePlaybackProtocol.reply(socket, status, response)
     }
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun applyState(data: JSONObject) {
         val url = data.getString("url")
         val uri = URI(url)

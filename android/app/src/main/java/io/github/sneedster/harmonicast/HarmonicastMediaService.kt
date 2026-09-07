@@ -63,11 +63,21 @@ class HarmonicastMediaService : MediaLibraryService() {
     private var guestRoomGateway: GuestRoomGateway? = null
     private var nearbyRoomHost: NearbyRoomHost? = null
     private var guestRoomLifecycleJob: kotlinx.coroutines.Job? = null
+    private val idleRecovery = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val power = context.getSystemService(android.os.PowerManager::class.java)
+            if (!power.isDeviceIdleMode && ::player.isInitialized && nativeOutput == null &&
+                player.playWhenReady && player.playerError?.errorCode in 2000..2009) {
+                player.prepare()
+            }
+        }
+    }
 
     companion object {
         private const val ROOT_ID = "harmonicast:root"
         private const val PLAY_RANDOM_ID = "harmonicast:play-random"
         private const val QUEUE_ID = "harmonicast:queue"
+        private const val HOME_ID = "harmonicast:home"
         private const val PLAYLISTS_ID = "harmonicast:playlists"
         private const val PLAYLIST_ID_PREFIX = "harmonicast:playlist:"
         private const val PLAY_PLAYLIST_PREFIX = "harmonicast:play-playlist:"
@@ -101,6 +111,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 true
             )
             .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
         api = Api(getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
         core = harmonicastCore(api)
@@ -141,12 +152,19 @@ class HarmonicastMediaService : MediaLibraryService() {
 
         // Handle transport outside the single-item Media3 timeline.
         val forwardingPlayer = object : ForwardingPlayer(exoPlayer) {
-            override fun play() { nativeOutput?.let { it.play(true); return }; super.play() }
+            override fun play() {
+                nativeOutput?.let { it.play(true); return }
+                if (exoPlayer.playerError != null) exoPlayer.prepare()
+                super.play()
+            }
             override fun pause() { nativeOutput?.let { it.play(false); return }; super.pause() }
             override fun setPlayWhenReady(value: Boolean) { nativeOutput?.let { it.play(value); return }; super.setPlayWhenReady(value) }
             override fun prepare() {
-                val output = nativeOutput
-                if (output != null) { player.currentMediaItem?.let { output.load(it, player.currentPosition, false) }; return }
+                // The receiver already owns the prepared media while playback is
+                // transferred. Media controllers may call prepare() before play();
+                // reloading here would seek back to the stopped local player's
+                // stale position every time the host resumed playback.
+                if (nativeOutput != null) return
                 super.prepare()
             }
             override fun seekTo(positionMs: Long) { nativeOutput?.let { it.seek(positionMs); return }; super.seekTo(positionMs) }
@@ -193,6 +211,11 @@ class HarmonicastMediaService : MediaLibraryService() {
             }
         }
         player = exoPlayer
+        androidx.core.content.ContextCompat.registerReceiver(
+            this, idleRecovery,
+            android.content.IntentFilter(android.os.PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
 
         Log.d("HarmonicastMedia", "Service created, base: ${api.base}, token length: ${api.token.length}")
 
@@ -286,10 +309,10 @@ class HarmonicastMediaService : MediaLibraryService() {
             ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
                 if (parentId == ROOT_ID) {
                     val items = listOf(
-                        MediaItem.Builder().setMediaId(PLAY_RANDOM_ID).setMediaMetadata(
-                            MediaMetadata.Builder().setTitle("Play random music").setDisplayTitle("Play random music")
-                                .setSubtitle("Start the shared Harmonicast queue").setIsPlayable(true).setIsBrowsable(false)
-                                .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).build()
+                        MediaItem.Builder().setMediaId(HOME_ID).setMediaMetadata(
+                            MediaMetadata.Builder().setTitle("For you").setDisplayTitle("For you")
+                                .setSubtitle("Your automatic mix").setIsPlayable(false).setIsBrowsable(true)
+                                .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED).build()
                         ).build(),
                         MediaItem.Builder().setMediaId(QUEUE_ID).setMediaMetadata(
                             MediaMetadata.Builder().setTitle("Request queue").setDisplayTitle("Request queue")
@@ -302,7 +325,33 @@ class HarmonicastMediaService : MediaLibraryService() {
                                 .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS).build()
                         ).build(),
                     )
-                    return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))
+                    val libraryRoot = if (api.profile.mode == HomeMode.PERSONAL_PLEX) listOf(
+                        MediaItem.Builder().setMediaId(AutoLibraryBrowser.ROOT).setMediaMetadata(
+                            MediaMetadata.Builder().setTitle("Library").setIsBrowsable(true).setIsPlayable(false)
+                                .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED).build()).build()
+                    ) else emptyList()
+                    return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(items + libraryRoot), params))
+                }
+                if (parentId == HOME_ID) {
+                    val item = playlistActionItem(PLAY_RANDOM_ID, "Play automatic mix")
+                    return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.of(item), params))
+                }
+                if (AutoLibraryBrowser.handles(parentId)) {
+                    return scope.future {
+                        try {
+                            val nodes = AutoLibraryBrowser(core.library).children(parentId)
+                            val items = nodes.map { node -> node.song?.let(::createMediaItem) ?: MediaItem.Builder()
+                                .setMediaId(node.id).setMediaMetadata(MediaMetadata.Builder().setTitle(node.title)
+                                    .setSubtitle(node.subtitle).setIsBrowsable(true).setIsPlayable(false)
+                                    .setExtras(Bundle().apply {
+                                        putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", if (node.id.contains("/browse/")) 2 else 1)
+                                        putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1)
+                                    })
+                                    .setArtworkUri(node.artwork?.let(Uri::parse))
+                                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED).build()).build() }
+                            LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
+                        } catch (_: Exception) { LibraryResult.ofError(SessionError.ERROR_UNKNOWN) }
+                    }
                 }
                 if (parentId == QUEUE_ID) {
                     return scope.future {
@@ -412,6 +461,14 @@ class HarmonicastMediaService : MediaLibraryService() {
                         fetchQueueSongs().associateBy { it.id }
                     } else emptyMap()
                     mediaItems.map { item ->
+                        val query = item.requestMetadata.searchQuery
+                        if (query != null) {
+                            if (query.isBlank()) return@map core.playback.snapshot().nowPlaying.song?.let(::createMediaItem)
+                                ?: requireNotNull(dequeueRandomItem()) { "No music available" }
+                            val song = core.library.search(query).firstOrNull { it.streamUri != null || api.profile.mode == HomeMode.REMOTE_SERVER }
+                            requireNotNull(song) { "No music matched the voice request" }
+                            return@map createMediaItem(song)
+                        }
                         val metadata = item.mediaMetadata
                         val title = metadata.title?.toString()
                         val needsResolution = title.isNullOrBlank() || title == item.mediaId
@@ -512,11 +569,11 @@ class HarmonicastMediaService : MediaLibraryService() {
                                 resumeSharedPlayback()
                                 SessionResult(SessionResult.RESULT_SUCCESS)
                             }
-                            else -> SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
+                            else -> SessionResult(SessionError.ERROR_NOT_SUPPORTED)
                         }
                     } catch (e: Exception) {
                         Log.e("HarmonicastMedia", "Android Auto custom command failed", e)
-                        SessionResult(SessionResult.RESULT_ERROR_UNKNOWN)
+                        SessionResult(SessionError.ERROR_UNKNOWN)
                     }
                 }
             }
@@ -718,6 +775,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             val gateway = GuestRoomGateway(
                 this,
                 core,
+                bindAddress = runCatching { NativePlaybackProtocol.localAddress(this) }.getOrDefault("127.0.0.1"),
                 displayToggle = {
                     scope.launch {
                         if (player.currentMediaItem == null) advance("skip")
@@ -954,6 +1012,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         }
     }
 
+    @OptIn(UnstableApi::class)
     private fun customLayout(radioQueueActive: Boolean) = listOf(
         CommandButton.Builder(if (radioQueueActive) CommandButton.ICON_CHECK_CIRCLE_FILLED else CommandButton.ICON_RADIO)
             .setSessionCommand(PLAY_SIMILAR_COMMAND)
@@ -1094,7 +1153,14 @@ class HarmonicastMediaService : MediaLibraryService() {
 
                     if (reason == "ended") {
                         recordPlaybackEvent(currentMediaItem, "complete", 1.0)
-                        core.playback.scrobble(oldId, submission = true)
+                        try {
+                            core.playback.scrobble(oldId, submission = true)
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // History delivery must not prevent the next song from playing.
+                            Log.w("HarmonicastMedia", "Completion scrobble failed (${e.javaClass.simpleName})", e)
+                        }
                     } else {
                         recordPlaybackEvent(currentMediaItem, "skip", progress.toDouble())
                     }
@@ -1129,7 +1195,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                     player.stop()
                 }
             } catch (e: Exception) {
-                Log.e("HarmonicastMedia", "advance failed", e)
+                Log.e("HarmonicastMedia", "advance failed (${e.javaClass.simpleName})", e)
             } finally {
                 changingTrack = false
             }
@@ -1234,6 +1300,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaLibrarySession
 
     override fun onDestroy() {
+        unregisterReceiver(idleRecovery)
         stopPositionSaving()
         disableGuestControl()
         webSocketStopped = true

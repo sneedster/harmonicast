@@ -28,6 +28,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -96,6 +97,18 @@ class HarmonicastViewModel : ViewModel() {
     var tvAuthorizationUrl by mutableStateOf(""); private set
     var offeringRoomPlayback by mutableStateOf(false)
         private set
+    var colorSchemeName by mutableStateOf("Nocturne"); private set
+    var keepScreenOnWhileCharging by mutableStateOf(false); private set
+    fun updateKeepScreenOnWhileCharging(enabled: Boolean) {
+        keepScreenOnWhileCharging = enabled
+        context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE).edit()
+            .putBoolean("ui.keepScreenOnWhileCharging", enabled).apply()
+    }
+    fun selectColorScheme(name: String) {
+        colorSchemeName = PlayerPalette.entries.firstOrNull { it.name == name }?.name ?: "Nocturne"
+        context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE).edit().putString("ui.palette", colorSchemeName).apply()
+    }
+    val browseLibrary: MusicLibrary get() = core.library
     var ready by mutableStateOf(false); private set
     var loading by mutableStateOf(false); var error by mutableStateOf("")
     var notice by mutableStateOf(""); private set
@@ -148,6 +161,9 @@ class HarmonicastViewModel : ViewModel() {
         if (::api.isInitialized) return
         context = appContext
         api = Api(context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
+        colorSchemeName = context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE).getString("ui.palette", "Nocturne") ?: "Nocturne"
+        keepScreenOnWhileCharging = context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE)
+            .getBoolean("ui.keepScreenOnWhileCharging", false)
         plex = LocalPlexClient(api.storage)
         core = harmonicastCore(api)
         savedBaseUrl = api.base
@@ -559,6 +575,31 @@ class HarmonicastViewModel : ViewModel() {
     fun requestNearbySong(song: Song) = nearbyRoomClient?.request(song)
     fun voteNearby(up: Boolean) = nearbyRoomClient?.vote(up)
 
+    fun loadAlbum(entry: LibraryEntry, action: PlaylistAction) {
+        val activeCore = core
+        viewModelScope.launch {
+            try {
+                val all = activeCore.library.albumTracks(entry.id)
+                val playable = all.filter { it.streamUri != null }
+                val tracks = if (action == PlaylistAction.SHUFFLE) playable.shuffled() else playable
+                if (activeCore !== core) return@launch
+                if (!isActivePlayer) { error = "Take playback control before loading an album"; return@launch }
+                if (tracks.isEmpty()) { error = "This album has no playable tracks"; return@launch }
+                when (action) {
+                    PlaylistAction.PLAY, PlaylistAction.SHUFFLE -> {
+                        activeCore.queue.clear()
+                        activeCore.queue.addAll(tracks.map { it.copy(isManual = true) })
+                        controller?.seekToNext()
+                    }
+                    PlaylistAction.NEXT -> activeCore.queue.addAll(tracks.map { it.copy(isManual = true) }, next = true)
+                    PlaylistAction.QUEUE -> activeCore.queue.addAll(tracks.map { it.copy(isManual = true) })
+                }
+                showTemporaryNotice("${entry.title} · ${tracks.size} tracks" + if (all.size > tracks.size) " · ${all.size - tracks.size} unavailable skipped" else "")
+                refresh()
+            } catch (e: Exception) { error = e.message ?: "Could not load album" }
+        }
+    }
+
     fun loadPlaylists() {
         if (playlistsLoading) return
         viewModelScope.launch {
@@ -951,6 +992,39 @@ private fun Context.isTelevision(): Boolean =
 
 class MainActivity : ComponentActivity() {
     private var authUri by mutableStateOf<Uri?>(null)
+    private var pluggedIn = false
+    private val displayPreferences by lazy { getSharedPreferences("harmonicast", Context.MODE_PRIVATE) }
+    private val displayPreferenceListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "ui.keepScreenOnWhileCharging") updateScreenAwake()
+    }
+    private val chargingReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            pluggedIn = intent.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0
+            updateScreenAwake()
+        }
+    }
+
+    private fun updateScreenAwake() {
+        val keepAwake = isTelevision() || (pluggedIn && displayPreferences.getBoolean("ui.keepScreenOnWhileCharging", false))
+        if (keepAwake) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        displayPreferences.registerOnSharedPreferenceChangeListener(displayPreferenceListener)
+        val battery = ContextCompat.registerReceiver(this, chargingReceiver,
+            android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
+        pluggedIn = (battery?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        updateScreenAwake()
+    }
+
+    override fun onStop() {
+        unregisterReceiver(chargingReceiver)
+        displayPreferences.unregisterOnSharedPreferenceChangeListener(displayPreferenceListener)
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        super.onStop()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -977,7 +1051,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun HarmonicastApp(vm: HarmonicastViewModel) {
-    MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xffd0a2ff))) {
+    MaterialTheme(colorScheme = playerColors(vm.colorSchemeName)) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
@@ -1031,18 +1105,18 @@ class MainActivity : ComponentActivity() {
         }
         Surface(shape = RoundedCornerShape(50), color = Color(0xff30243a)) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.BluetoothConnected, null, Modifier.size(18.dp), tint = Color(0xffd0a2ff))
+                Icon(Icons.Default.BluetoothConnected, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(7.dp))
-                Text("Nearby guest · connected", style = MaterialTheme.typography.labelLarge, color = Color(0xffeadcff))
+                Text("Nearby guest · connected", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer)
             }
         }
         ElevatedCard(
             Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.elevatedCardColors(containerColor = Color(0xff281e32)),
+            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("NOW PLAYING", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xffd0a2ff))
+                Text("NOW PLAYING", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     GuestArtwork(room.title, 116.dp, room.artwork)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1053,7 +1127,7 @@ class MainActivity : ComponentActivity() {
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        if (room.artist.isNotBlank()) Text(room.artist, style = MaterialTheme.typography.titleMedium, color = Color(0xffeadcff), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (room.artist.isNotBlank()) Text(room.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (room.album.isNotBlank()) Text(room.album, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -1204,7 +1278,7 @@ class MainActivity : ComponentActivity() {
         Row(Modifier.fillMaxWidth().padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
             if (queueNumber != null) {
                 Surface(Modifier.size(46.dp), shape = RoundedCornerShape(12.dp), color = Color(0xff453259)) {
-                    Box(contentAlignment = Alignment.Center) { Text(queueNumber.toString(), fontWeight = FontWeight.Bold, color = Color(0xffeadcff)) }
+                    Box(contentAlignment = Alignment.Center) { Text(queueNumber.toString(), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer) }
                 }
             } else GuestArtwork(song.title, 48.dp)
             Spacer(Modifier.width(12.dp))
@@ -1226,7 +1300,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun GuestNotice(message: String, error: Boolean) {
     val background = if (error) MaterialTheme.colorScheme.errorContainer else Color(0xff30243a)
-    val foreground = if (error) MaterialTheme.colorScheme.onErrorContainer else Color(0xffeadcff)
+    val foreground = if (error) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = background) {
         Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(if (error) Icons.Default.ErrorOutline else Icons.Default.CheckCircle, null, tint = foreground)
@@ -1373,20 +1447,33 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun PersonalPlexSetup(vm: HarmonicastViewModel) {
+    val television = LocalContext.current.isTelevision()
+    val firstChoice = remember { FocusRequester() }
+    val selectedServerId = vm.selectedPlexServer?.machineIdentifier
+    LaunchedEffect(television, selectedServerId, vm.plexServers.size, vm.plexLibraries.size) {
+        val hasChoice = if (selectedServerId == null) vm.plexServers.isNotEmpty() else vm.plexLibraries.isNotEmpty()
+        if (television && hasChoice) firstChoice.requestFocus()
+    }
     when {
         vm.plexServers.isEmpty() -> Text("Finish signing in with Plex, then return here.")
         vm.selectedPlexServer == null -> {
             Text("Choose your Plex server", style = MaterialTheme.typography.titleMedium)
-            vm.plexServers.forEach { server ->
-                OutlinedButton(onClick = { vm.choosePlexServer(server) }, modifier = Modifier.fillMaxWidth()) {
+            vm.plexServers.forEachIndexed { index, server ->
+                OutlinedButton(
+                    onClick = { vm.choosePlexServer(server) },
+                    modifier = Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(firstChoice) else Modifier),
+                ) {
                     Text(if (server.owned) server.name else "${server.name} · Shared read-only")
                 }
             }
         }
         else -> {
             Text("${vm.selectedPlexServer?.name} — choose a Music library", style = MaterialTheme.typography.titleMedium)
-            vm.plexLibraries.forEach { library ->
-                Button(onClick = { vm.selectPlexLibrary(library) }, modifier = Modifier.fillMaxWidth()) {
+            vm.plexLibraries.forEachIndexed { index, library ->
+                Button(
+                    onClick = { vm.selectPlexLibrary(library) },
+                    modifier = Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(firstChoice) else Modifier),
+                ) {
                     Text(library.title)
                 }
             }
@@ -1401,6 +1488,7 @@ class MainActivity : ComponentActivity() {
         PlexMusicSetup(vm)
         return
     }
+    if (vm.isPersonalMode) { NocturneHome(vm); return }
     if (useBigScreenLayout()) { BigScreenHome(vm); return }
     Scaffold(
         topBar = {
@@ -1568,7 +1656,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun PlaylistsScreen(vm: HarmonicastViewModel) {
+@Composable internal fun PlaylistsScreen(vm: HarmonicastViewModel) {
     if (!vm.isPersonalMode) {
         Box(Modifier.fillMaxSize().padding(24.dp), Alignment.Center) {
             Text("Plex playlists become available when this device moves to personal mode.", textAlign = TextAlign.Center)
@@ -1613,10 +1701,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun SettingsScreen(vm: HarmonicastViewModel) {
+@Composable internal fun SettingsScreen(vm: HarmonicastViewModel) {
     var share by remember(vm.ratedTrackShare) { mutableFloatStateOf(vm.ratedTrackShare.toFloat()) }
     var confirmPlexSignOut by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val television = context.isTelevision()
+    val room = HarmonicastMediaService.roomShareState.value
     val hostPermissions = remember { bluetoothPermissions(advertise = true) }
     val hostPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -1637,6 +1727,57 @@ class MainActivity : ComponentActivity() {
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        Text("Color scheme", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PlayerPalette.entries.forEach { palette ->
+                FilterChip(selected = vm.colorSchemeName == palette.name, onClick = { vm.selectColorScheme(palette.name) }, label = { Text(palette.name) })
+            }
+        }
+        if (!television) {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.fillMaxWidth().toggleable(vm.keepScreenOnWhileCharging,
+                        role = androidx.compose.ui.semantics.Role.Switch, onValueChange = vm::updateKeepScreenOnWhileCharging),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Stay awake while charging", style = MaterialTheme.typography.titleMedium)
+                            Text("Keep the screen on while Harmonicast is open and connected to power.", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Switch(checked = vm.keepScreenOnWhileCharging, onCheckedChange = null)
+                    }
+                    Text("Keep music playing", style = MaterialTheme.typography.titleMedium)
+                    Text("If music stops with the screen off, allow Harmonicast to run without battery optimization in Android settings.")
+                    OutlinedButton(onClick = {
+                        context.startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    }) { Text("Background playback settings") }
+                }
+            }
+        }
+        if (television && vm.isPersonalMode && vm.canWriteToPlex) {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Room on this TV", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Keep playback on the TV and let nearby phones browse, request, vote, and follow the queue.")
+                    Button(
+                        onClick = {
+                            if (room.enabled) vm.setGuestControl(false)
+                            else if (hostPermissions.all {
+                                    ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+                                }) vm.setGuestControl(true)
+                            else hostPermissionLauncher.launch(hostPermissions)
+                        },
+                    ) {
+                        Text(if (room.enabled) "End room ${room.roomCode}" else "Open room on this TV")
+                    }
+                    if (room.enabled) {
+                        Text(
+                            if (room.nearbyAvailable) "Bluetooth room is ready" else "Bluetooth is unavailable; same-Wi-Fi access still works",
+                            color = if (room.nearbyAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+        }
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Join a room", style = MaterialTheme.typography.titleMedium)
@@ -1700,7 +1841,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (vm.canWriteToPlex) {
-                val room = HarmonicastMediaService.roomShareState.value
                 ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
@@ -1724,7 +1864,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     Text(
-                        "Guests can search, request tracks, view the queue and now playing, and vote. Plex credentials and owner controls stay on this phone.",
+                        "Guests can search, request tracks, view the queue and now playing, and vote. Plex credentials and owner controls stay on this device.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1904,7 +2044,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun Now(vm: HarmonicastViewModel, onSearch: (String) -> Unit) {
+@Composable internal fun Now(vm: HarmonicastViewModel, onSearch: (String) -> Unit) {
     val song = vm.nowPlaying.song
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 8.dp)) {
         val artworkSize = minOf((maxWidth - 20.dp).coerceAtLeast(180.dp), maxHeight * 0.43f)
@@ -2016,7 +2156,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun PhonePlayerControls(vm: HarmonicastViewModel) {
+@Composable internal fun PhonePlayerControls(vm: HarmonicastViewModel, floating: Boolean = false) {
     val song = vm.nowPlaying.song ?: return
     var scrubPosition by remember(song.id) { mutableFloatStateOf(vm.playbackPosition) }
     var isScrubbing by remember(song.id) { mutableStateOf(false) }
@@ -2031,7 +2171,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    Surface(tonalElevation = 3.dp) {
+    Surface(color = if (floating) Color.Transparent else MaterialTheme.colorScheme.surface, tonalElevation = if (floating) 0.dp else 3.dp) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -2106,7 +2246,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun ArtistDiscoveryPage(vm: HarmonicastViewModel, song: Song, close: () -> Unit) {
+@Composable internal fun ArtistDiscoveryPage(vm: HarmonicastViewModel, song: Song, close: () -> Unit) {
     val listState = rememberLazyListState()
     LazyColumn(
         state = listState,
@@ -2209,12 +2349,12 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
             setPixels(pixels, 0, matrix.width, 0, 0, matrix.width, matrix.height)
         }.asImageBitmap()
     }
-    Surface(color = Color.White, shape = RoundedCornerShape(14.dp)) {
+    Surface(modifier = Modifier.widthIn(max = 280.dp), color = Color.White, shape = RoundedCornerShape(14.dp)) {
         Image(bitmap, description, Modifier.fillMaxWidth().aspectRatio(1f).padding(10.dp))
     }
 }
 
-@Composable private fun Queue(vm: HarmonicastViewModel) {
+@Composable internal fun Queue(vm: HarmonicastViewModel) {
     var confirmClear by remember { mutableStateOf(false) }
     if (confirmClear) {
         AlertDialog(
@@ -2234,7 +2374,10 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Queue", style = MaterialTheme.typography.headlineMedium)
+                Column {
+                    DisplayTitle("Up next")
+                    Text("${vm.queue.size} tracks · requests before automatic picks", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 if (vm.isHost && vm.queue.isNotEmpty()) {
                     TextButton(onClick = { confirmClear = true }) {
                         Icon(Icons.Default.DeleteSweep, null)
@@ -2244,14 +2387,28 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
                 }
             }
         }
+        if (vm.queue.isEmpty()) item {
+            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.AutoMirrored.Filled.QueueMusic, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                Text("Room for your next favorite", style = MaterialTheme.typography.titleLarge)
+                Text("Add music from your library or search. Automatic picks follow when enabled.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         items(vm.queue, key = { it.id }) { SongRow(vm, it, false) }
     }
 }
 
-@Composable private fun Search(vm: HarmonicastViewModel) {
+@Composable internal fun Search(vm: HarmonicastViewModel) {
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(vm.query, { vm.query = it }, label = { Text("Search music") }, singleLine = true, modifier = Modifier.weight(1f))
+        Column(Modifier.padding(horizontal = 24.dp, vertical = 12.dp)) {
+            DisplayTitle("Find your sound.")
+            Text("Songs, artists and albums in your library", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Row(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(vm.query, { vm.query = it }, label = { Text("Search music") }, singleLine = true,
+                shape = RoundedCornerShape(20.dp),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { vm.search() }), modifier = Modifier.weight(1f))
             IconButton(onClick = { vm.search() }) { Icon(Icons.Default.Search, "Search") }
         }
         LazyColumn {
@@ -2262,11 +2419,11 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
                 item {
                     ElevatedCard(
                         Modifier.fillMaxWidth().padding(16.dp),
-                        colors = CardDefaults.elevatedCardColors(containerColor = Color(0xff281e32)),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                     ) {
                         Row(Modifier.padding(18.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Surface(shape = RoundedCornerShape(16.dp), color = Color(0xffd0a2ff)) {
-                                Icon(Icons.Default.LibraryMusic, null, Modifier.padding(11.dp), tint = Color(0xff2a1737))
+                            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primary) {
+                                Icon(Icons.Default.LibraryMusic, null, Modifier.padding(11.dp), tint = MaterialTheme.colorScheme.onPrimary)
                             }
                             Column {
                                 Text("Not in your library", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -2304,24 +2461,24 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
 @Composable private fun ConnectedSourceAction(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).clickable(onClick = onClick),
-        colors = CardDefaults.elevatedCardColors(containerColor = Color(0xff362047)),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(16.dp), color = Color(0xffd0a2ff)) {
-                Icon(icon, null, Modifier.padding(11.dp), tint = Color(0xff2a1737))
+            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primary) {
+                Icon(icon, null, Modifier.padding(11.dp), tint = MaterialTheme.colorScheme.onPrimary)
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color(0xffeadcff), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, "Open connected music sources", tint = Color(0xffeadcff))
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, "Open connected music sources", tint = MaterialTheme.colorScheme.onSecondaryContainer)
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun MusicSourceSheet(vm: HarmonicastViewModel) {
+@Composable internal fun MusicSourceSheet(vm: HarmonicastViewModel) {
     val dialog = vm.musicSourceDialog ?: return
     ModalBottomSheet(onDismissRequest = { if (!vm.musicSourceLoading) vm.closeMusicSource() }) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.9f)) {
@@ -2331,8 +2488,8 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(shape = RoundedCornerShape(14.dp), color = Color(0xffd0a2ff)) {
-                        Icon(if (vm.musicSourceViewingTracks) Icons.AutoMirrored.Filled.QueueMusic else Icons.Default.TravelExplore, null, Modifier.padding(9.dp), tint = Color(0xff2a1737))
+                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primary) {
+                        Icon(if (vm.musicSourceViewingTracks) Icons.AutoMirrored.Filled.QueueMusic else Icons.Default.TravelExplore, null, Modifier.padding(9.dp), tint = MaterialTheme.colorScheme.onPrimary)
                     }
                     Spacer(Modifier.width(10.dp))
                     Column {
@@ -2356,7 +2513,7 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
             }
             if (vm.musicSourceMessage.isNotBlank()) {
                 Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), shape = RoundedCornerShape(12.dp), color = if (vm.musicSourceMessage.contains("failed", true) || vm.musicSourceMessage.contains("could not", true)) MaterialTheme.colorScheme.errorContainer else Color(0xff30243a)) {
-                    Text(vm.musicSourceMessage, Modifier.padding(12.dp), color = if (vm.musicSourceMessage.contains("failed", true) || vm.musicSourceMessage.contains("could not", true)) MaterialTheme.colorScheme.onErrorContainer else Color(0xffeadcff))
+                    Text(vm.musicSourceMessage, Modifier.padding(12.dp), color = if (vm.musicSourceMessage.contains("failed", true) || vm.musicSourceMessage.contains("could not", true)) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer)
                 }
             }
             when {
@@ -2377,7 +2534,7 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
             ElevatedCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp), colors = CardDefaults.elevatedCardColors(containerColor = Color(0xff242029))) {
                 Row(Modifier.padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Surface(shape = RoundedCornerShape(12.dp), color = Color(0xff453259)) {
-                        Icon(Icons.Default.MusicNote, null, Modifier.padding(9.dp), tint = Color(0xffeadcff))
+                        Icon(Icons.Default.MusicNote, null, Modifier.padding(9.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
@@ -2400,14 +2557,14 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
             ElevatedCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp).clickable(enabled = !vm.musicSourceLoading) { vm.openMusicSourceAlbum(album) }, colors = CardDefaults.elevatedCardColors(containerColor = Color(0xff242029))) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Surface(shape = RoundedCornerShape(12.dp), color = Color(0xff453259)) {
-                        Icon(Icons.Default.Album, null, Modifier.padding(10.dp), tint = Color(0xffeadcff))
+                        Icon(Icons.Default.Album, null, Modifier.padding(10.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(album.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(listOfNotNull(album.type, album.year).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Icon(Icons.Default.ChevronRight, "Browse album", tint = Color(0xffd0a2ff))
+                    Icon(Icons.Default.ChevronRight, "Browse album", tint = MaterialTheme.colorScheme.primary)
                 }
             }
         }
@@ -2424,9 +2581,14 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
     }
 }
 
-@Composable private fun SongRow(vm: HarmonicastViewModel, song: Song, add: Boolean) {
+@Composable internal fun SongRow(vm: HarmonicastViewModel, song: Song, add: Boolean) {
+    var focused by remember { mutableStateOf(false) }
+    val colors = MaterialTheme.colorScheme
     ListItem(
-        modifier = Modifier.clickable(enabled = !add && vm.isActivePlayer) { vm.playQueued(song) },
+        colors = ListItemDefaults.colors(containerColor = if (focused) colors.secondaryContainer else colors.surface.copy(alpha = .6f)),
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp).clip(RoundedCornerShape(16.dp))
+            .onFocusChanged { focused = it.hasFocus }
+            .clickable(enabled = !add && vm.isActivePlayer) { vm.playQueued(song) },
         headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = { Text("${song.artist}${if (song.addedByEmail.isNotBlank()) " · ${song.addedByEmail}" else ""}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         leadingContent = { Cover(vm, song, 48.dp) },
@@ -2435,10 +2597,9 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
             else if (vm.isHost) IconButton(onClick = { vm.remove(song) }) { Icon(Icons.Default.Delete, "Remove from queue") }
         }
     )
-    HorizontalDivider()
 }
 
-@Composable private fun Cover(vm: HarmonicastViewModel, song: Song, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
+@Composable internal fun Cover(vm: HarmonicastViewModel, song: Song, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
     val url = vm.artworkUrl(song)
     val shape = RoundedCornerShape(if (size >= 180.dp) 24.dp else 12.dp)
     val coverModifier = Modifier.size(size).clip(shape).then(modifier)
