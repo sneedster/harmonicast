@@ -1,5 +1,15 @@
 # Releases
 
+## v1.1.5 — artist albums in search
+
+Version code: **62**.
+
+- Searching an artist, such as Tesla, shows clickable album entries.
+- Includes subsequent pages of artist releases and removes duplicate album matches.
+- Direct song-title matches remain available alongside albums.
+
+The owner confirmed the fix on Pixel. All 68 unit tests passed.
+
 ## v1.1.4 — share Harmonicast
 
 Version code: **61**.

@@ -128,7 +128,6 @@ class HarmonicastViewModel : ViewModel() {
     var playlistsLoading by mutableStateOf(false); private set
     var results by mutableStateOf<List<Song>>(emptyList()); var query by mutableStateOf("")
     var searchLoading by mutableStateOf(false); private set
-    var libraryArtistBrowse by mutableStateOf<LibraryArtistBrowse?>(null); private set
     private var searchGeneration = 0
     var controller by mutableStateOf<MediaController?>(null); private set
     var personalSetupActive by mutableStateOf(false); private set
@@ -582,19 +581,16 @@ class HarmonicastViewModel : ViewModel() {
         val term = query.trim()
         results = emptyList()
         searchAlbums = emptyList()
-        libraryArtistBrowse = null
         searchLoading = term.isNotEmpty()
         if (term.isEmpty()) return
         searchJob = viewModelScope.launch {
             try {
                 kotlinx.coroutines.delay(debounceMillis)
                 val localResults = core.library.searchForBrowsing(term)
-                val albums = core.library.browse(BrowseKind.ALBUMS, BrowseOrder.TITLE, query = term).entries
-                val artist = core.library.artist(term)
+                val albums = core.library.searchAlbums(term)
                 if (generation != searchGeneration) return@launch
                 results = localResults
                 searchAlbums = albums
-                libraryArtistBrowse = artist
                 error = ""
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

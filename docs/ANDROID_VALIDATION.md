@@ -103,3 +103,25 @@ The owner accepted the final Shield Back-button behavior and authorized publicat
 The preceding working-build notes preserve intermediate checks and their limits;
 spoken recognition was owner-confirmed. Final release checks cover all 67 tests,
 lint, signed APK metadata and signature.
+
+## Artist search album follow-up — 2026-09-07
+
+Owner reported searching Tesla on the phone still showed expanded song rows.
+The Pixel was already on v1.1.4/code61; the gap was artist expansion, not a
+missing app update. Main Search now combines album-title matches with albums
+from matching artists, follows artist album pagination, deduplicates collection
+IDs, and retains direct song-title matches without expanding artist tracks.
+Track-oriented guest/playback searches retain their existing behavior.
+Removed the unused artist-track lookup from the Search view model.
+
+Regression coverage checks Tesla artist albums across pages, duplicate album
+matches, direct songs and absence of artist track expansion. All 68 unit tests
+passed; debug and signed release builds and release vital lint succeeded.
+Installed the signed local fix over v1.1.4 on Pixel 10 Pro with app data preserved.
+Owner confirmation of Tesla results and album navigation remains pending.
+No public release or Shield installation was performed for this follow-up.
+
+The owner subsequently confirmed the Tesla fix on Pixel and authorized v1.1.5
+publication (version code 62).
+Release checks for v1.1.5 passed: 68 tests, full debug lint, signed release
+build, APK version metadata and signing-certificate continuity with v1.1.4.

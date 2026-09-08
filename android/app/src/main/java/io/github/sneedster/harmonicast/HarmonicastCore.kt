@@ -6,6 +6,22 @@ interface MusicLibrary {
     suspend fun albumTracks(id: String): List<Song> = emptyList()
     suspend fun search(query: String): List<Song>
     suspend fun searchForBrowsing(query: String): List<Song> = search(query)
+    /** Album-title matches plus releases by matching artists, with shared albums deduplicated. */
+    suspend fun searchAlbums(query: String): List<LibraryEntry> {
+        val albums = browse(BrowseKind.ALBUMS, BrowseOrder.TITLE, query = query).entries.toMutableList()
+        val artists = browse(BrowseKind.ARTISTS, BrowseOrder.TITLE, query = query).entries
+        for (artist in artists) {
+            var offset = 0
+            do {
+                val page = browse(BrowseKind.ALBUMS, BrowseOrder.TITLE, offset = offset, parent = artist.id)
+                albums += page.entries
+                val next = page.nextOffset ?: break
+                if (next <= offset) break
+                offset = next
+            } while (true)
+        }
+        return albums.distinctBy { it.id }
+    }
     suspend fun track(id: String): Song?
     suspend fun artist(query: String): LibraryArtistBrowse?
     suspend fun discovery(song: Song): ArtistDiscovery

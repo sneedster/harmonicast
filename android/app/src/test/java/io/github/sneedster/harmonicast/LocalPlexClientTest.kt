@@ -97,6 +97,30 @@ class LocalPlexClientTest {
         assertTrue(http.calls.last().url.contains("type=9"))
     }
 
+    @Test fun artistBrowseSearchShowsAllAlbumPagesWithoutExpandingSongs() = runBlocking {
+        val http = FakeHttp().apply {
+            // Direct song match remains available alongside album cards.
+            responses += """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"42","title":"Tesla Song","Media":[{"Part":[{"key":"/song"}]}]}]}}"""
+            responses += """{"MediaContainer":{"Metadata":[{"type":"album","ratingKey":"91","title":"Tesla","parentTitle":"Tesla"}]}}"""
+            responses += """{"MediaContainer":{"Metadata":[{"type":"artist","ratingKey":"12","title":"Tesla"}]}}"""
+            responses += """{"MediaContainer":{"Metadata":[{"librarySectionID":"7"}]}}"""
+            responses += """{"MediaContainer":{"size":1,"totalSize":2,"Metadata":[{"type":"album","ratingKey":"91","title":"Tesla","parentTitle":"Tesla"}]}}"""
+            responses += """{"MediaContainer":{"Metadata":[{"librarySectionID":"7"}]}}"""
+            responses += """{"MediaContainer":{"size":1,"totalSize":2,"Metadata":[{"type":"album","ratingKey":"92","title":"Mechanical Resonance","parentTitle":"Tesla"}]}}"""
+        }
+        val storage = MemoryStorage()
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val library = LocalHarmonicastCore(source, storage, LocalPlexClient(storage, http)).library
+        assertEquals(listOf("Tesla Song"), library.searchForBrowsing("Tesla").map { it.title })
+        val albums = library.searchAlbums("Tesla")
+        assertEquals(listOf("Tesla", "Mechanical Resonance"), albums.map { it.title })
+        assertEquals(2, albums.map { it.id }.distinct().size)
+        assertTrue(albums.all { it.kind == BrowseKind.ALBUMS })
+        assertFalse(http.calls.any { it.url.contains("/allLeaves") || it.url.contains("/children") })
+        assertTrue(http.calls.last().url.contains("artist.id=12"))
+        assertTrue(http.calls.last().url.contains("X-Plex-Container-Start=1"))
+    }
+
     @Test fun connectionUrlsRejectNonHttpSchemesAndDropWebSuffix() {
         assertNull(normalizeServerUrl("file:///secret"))
         assertEquals("https://plex.example/prefix", normalizeServerUrl("https://plex.example/prefix/web/"))
