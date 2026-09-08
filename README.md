@@ -26,6 +26,12 @@ Rooms are for nearby guests. Native transfer needs a reachable local Wi-Fi/Ether
 network. Internet guest control is outside scope. Active Android Auto projection
 retains playback authority until disconnected. Track Radio depends on Plex support.
 
+## Share the app
+
+Use **Settings → Share app** for a QR code linking to [harmonicast.app](https://harmonicast.app).
+Phones also offer a share-link action. Browser guest pages include **Get the Android app**;
+guests can continue using the browser without installing anything.
+
 ## App updates
 
 Use **Settings → App updates → Check for updates** to check GitHub Releases.

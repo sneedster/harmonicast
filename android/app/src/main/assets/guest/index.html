@@ -24,6 +24,8 @@
     button { border: 0; border-radius: .75rem; padding: .8rem 1rem; background: #d8e2ff; color: #111624; font: inherit; font-weight: 750; cursor: pointer; }
     button.secondary { background: #303a50; color: #edf1fb; }
     button:disabled { opacity: .5; }
+    .app-download { display: inline-block; margin: .85rem 0 .5rem; padding: .8rem 1rem; border-radius: .75rem; background: var(--accent); color: var(--ink); font-weight: 750; text-decoration: none; }
+    .app-download:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
     .votes { display: flex; gap: .6rem; margin-top: .9rem; }
     .votes button { flex: 1; }
     ul { padding: 0; margin: 0; list-style: none; }
@@ -83,6 +85,12 @@
   <section class="card">
     <h2>Coming up</h2>
     <ul id="queue"><li class="muted">The queue is empty.</li></ul>
+  </section>
+  <section class="card" aria-labelledby="get-app-title">
+    <h2 id="get-app-title">Take Harmonicast with you</h2>
+    <p class="muted">Keep using this guest page without installing anything, or get the Android app.</p>
+    <a class="app-download" href="https://harmonicast.app" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Get the Android app</a>
+    <p class="muted">Visit harmonicast.app for the download link. Open the downloaded APK and follow Android’s installation prompts.</p>
   </section>
 </main>
 <script>

@@ -1,5 +1,14 @@
 # Releases
 
+## v1.1.4 — share Harmonicast
+
+Version code: **61**.
+
+- Settings → Share app displays a QR code pointing to harmonicast.app.
+- Phones can share the website link through Android’s share sheet.
+- Browser guests get a Get the Android app link and installation guidance.
+- Installing remains optional for browser guests; the website links to the latest APK.
+
 ## v1.1.3 — TV navigation and live voice search
 
 Version code: **60**.

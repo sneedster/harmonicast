@@ -1445,6 +1445,7 @@ class MainActivity : ComponentActivity() {
 @Composable internal fun SettingsScreen(vm: HarmonicastViewModel) {
     var share by remember(vm.ratedTrackShare) { mutableFloatStateOf(vm.ratedTrackShare.toFloat()) }
     var confirmPlexSignOut by remember { mutableStateOf(false) }
+    var showAppShare by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val television = context.isTelevision()
     val room = HarmonicastMediaService.roomShareState.value
@@ -1469,6 +1470,7 @@ class MainActivity : ComponentActivity() {
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
         UpdateSettings()
+        OutlinedButton(onClick = { showAppShare = true }, modifier = Modifier.tvFocusFeedback().fillMaxWidth()) { Text("Share app") }
         Text("Color scheme", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PlayerPalette.entries.forEach { palette ->
@@ -1732,6 +1734,24 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+    if (showAppShare) {
+        val downloadUrl = "https://harmonicast.app"
+        FocusRestoringAlertDialog(onDismissRequest = { showAppShare = false }, title = { Text("Get Harmonicast for Android") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Scan to visit harmonicast.app and download Harmonicast for Android.")
+                    Box(Modifier.width(220.dp).align(Alignment.CenterHorizontally)) { RoomQrCode(downloadUrl, "Download Harmonicast for Android") }
+                    Text("Open the downloaded APK and follow Android’s installation prompts. Browser guests can keep listening and requesting without installing the app.")
+                }
+            },
+            confirmButton = { TextButton(onClick = { showAppShare = false }, modifier = Modifier.tvFocusFeedback()) { Text("Close") } },
+            dismissButton = if (!television) ({ TextButton(onClick = {
+                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, "Get Harmonicast for Android: $downloadUrl")
+                }, "Share Harmonicast"))
+            }, modifier = Modifier.tvFocusFeedback()) { Text("Share link") } }) else null)
     }
     if (confirmPlexSignOut) {
         FocusRestoringAlertDialog(
