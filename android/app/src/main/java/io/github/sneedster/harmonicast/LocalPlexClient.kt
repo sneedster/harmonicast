@@ -138,15 +138,19 @@ class LocalPlexClient(
 
     suspend fun browse(source: PersonalPlexSource, kind: BrowseKind, order: BrowseOrder, offset: Int = 0, parent: String? = null, query: String = ""): LibraryPage {
         require(offset >= 0)
+        var artistFilter = ""
         val path = if (parent == null) "/library/sections/${source.libraryKey}/${if (query.isBlank()) "all" else "search"}"
             else {
                 val key = collectionKey(source, parent)
                 val item = metadataArray(serverContainer(source.baseUrl, source.token, "/library/metadata/$key")).firstOrNull()
                 require(item?.optString("librarySectionID") == source.libraryKey) { "Artist belongs to another library" }
-                "/library/metadata/$key/children"
+                // Artist children can be restricted to the main album release group.
+                // Query the section instead to include singles, EPs and other releases.
+                artistFilter = "&artist.id=$key"
+                "/library/sections/${source.libraryKey}/all"
             }
         val container = serverContainer(source.baseUrl, source.token,
-            "$path?type=${kind.plexType}&sort=${encodePlex(order.plexSort)}&X-Plex-Container-Start=$offset&X-Plex-Container-Size=40" +
+            "$path?type=${kind.plexType}&sort=${encodePlex(order.plexSort)}&X-Plex-Container-Start=$offset&X-Plex-Container-Size=40$artistFilter" +
                 if (query.isNotBlank() && parent == null) "&query=${encodePlex(query.trim())}" else "")
         val raw = metadataArray(container)
         val entries = raw.mapNotNull { item ->

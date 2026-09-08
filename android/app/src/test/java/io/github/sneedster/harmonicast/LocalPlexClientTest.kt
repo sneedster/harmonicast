@@ -168,6 +168,32 @@ class LocalPlexClientTest {
         assertTrue(http.calls.single().url.contains("X-Plex-Container-Size=40"))
     }
 
+    @Test fun artistReleasesIncludeSinglesAndEpsAcrossPages() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"Metadata":[{"type":"artist","ratingKey":"12","librarySectionID":"3"}]}}"""
+            responses += """{"MediaContainer":{"size":2,"totalSize":3,"Metadata":[
+                {"type":"album","ratingKey":"21","title":"Single","Format":[{"tag":"Single"}]},
+                {"type":"album","ratingKey":"22","title":"EP","Format":[{"tag":"EP"}]}
+            ]}}"""
+            responses += """{"MediaContainer":{"Metadata":[{"type":"artist","ratingKey":"12","librarySectionID":"3"}]}}"""
+            responses += """{"MediaContainer":{"size":1,"totalSize":3,"Metadata":[{"type":"album","ratingKey":"23","title":"Another single"}]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "mine", "Server", "3", "Music")
+        val client = LocalPlexClient(MemoryStorage(), http)
+        val first = client.browse(source, BrowseKind.ALBUMS, BrowseOrder.TITLE, parent = "plex-collection:mine:3:12")
+        assertEquals(listOf("Single", "EP"), first.entries.map { it.title })
+        assertEquals(2, first.nextOffset)
+        val last = client.browse(source, BrowseKind.ALBUMS, BrowseOrder.TITLE, first.nextOffset!!, "plex-collection:mine:3:12")
+        assertEquals("Another single", last.entries.single().title)
+        assertNull(last.nextOffset)
+        for (call in listOf(http.calls[1], http.calls[3])) {
+            assertTrue(call.url.startsWith("https://plex/library/sections/3/all?type=9&"))
+            assertTrue(call.url.contains("&artist.id=12"))
+            assertFalse(call.url.contains("format="))
+        }
+        assertTrue(http.calls[3].url.contains("X-Plex-Container-Start=2"))
+    }
+
     @Test fun collectionIdsCannotCrossServerOrLibraryBoundaries() = runBlocking {
         val http = FakeHttp()
         val client = LocalPlexClient(MemoryStorage(), http)

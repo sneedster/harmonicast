@@ -1,5 +1,14 @@
 # Releases
 
+## v1.1.1 — artist release browsing
+
+Version code: **58**.
+
+- Artist library browsing now includes singles and EPs alongside albums.
+- Preserves sorting, pagination, and library identity checks.
+- Owner verified the fix on Pixel; regression tests cover singles-only artists and pagination.
+
+
 ## v1.1.0 — standalone Android cutover
 
 Version code: **57**. Signed GitHub APK from main is the supported distribution.
