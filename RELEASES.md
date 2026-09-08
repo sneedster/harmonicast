@@ -1,5 +1,17 @@
 # Releases
 
+## v1.1.6 — automatic Plex ratings require opt-in
+
+Version code: **63**.
+
+- Automatic Plex rating changes are now **off by default**, including for existing users upgrading.
+- Enable them in **Settings → Automatic Plex ratings** if you want listening completions and skips to adjust your Plex song ratings.
+- The setting explains how ratings change, that changes are saved to Plex and can replace your own ratings, and that disabling does not undo earlier changes.
+- Explicit thumbs-up/down votes still change ratings. Automatic mixes, play counts and listening history continue to work.
+- Configurable rating and selection weights are planned for a future update.
+
+Validation: all 71 unit tests, debug lint, and signed release build. This update has not been device-tested.
+
 ## v1.1.5 — artist albums in search
 
 Version code: **62**.

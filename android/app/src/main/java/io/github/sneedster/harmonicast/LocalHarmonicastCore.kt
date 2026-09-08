@@ -136,11 +136,11 @@ class LocalHarmonicastCore(
             if (source.canWriteToPlex && submission) plex.scrobble(source, id)
         }
         override suspend fun recordEvent(song: Song, event: String, progress: Double) {
-            if (source.canWriteToPlex) {
+            if (source.canWriteToPlex && AutomaticPlexRatings(storage).enabled) {
                 val current = runCatching { plex.track(source, song.id) }.getOrNull()
                 if (current != null) {
                     val adjusted = adjustPersonalRating(current.rating, event, progress, current.viewCount)
-                    if (adjusted != current.rating) plex.rate(source, song.id, adjusted)
+                    if (adjusted != current.rating && AutomaticPlexRatings(storage).enabled) plex.rate(source, song.id, adjusted)
                 }
             }
             val history = storage.read("local.playbackHistory")?.let { runCatching { JSONArray(it) }.getOrNull() } ?: JSONArray()

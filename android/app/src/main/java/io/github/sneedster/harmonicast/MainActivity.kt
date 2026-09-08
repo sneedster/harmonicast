@@ -17,6 +17,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.*
@@ -115,6 +117,7 @@ class HarmonicastViewModel : ViewModel() {
     var artistDiscoveryLoading by mutableStateOf(false); private set
     var artistDiscoveryError by mutableStateOf(""); private set
     var isHost by mutableStateOf(false); var isActivePlayer by mutableStateOf(false)
+    var automaticPlexRatings by mutableStateOf(false); private set
     var ratedTrackShare by mutableIntStateOf(8); private set
     var settingsSaving by mutableStateOf(false); private set
     var configured by mutableStateOf(true)
@@ -332,6 +335,7 @@ class HarmonicastViewModel : ViewModel() {
                     val state = core.playback.snapshot()
                     nowPlaying = state.nowPlaying
                     playbackPosition = state.positionSeconds.toFloat().coerceAtLeast(0f)
+                    automaticPlexRatings = AutomaticPlexRatings(api.storage).enabled
                     ratedTrackShare = core.queue.ratedTrackShare()
                     ensureSocket()
                     if (isHost) loadPlexSource()
@@ -613,6 +617,12 @@ class HarmonicastViewModel : ViewModel() {
     }
     fun claim() = coreAction { core.playback.claim(); refresh() }
     fun clearQueue() = coreAction { core.queue.clear(); refresh() }
+    fun saveAutomaticPlexRatings(enabled: Boolean) {
+        if (!isPersonalMode || !canWriteToPlex) return
+        AutomaticPlexRatings(api.storage).enabled = enabled
+        automaticPlexRatings = enabled
+    }
+
     fun saveRatedTrackShare(share: Int, announce: Boolean = true) {
         if (!isHost) return
         val value = share.coerceIn(0, 10)
@@ -1690,6 +1700,36 @@ class MainActivity : ComponentActivity() {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+            }
+        }
+        if (vm.isPersonalMode) {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Automatic Plex ratings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Let Harmonicast update your Plex song ratings from listening on this device. Finishing a song raises its rating; skipping lowers it, with a smaller penalty for later skips. Repeat plays increase the completion boost. Unrated songs start from 5 out of 10 when first adjusted.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "These changes are saved to Plex, can replace ratings you set yourself, and affect future automatic mixes. They are visible in other apps using the same Plex account. Turning this off stops future automatic changes; it does not restore earlier ratings.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Enable automatic rating changes", Modifier.weight(1f))
+                        Switch(
+                            checked = vm.automaticPlexRatings,
+                            onCheckedChange = vm::saveAutomaticPlexRatings,
+                            enabled = vm.canWriteToPlex,
+                            modifier = Modifier.tvFocusFeedback().semantics { contentDescription = "Enable automatic Plex rating changes" },
+                        )
+                    }
+                    Text(
+                        "Off by default. Explicit thumbs-up/down votes still change Plex ratings. Play counts and listening history continue to be recorded.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (!vm.canWriteToPlex) Text("Unavailable on a shared read-only Plex server.")
                 }
             }
         }

@@ -15,6 +15,73 @@ class LocalHarmonicastCoreTest {
         "plex:machine:$id", "Song $id", "Artist", streamUri = "https://plex/part/$id?token",
     )
 
+    @Test fun automaticRatingsRequireOptInAndExistingServiceSeesOptOut() = runBlocking {
+        val storage = MemoryStorage()
+        val calls = mutableListOf<String>()
+        val http = object : PlexHttp {
+            override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+                calls += url
+                return """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"1","librarySectionID":"7","title":"Song","userRating":5,"Media":[{"Part":[{"key":"/part/1"}]}]}]}}"""
+            }
+        }
+        val service = LocalHarmonicastCore(source, storage, LocalPlexClient(storage, http))
+        val setting = AutomaticPlexRatings(storage)
+        assertFalse(setting.enabled)
+        // Existing installs have other settings, but must still opt in.
+        storage.values["local.ratedTrackShare"] = "8"
+        service.playback.recordEvent(song("1"), "complete", 1.0)
+        service.playback.recordEvent(song("1"), "skip", 0.0)
+        assertTrue(calls.isEmpty())
+        assertTrue(storage.values["local.playbackHistory"].orEmpty().contains("complete"))
+        setting.enabled = true
+        assertTrue(AutomaticPlexRatings(storage).enabled)
+        service.playback.recordEvent(song("1"), "complete", 1.0)
+        assertTrue(calls.any { it.contains("/:/rate?") && it.contains("rating=5.1") })
+        calls.clear()
+        service.playback.recordEvent(song("1"), "skip", 0.0)
+        assertTrue(calls.any { it.contains("/:/rate?") && it.contains("rating=4.7") })
+        setting.enabled = false
+        calls.clear()
+        service.playback.recordEvent(song("1"), "skip", 0.0)
+        assertTrue(calls.isEmpty())
+        assertFalse(AutomaticPlexRatings(storage).enabled)
+        service.playback.publish(song("1"), true, false)
+        service.guests.vote(true)
+        assertTrue(calls.any { it.contains("/:/rate?") && it.contains("rating=6.0") })
+    }
+
+    @Test fun optingOutDuringMetadataFetchPreventsPendingRatingWrite() = runBlocking {
+        val storage = MemoryStorage()
+        AutomaticPlexRatings(storage).enabled = true
+        val calls = mutableListOf<String>()
+        val http = object : PlexHttp {
+            override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+                calls += url
+                AutomaticPlexRatings(storage).enabled = false
+                return """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"1","librarySectionID":"7","title":"Song","userRating":5,"Media":[{"Part":[{"key":"/part/1"}]}]}]}}"""
+            }
+        }
+        LocalHarmonicastCore(source, storage, LocalPlexClient(storage, http))
+            .playback.recordEvent(song("1"), "complete", 1.0)
+        assertEquals(1, calls.size)
+        assertFalse(calls.any { it.contains("/:/rate?") })
+    }
+
+    @Test fun readOnlySourceCannotAutoRateEvenWithOptIn() = runBlocking {
+        val storage = MemoryStorage()
+        AutomaticPlexRatings(storage).enabled = true
+        val calls = mutableListOf<String>()
+        val http = object : PlexHttp {
+            override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+                calls += url
+                error("Read-only source must not contact Plex for automatic ratings")
+            }
+        }
+        LocalHarmonicastCore(source.copy(canWriteToPlex = false), storage, LocalPlexClient(storage, http))
+            .playback.recordEvent(song("1"), "complete", 1.0)
+        assertTrue(calls.isEmpty())
+    }
+
     @Test fun unconfiguredCoreRequiresPlexWithoutOpeningRemoteTransport() = runBlocking {
         val core = LocalHarmonicastCore(null, MemoryStorage())
         assertFalse(core.guests.policy().configured)

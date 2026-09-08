@@ -125,3 +125,23 @@ The owner subsequently confirmed the Tesla fix on Pixel and authorized v1.1.5
 publication (version code 62).
 Release checks for v1.1.5 passed: 68 tests, full debug lint, signed release
 build, APK version metadata and signing-certificate continuity with v1.1.4.
+
+## Automatic Plex rating consent — 2026-09-08
+
+Added a persistent, device-local Settings opt-in, disabled for fresh installs and
+existing installs without an explicit choice. Completion and skip rating writes
+check this preference, including a recheck after fetching Plex metadata. Settings
+explains rating effects, Plex persistence, existing-rating replacement, opt-out
+limits, and the separate explicit thumbs-up/down behavior.
+
+Validation: debug APK build, all 71 unit tests, and debug lint passed. Regression
+tests cover default-off upgrades, opt-in writes, persistence, service opt-out,
+opt-out during metadata fetch, read-only sources, and explicit votes while off.
+No device installation or visual/device acceptance was performed; not published.
+Future configurable weights are recorded in ROADMAP.md. Project Memory tools
+were unavailable; shared-memory sync of this milestone and decision remains pending.
+
+The owner authorized publication as v1.1.6 (code 63). Release checks passed:
+71 tests, full debug lint, signed release build and release vital lint. APK
+version metadata and signing-certificate continuity with v1.1.5 were verified.
+No device installation was performed.

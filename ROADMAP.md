@@ -11,6 +11,12 @@ native playback transfer and take-back, shared read-only Plex libraries, and And
 Plex is the supported music source. Acquisition plugins and alternative sources
 are outside the planned scope.
 
+## Rating consent and future controls
+
+- Automatic Plex rating changes require explicit opt-in in Settings and default to disabled, including upgrades (owner decision, 2026-09-08).
+- Future update: let users adjust completion, skip, repeat-play and selection weights with clear explanations and safe defaults.
+- Project Memory sync pending: this session has no callable Project Memory tools; persist these decisions when the connection is restored.
+
 ## Ongoing quality
 
 - Keep phone and TV browsing responsive, with bounded queries, pagination and retained scroll position.
