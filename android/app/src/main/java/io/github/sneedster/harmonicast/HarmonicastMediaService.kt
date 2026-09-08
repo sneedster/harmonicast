@@ -48,6 +48,17 @@ class HarmonicastMediaService : MediaLibraryService() {
     private var webSocketStopped = false
     private val currentIsAuto = AtomicReference(false)
     private val androidAutoControllers = mutableSetOf<MediaSession.ControllerInfo>()
+    private lateinit var carConnection: androidx.car.app.connection.CarConnection
+    private var carProjectionConnected: Boolean? = null
+    private val carConnectionObserver = androidx.lifecycle.Observer<Int> { type ->
+        carProjectionConnected = type == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_PROJECTION
+        Log.i("HarmonicastAuto", "Car projection connected: $carProjectionConnected")
+        if (carProjectionConnected == true && androidAutoControllers.isNotEmpty()) claimAndroidAutoPlayback()
+    }
+
+    // Legacy Media3 controllers expire after inactivity, not when projection ends.
+    // Use them only until the platform's initial connection query completes.
+    private fun hasAndroidAutoAuthority() = carProjectionConnected ?: androidAutoControllers.isNotEmpty()
     private var positionSaveJob: kotlinx.coroutines.Job? = null
     private var previousMediaItem: MediaItem? = null
     private data class HistoryItem(val mediaItem: MediaItem, val isAuto: Boolean)
@@ -211,6 +222,8 @@ class HarmonicastMediaService : MediaLibraryService() {
             }
         }
         player = exoPlayer
+        carConnection = androidx.car.app.connection.CarConnection(this)
+        carConnection.type.observeForever(carConnectionObserver)
         androidx.core.content.ContextCompat.registerReceiver(
             this, idleRecovery,
             android.content.IntentFilter(android.os.PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED),
@@ -233,7 +246,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 // browser session in control and waiting for a manual action.
                 if (isAndroidAutoController(controller)) {
                     androidAutoControllers.add(controller)
-                    claimAndroidAutoPlayback()
+                    if (hasAndroidAutoAuthority()) claimAndroidAutoPlayback()
                 }
 
                 // Android Auto is a MediaBrowser controller. The default
@@ -676,8 +689,12 @@ class HarmonicastMediaService : MediaLibraryService() {
             nativeOutputStatus.value = "Playback transfer requires owner Plex access on both devices"
             return
         }
-        if (nativeOutputBusy || nativeOutput != null || androidAutoControllers.isNotEmpty()) {
-            nativeOutputStatus.value = "Take playback back first, and disconnect Android Auto before transferring"
+        if (hasAndroidAutoAuthority()) {
+            nativeOutputStatus.value = "Android Auto is still connected. Disconnect from the car or wireless adapter before playing on the TV."
+            return
+        }
+        if (nativeOutputBusy || nativeOutput != null) {
+            nativeOutputStatus.value = "Take playback back before choosing another room player."
             return
         }
         val generation = ++nativeRequestGeneration
@@ -898,7 +915,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                     scope.launch {
                         try {
                             val isActive = core.playback.isActivePlayer()
-                            if (androidAutoControllers.isNotEmpty() && !isActive) {
+                            if (hasAndroidAutoAuthority() && !isActive) {
                                 // Another client just claimed playback. A
                                 // connected Android Auto host always wins it
                                 // back, then recreates its local timeline.
@@ -1300,6 +1317,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaLibrarySession
 
     override fun onDestroy() {
+        if (::carConnection.isInitialized) carConnection.type.removeObserver(carConnectionObserver)
         unregisterReceiver(idleRecovery)
         stopPositionSaving()
         disableGuestControl()

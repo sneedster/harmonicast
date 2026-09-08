@@ -1,3 +1,7 @@
+# Historical server plugin format
+
+Retired or cancelled at the v1.1.0 standalone cutover; retained for historical reference.
+
 # Loadable plugin format
 
 Harmonicast plugins are trusted, server-side extensions. Install only code you

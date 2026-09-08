@@ -1,6 +1,13 @@
 # Roadmap
 
-## Completed foundation
+## v1.1.0 cutover status
+
+Owner accepted testing on 2026-09-07 and authorized release. Plex-only scope is
+final. Server and F-Droid distribution are retired; historical source is retained
+unsupported. Earlier notes do not reopen testing or cancelled acquisition/provider
+scope. See RELEASES.md and validation notes.
+
+## Historical completed foundation
 
 - Plex PIN/forwarding authentication and first-run owner server/library setup.
 - Shared Plex-backed search, streaming, cover art, ratings, and scrobbling.
@@ -234,3 +241,12 @@ guest, Android Auto, room-display and Nocturne design/parity acceptance checks a
 
 Do not perform these retirement steps during the 1.0.x migration series. The
 server remains supported until the v1.1.0 acceptance gate is satisfied.
+
+Owner decision (2026-09-07): defer the remaining server-only features and retire
+the server at cutover; no supported legacy server is required. See the explicit
+feature dispositions in `docs/STANDALONE_ARCHITECTURE.md`.
+
+Final owner scope decision (2026-09-07): keep Harmonicast Plex-only. Cancel the
+proposed acquisition connectors/plugins and alternative music sources. Finish
+the existing standalone feature set and v1.1.0 validation; these proposals are
+not deferred milestones.

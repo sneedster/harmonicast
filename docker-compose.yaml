@@ -1,3 +1,4 @@
+# RETIRED at v1.1.0: unsupported historical server deployment. See docs/LEGACY_SERVER.md.
 services:
   harmonicast:
     image: mjstrong/harmonicast:${HARMONICAST_IMAGE_TAG:-latest}

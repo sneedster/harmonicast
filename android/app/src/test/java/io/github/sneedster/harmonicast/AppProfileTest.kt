@@ -4,6 +4,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppProfileTest {
+    @Test fun retirementClearsLegacyCredentialsWithoutRestoringThem() {
+        val storage = MemoryStorage("base" to "https://old.example", "token" to "old-token")
+        val home = HomeProfileStore(storage)
+        home.retireRemoteServer()
+        val restarted = HomeProfileStore(storage)
+        assertEquals(HomeMode.UNCONFIGURED, restarted.mode)
+        assertFalse(restarted.homeReady)
+        assertEquals("", restarted.token)
+        assertEquals("", storage.read("token"))
+    }
+
+    @Test fun retirementPreservesPersonalPlexAndQueue() {
+        val storage = MemoryStorage("local.queue" to "saved-queue", "home.remote.token" to "legacy")
+        val home = HomeProfileStore(storage)
+        val source = PersonalPlexSource("plex-token", "https://plex.example", "machine", "Plex", "1", "Music")
+        home.savePersonalSource(source)
+        home.retireRemoteServer()
+        assertEquals(source, HomeProfileStore(storage).personalSource)
+        assertEquals("saved-queue", storage.read("local.queue"))
+        assertEquals("", home.token)
+    }
     private class MemoryStorage(vararg entries: Pair<String, String>) : ProfileStorage {
         val values = mutableMapOf(*entries)
         override fun read(key: String) = values[key]

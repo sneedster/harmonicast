@@ -1,3 +1,7 @@
+# Cancelled acquisition proposal
+
+Retired or cancelled at the v1.1.0 standalone cutover; retained for historical reference.
+
 # Android connected-music-source search plan
 
 ## Goal

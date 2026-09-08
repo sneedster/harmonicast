@@ -1,3 +1,7 @@
+# Historical plan
+
+Retired or cancelled at the v1.1.0 standalone cutover; retained for historical reference.
+
 # Harmonicast release contract
 
 ## Deployment

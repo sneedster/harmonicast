@@ -22,10 +22,9 @@ android {
         applicationId = "io.github.sneedster.harmonicast"
         minSdk = 26
         targetSdk = 35
-        // Keep the release version in source so F-Droid builds the metadata's
-        // declared APK without relying on the local release helper.
-        versionCode = providers.gradleProperty("versionCode").orElse("56").get().toInt()
-        versionName = providers.gradleProperty("versionName").orElse("1.0.56").get()
+        // Keep the published APK version reproducible from source.
+        versionCode = providers.gradleProperty("versionCode").orElse("57").get().toInt()
+        versionName = providers.gradleProperty("versionName").orElse("1.1.0").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -74,6 +73,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.9.0")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.browser:browser:1.8.0")
+    implementation("androidx.car.app:app:1.4.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

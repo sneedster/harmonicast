@@ -1,6 +1,13 @@
 # Android validation — 2026-09-07
 
-## Current release-candidate work
+## Owner acceptance
+
+On 2026-09-07 the owner instructed "consider testing complete" and authorized
+v1.1.0 release/server retirement. Testing is accepted. Observations and unverified
+scenarios below remain historical evidence, not additional release gates.
+No further device tests are requested.
+
+## Pre-cutover validation history
 
 Local debug/release assembly, 70 unit tests and full debug lint pass (zero errors,
 46 warnings). `scripts/release-check.sh` also passed server tests, web typecheck,
@@ -11,7 +18,7 @@ The immersive Nocturne player was visually checked on Pixel and Shield: large
 artwork, responsive portrait/two-column layout, transport/seek/rating controls,
 Track Radio and artist discovery. Album/artist browse now includes submitted
 search, A–Z/Z–A sorting and available artist biographies. These latest filters
-have unit coverage but still need live-library acceptance.
+have unit coverage and live TV search/discography/biography checks below.
 
 Android Auto has a separate media-service Library hierarchy backed by the same
 Plex collection API: Recently added, Albums, Artists, Recently played, album
@@ -19,13 +26,13 @@ tracks and bounded More pages. Four top-level tabs retain For you, Request queue
 Plex playlists and Library. DHU connected to Pixel verified browsing Recently
 added → Angel → track and starting playback. The current-track-only timeline
 and protected request-queue refresh behavior remain intact. Artwork grid hints
-and voice search-query playback resolution are implemented; grid and spoken
-voice acceptance remain pending. The voice registration lint error is resolved.
+passed DHU validation below. Voice search-query playback resolution is implemented;
+spoken voice acceptance remains pending. The voice registration lint error is resolved.
 
 Bundled guest/display pages now use Nocturne colors, selectable persistent
 Nocturne/Aurora/Ember schemes and friendly connection-loss status that disables
-static room controls. JavaScript parsing passes. Fire device acceptance is in
-progress. TV inspection found and fixed oversized QR layout (now bounded and
+static room controls. JavaScript parsing and Fire device checks below pass.
+TV inspection found and fixed oversized QR layout (now bounded and
 fully visible); Ethernet room hosting also needed the existing native LAN
 network selector instead of the Wi-Fi-only development fallback.
 
@@ -46,6 +53,16 @@ screen-off run at 22:17:28 UTC. Playback crossed multiple track boundaries and
 remained playing through 22:27:21 UTC. The temporary exemption was removed
 afterward. This is a conditional unrestricted pass, not default Doze acceptance.
 
+Bounded follow-up after scope freeze: first attempt aborted because playback was
+paused. Retried with confirmed PLAYING and no app Doze exemption, forced deep idle
+for 180 seconds, then restored battery simulation and idle mode and woke the phone.
+No network error was reported. Media-session position updates became stale during
+the run, so they cannot establish uninterrupted audio. Final pause produced fresh
+state at 252.2 seconds versus 21.1 seconds before the test, with 286.4 seconds
+buffered. Both attempts restored device state; final state was PAUSED. This is
+evidence of playback progress, not verification of error recovery or a complete
+extended/background acceptance pass.
+
 Fire HD verification: Nocturne guest connected to the Ethernet-hosted TV room;
 Aurora selection survived reload and applied to the separately authorized
 display. Display resume advanced position and Next started the next queued
@@ -58,6 +75,14 @@ discography and a scrollable biography displayed real metadata. Returning from
 an album retained the submitted filter. Broader focus/scroll and full playlist
 action acceptance still remain.
 
+Follow-up: reproduced playlist Play adding eight songs without starting playback.
+The TV media Next command worked. Routed album/playlist Play and Shuffle, plus
+automatic mix start, through the existing next-track service action instead of
+the controller seek command. Debug/release assembly, all 70 unit tests, and lint
+passed. Installed on TV: playlist Play started the first track and playback
+position advanced from 2.9 to 5.9 seconds. Shuffle started Pump It Up by Elvis
+Costello; TV was left paused. Other release gates remain open.
+
 Owner-requested phone setting "Stay awake while charging" is implemented with
 a persistent opt-in preference and an activity-window flag. Power broadcasts
 update it while open; leaving the activity clears it. Existing TV keep-awake
@@ -67,8 +92,50 @@ unset, simulated USB power sets it, going Home clears it, reopening restores
 it, and unplugging clears it. Force-stop/relaunch preserved the enabled switch.
 Battery simulation was reset in a finally block; the preference is left enabled.
 
-Server-only feature dispositions and native TV transfer/host control acceptance
-remain unresolved. Earlier sections below are chronological evidence, not a
+Native TV host-control pass: Pixel room discovery and TV owner-only offer worked.
+Initial transfer was blocked by retained Android Auto controller state after DHU;
+stopping Gearhead alone did not clear it. Restarting Harmonicast and opening a
+fresh room allowed transfer. This Auto-to-TV transition issue remains open.
+In the fresh room, TV reported host control and progressing playback. Pixel
+pause held the TV at 2:08; resume continued from that position. Natural completion
+advanced Keep on Coming to Hoodie. Host Skip started Why Do You Love Me, and
+the TV progressed to 0:14. Take-back stopped the receiver and Pixel resumed at
+the current position (observed playing at 0:48). Re-offering and transferring
+again worked. Ending the room during TV playback returned Pixel paused at 2:08,
+returned TV to its home screen, and removed the NativePlaybackReceiver service.
+Both temporary rooms were ended. This verifies reported receiver playback and
+transport state; audible output was not independently confirmed in this pass.
+
+Auto connection follow-up: Media3 1.5.1 legacy controllers have a five-minute
+inactivity disconnect timeout, so a controller record does not prove projection.
+Added AndroidX CarConnection 1.4.0 observation for the actual projection state,
+with the previous controller check only until the initial query completes.
+Transfer and playback-authority checks now use that state. The transfer message
+separately explains an active car/wireless-adapter connection versus an existing
+room transfer. Observer cleanup is tied to service destruction. Builds, 70 unit
+tests, and lint passed; installed on Pixel and observed disconnected state.
+DHU retry reached TLS negotiation but failed its transport before projection;
+connected/disconnected transition acceptance remains pending. Test server was
+stopped and ADB forwarding removed. Owner reports using a wireless USB Auto
+adapter and suspects it remains powered after car shutdown; its actual power
+and projection state were not verified. This may explain the original block,
+so do not attribute that observation exclusively to stale Media3 state.
+
+Fresh DHU retest passed: the same Harmonicast process (PID 20207) observed actual
+projection connected at 16:39:42 local, then disconnected at 16:43:35 after DHU
+quit, without restarting Harmonicast. Its authority guard therefore releases on
+projection disconnect rather than waiting for legacy controller expiry. Auto
+Library → Albums displayed a three-column artwork grid; selecting Blackstar
+showed its tracks, and selecting Lazarus started David Bowie playback (PLAYING
+at 17.5 seconds). The emulator was closed, playback paused, Gearhead test server
+stopped, and forwarding removed. A complete Auto-disconnect-to-TV transfer remains
+to be retested; the platform connection transition itself is verified.
+
+Server-only dispositions are resolved: owner approved deferral and server retirement
+at v1.1.0. The owner subsequently cancelled acquisition/plugins and alternative
+music sources; the planned app remains Plex-only. Remaining Auto/background
+acceptance is unresolved. Earlier sections
+below are chronological evidence, not a
 claim that their remaining-work lists describe the latest build.
 
 ## Nocturne first implementation slice

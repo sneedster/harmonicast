@@ -1,3 +1,4 @@
+# RETIRED at v1.1.0: unsupported historical server deployment. See docs/LEGACY_SERVER.md.
 # ---- Build stage ----
 FROM node:20-alpine AS build
 WORKDIR /app

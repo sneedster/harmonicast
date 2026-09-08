@@ -55,7 +55,7 @@ class SharedPreferencesProfileStorage(
 class Api(private val prefs: android.content.SharedPreferences) : RemoteApi {
     private val http = OkHttpClient()
     val storage = SharedPreferencesProfileStorage(prefs)
-    val profile = HomeProfileStore(storage)
+    val profile = HomeProfileStore(storage).also { it.retireRemoteServer() }
     override val base: String get() = profile.base
     override val token: String get() = profile.token
     fun setBase(value: String) = profile.setBase(value)

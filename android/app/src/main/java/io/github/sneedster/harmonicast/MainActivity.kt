@@ -298,22 +298,7 @@ class HarmonicastViewModel : ViewModel() {
             completePersonalSignIn()
             return
         }
-        android.util.Log.d("HarmonicastAuth", "receiveAuth called with: $uri")
-        val token = uri.fragment?.split("&")?.firstOrNull { it.startsWith("auth_token=") }?.removePrefix("auth_token=") 
-            ?: uri.getQueryParameter("auth_token") 
-            ?: uri.getQueryParameter("token")
-        
-        if (token.isNullOrBlank()) {
-            error = "Sign-in did not return a token"
-            return
-        }
-        api.setToken(token)
-        ready = api.profile.ready
-        if (ready) {
-            core = harmonicastCore(api)
-            connectPlaybackService()
-            refresh()
-        }
+        error = "Server sign-in is retired. Sign in directly with Plex."
     }
 
     private fun completePersonalSignIn() {
@@ -589,7 +574,7 @@ class HarmonicastViewModel : ViewModel() {
                     PlaylistAction.PLAY, PlaylistAction.SHUFFLE -> {
                         activeCore.queue.clear()
                         activeCore.queue.addAll(tracks.map { it.copy(isManual = true) })
-                        controller?.seekToNext()
+                        nextSong()
                     }
                     PlaylistAction.NEXT -> activeCore.queue.addAll(tracks.map { it.copy(isManual = true) }, next = true)
                     PlaylistAction.QUEUE -> activeCore.queue.addAll(tracks.map { it.copy(isManual = true) })
@@ -628,7 +613,7 @@ class HarmonicastViewModel : ViewModel() {
                     PlaylistAction.PLAY, PlaylistAction.SHUFFLE -> {
                         core.queue.clear()
                         core.queue.addAll(tracks)
-                        controller?.seekToNext()
+                        nextSong()
                     }
                     PlaylistAction.NEXT -> core.queue.addAll(tracks, next = true)
                     PlaylistAction.QUEUE -> core.queue.addAll(tracks)
@@ -888,7 +873,7 @@ class HarmonicastViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 core.queue.enableAutomaticPlayback()
-                controller?.seekToNext()
+                nextSong()
             } catch (e: Exception) {
                 error = "Failed to start random playback"
             }
@@ -1351,7 +1336,6 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun Login(vm: HarmonicastViewModel) {
-    var server by remember(vm.savedBaseUrl) { mutableStateOf(vm.serverUrl()) }
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -1387,13 +1371,6 @@ class MainActivity : ComponentActivity() {
             }
             if (vm.personalSetupActive) {
                 PersonalPlexSetup(vm)
-            } else {
-                HorizontalDivider()
-                Text("Existing Harmonicast server", style = MaterialTheme.typography.titleSmall)
-                OutlinedTextField(server, { server = it }, label = { Text("Server URL") }, placeholder = { Text("https://harmonicast.example.com") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedButton(onClick = { vm.setServer(server); CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(vm.authUrl())) }, enabled = server.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                    Text("Connect during migration")
-                }
             }
             HorizontalDivider()
             Text("Guest mode", style = MaterialTheme.typography.titleSmall)

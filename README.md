@@ -1,276 +1,66 @@
 # Harmonicast
 
-Harmonicast is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`).
+Standalone Plex music playback for Android phones, tablets, TV, and Android Auto.
+Version 1.1.0 retires the separate Harmonicast Node/Docker server. Plex and access
+to a Plex Music library are still required. Android 8.0 (API 26) or later.
 
-Harmonicast is a self-hosted, shared music player for a Plex Music library. One
-browser or Android device is the active player; anyone granted access to the
-selected Plex library can sign in, search, queue music, and vote. The active
-player streams through Harmonicast, so the queue and playback state are shared
-between the web client, Android app, and Android Auto.
+## Install
 
-## What it does
+Download the signed APK from the [latest release](https://github.com/sneedster/harmonicast/releases/latest).
+Install over the existing signed app to retain personal-mode settings and data.
+Choose **Sign in with Plex**, then your server and Music library. TV setup shows
+a QR code for Plex sign-in on your phone. Shared libraries support listening;
+owner-only Plex writes and room hosting require owner access.
 
-- Plex PIN/forwarding sign-in; no Plex client secret is required.
-- First-run setup lets the Plex server owner select an owned server and Music
-  library. Plex library sharing controls guest access.
-- Shared request queue with per-user limits, cooldowns, and fair ordering.
-- Automatic weighted playback when the request queue runs out, using a
-  host-adjustable rated/unrated mix (0–10 rated picks per ten, default 8 for a
-  four-rated-to-one-unrated cadence). Rated tracks remain eligible above 1.0,
-  with lower ratings receiving progressively fewer automatic chances.
-- Adaptive Plex-backed ratings using a 0–100 internal point scale, mirrored to
-  Plex's 0.0–10.0 rating in one-decimal steps.
-- **Track Radio** uses Plex Sonic Analysis to queue up to 20 nearby tracks.
-- On-demand artist discovery: biography, genres, similar artists, and album
-  context from Plex—without bulk metadata indexing.
-- Touch-friendly kiosk mode with curated picks, live search, guest mode, and
-  attract mode.
-- Web player, native Android player, and Android Auto search, queue, voting,
-  Next, Track Radio, and supported queue controls.
+## Features
 
-Harmonicast is experimental software. Keep it on a trusted network or put it
-behind HTTPS and appropriate access controls before exposing it publicly.
+- Nocturne browsing/player UI with persistent Nocturne, Aurora, and Ember palettes.
+- Albums, artists, biographies, search, and paged Plex playlists.
+- Request-first queues, configurable automatic mix, adaptive ratings, and Track Radio.
+- Android Auto library browsing, artwork grids, and playback.
+- Temporary nearby rooms, requests/votes, and bundled browser guest/display pages.
+- Owner-controlled native room playback transfer and take-back.
+- Optional **Stay awake while charging** while Harmonicast is open.
 
-Harmonicast is an independent project and is not affiliated with, endorsed by,
-or sponsored by Plex. "Plex" is used only to identify the compatible service.
+Rooms are for nearby guests. Native transfer needs a reachable local Wi-Fi/Ethernet
+network. Internet guest control is outside scope. Active Android Auto projection
+retains playback authority until disconnected. Track Radio depends on Plex support.
 
-## Architecture
+## Background playback
 
-```
-Browser / Android / Android Auto ── HTTPS + WebSocket ── Harmonicast ── Plex Media Server
-                                                         └── SQLite volume
-```
+If music stops with the screen off, use **Settings → Background playback settings**
+to review Android battery optimization. Uninterrupted playback under every OEM
+battery policy is not guaranteed. See [validation notes](docs/ANDROID_VALIDATION.md).
 
-The server stores application state, Plex source selection, and the selected
-owner's Plex token in its local SQLite volume. It never sends that owner token
-to web or Android clients.
+## Migration and retired components
 
-## Deploy with Docker
+Personal Plex configuration and local playback data are preserved. Legacy
+Harmonicast-server credentials are retired; those users sign in directly with
+Plex. Server history import is not included. Upgrading does not delete old server
+volumes or backups; manage retention separately.
 
-1. Copy `.env.example` to `.env`.
-2. Set `PUBLIC_URL` to the exact URL users will open, without a trailing slash.
-   For example: `https://harmonicast.example.com`.
-3. Keep `HARMONICAST_IMAGE_TAG=1.0.40` for a pinned release, or change it to
-   `latest` if you intentionally want new releases automatically.
-4. Start it:
+Node/React, Docker/Compose/Unraid, and F-Droid distribution are retired. Their
+source files remain for historical reference only; no new server releases are
+supported. [Old server instructions](docs/LEGACY_SERVER.md) are historical.
+GitHub signed APK releases are the supported channel. Acquisition/plugins and
+alternative music sources are outside the planned scope.
 
-   ```bash
-   docker compose pull
-   docker compose up -d
-   ```
+## Build and release
 
-5. Open Harmonicast and sign in with Plex. On a new installation, choose an
-   owned Plex Media Server and one Music library.
+Use Java 21 and Android SDK 35 through the checked-in wrapper helper:
 
-The named `harmonicast-data` volume holds the SQLite database. Do not remove it
-unless you intentionally want to reset the installation and repeat Plex setup.
-
-### Unraid
-
-Import [`unraid/harmonicast.xml`](unraid/harmonicast.xml), or create a container
-with these settings:
-
-- Image: `mjstrong/harmonicast:1.0.40` (or `latest`)
-- Port: container `3001` mapped to your chosen host port
-- Volume: `/app/data` mapped to an Unraid appdata directory
-- Variable: `PUBLIC_URL` set to the exact browser-facing URL
-
-After updating, pull the image and recreate the container. Persistent app data
-remains in `/app/data`.
-
-Release images set the version shown in the Harmonicast header from their
-numbered Docker tag. Maintainers should build one with
-`./scripts/build-release-image.sh 1.0.37` before pushing both that tag and
-`latest`.
-
-## Plex setup and access
-
-The first Plex account to finish setup is the Harmonicast owner. It must own the
-Plex server being selected. Other people sign in with their own Plex accounts;
-they can join only if Plex itself has shared the selected Music library with
-them. Harmonicast treats identity as authentication and access control—the queue,
-ratings, and playback history are shared.
-
-Plex PIN sign-in initially returns an account token. For a shared user,
-Harmonicast asks Plex's owner-authorized sharing metadata for that user's
-server-scoped token, confirms the selected Music library is shared, and uses it
-only for the admission check. Guest Plex tokens are not stored or exposed to a
-browser or Android client. This also lets Harmonicast use the server owner's
-working local Plex connection without requiring a guest's `plex.direct` route to
-be reachable from the container.
-
-`PUBLIC_URL` is required because Plex must return the browser to Harmonicast after
-sign-in. HTTPS is strongly recommended outside a trusted LAN.
-
-## Android and Android Auto
-
-The Android client is in [`android/`](android/). Enter your Harmonicast URL, sign
-in through Plex, and select **Play here** to make that phone the active player.
-
-Android Auto supports search, browsing the shared Request queue, Up next,
-play/pause, Next, **Queue Track Radio**, and **Clear upcoming queue**. Track
-Radio shows a ready indicator while its tracks remain in the shared queue. Its
-Up next list is synchronized from the shared Harmonicast queue. The checked-in build helper
-uses the compatible local Java/SDK setup:
-
-```bash
+```sh
 ./android/build-debug.sh
-```
-
-The project deliberately permits cleartext Android traffic for trusted LAN
-servers; use HTTPS for any server reachable outside that network.
-
-## Privacy
-
-Harmonicast is self-hosted and includes no analytics, advertising SDKs, or
-crash-reporting service. The app sends data only to the Harmonicast server URL
-configured by the user. That server communicates with Plex to authenticate
-users and access the configured Music library. See the full
-[Privacy Policy](PRIVACY.md), including the data stored by the server operator.
-
-### Signed Android release APK
-
-Create the local signing identity once. The keystore and passwords are ignored
-by Git and must be backed up securely—future updates need the same key.
-
-```bash
-./android/create-release-keystore.sh
-```
-
-Then build a signed, versioned APK. The result is written to the ignored
-`android/releases/` directory.
-
-```bash
-VERSION_NAME=1.0.21 VERSION_CODE=22 ./android/build-release.sh
-```
-
-This runs the required server, web, Docker image, and Compose checks before
-signing. To upgrade an installed copy, increase both the point version and
-`VERSION_CODE`, then keep the same keystore. Do not distribute an APK if you
-have lost the keystore. `HARMONICAST_SKIP_RELEASE_CHECKS=1` is reserved for
-local troubleshooting; do not use it for a published APK.
-
-### Android release channels
-
-Use `dev-android-vX.Y.Z.N` tags and GitHub **pre-releases** for builds from the
-`dev` branch. They are excluded from both the normal Android download link and
-F-Droid's update checks. Only tag a promoted `main` commit as `vX.Y.Z` and
-publish it as a non-prerelease GitHub release; that is the sole form eligible
-for F-Droid automation.
-
-## Configuration
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `HARMONICAST_PORT` | `3001` | Docker host port |
-| `HARMONICAST_IMAGE_TAG` | `latest` | Docker image tag; pin after testing |
-| `PUBLIC_URL` | none | Exact URL used for Plex sign-in return |
-| `PLEX_CLIENT_IDENTIFIER` | generated | Optional stable Plex client ID; generated and persisted when omitted |
-| `HARMONICAST_PLUGIN_SOURCE_TOKEN` | none | Read-only GitHub token used only to download private plugin repositories |
-| `HARMONICAST_PLUGIN_SETTINGS_KEY` | none | Base64-encoded 32-byte key required to save plugin secret fields in Settings |
-
-No Plex URL, Plex token, Music library key, or administrator email belongs in
-the environment for a normal first-time setup.
-
-### Plugins
-
-Hosts can install trusted plugins from **Settings → Plugins** by entering a
-GitHub repository URL and an immutable tag or commit. A private repository may
-use `HARMONICAST_PLUGIN_SOURCE_TOKEN`; it is never exposed in Settings. To
-allow write-only plugin API keys and other secrets in Settings, provide a
-base64-encoded 32-byte `HARMONICAST_PLUGIN_SETTINGS_KEY`. Restart Harmonicast
-after installing a plugin or saving its settings. Plugin authors should follow
-the [loadable plugin format](docs/extensions/PLUGIN_FORMAT.md).
-
-## Development
-
-Install dependencies for both parts of the app:
-
-```bash
-npm install
-(cd server && npm install)
-```
-
-Run the API server and the Vite client in separate terminals:
-
-```bash
-(cd server && npx tsx index.ts)
-npm run dev
-```
-
-The Vite development server proxies `/api` and `/ws` to port 3001.
-
-Useful local checks:
-
-```bash
 ./scripts/release-check.sh
-./android/build-debug.sh
+./android/build-release.sh
 ```
 
-Before publishing an Android release, install the signed APK on a physical
-device, take over a track already playing in the web app, and verify audible
-playback plus Play/Pause and Next for at least 10 seconds.
+Set JAVA_HOME and ANDROID_HOME for another workstation. Do not use Java 25 with
+this Kotlin toolchain. Signed builds require your own ignored signing.properties
+and keystore; android/create-release-keystore.sh helps create them. Keep the same
+signing key for upgrades. Release APKs are written to android/releases/.
+Production releases use vX.Y.Z tags from main; dev prereleases use dev-android-vX.Y.Z.N.
 
-`npm test` runs the server suite in the same Node 20 Alpine runtime as the
-production image. It needs Docker but does not modify the checkout or require
-Plex credentials.
+[Privacy](PRIVACY.md) · [Releases](RELEASES.md) · [Roadmap](ROADMAP.md)
 
-### Release verification
-
-Run `./scripts/release-check.sh` for every Docker or web release. It is also
-run automatically by `./android/build-release.sh` before an APK is signed.
-The gate covers the Node 20 server tests, web type checking, linting,
-production build, production Docker image build, and Compose configuration.
-
-Before publishing, perform these short manual checks against the candidate
-image or APK:
-
-1. **Clean Docker install:** use a new Compose project name and empty data
-   volume, open the app, complete Plex sign-in, select an owned server and
-   Music library, then verify search and first playback.
-2. **Docker upgrade:** start from a copy of a real installation's data volume,
-   recreate it with the candidate image, confirm the existing Plex source and
-   queue remain available, and play a track.
-3. **Web:** sign in, claim playback, play/pause/skip, use the Now Playing
-   artist and album search links, open artist discovery, add Track Radio, vote,
-   and confirm the shared queue updates.
-4. **Android and Android Auto:** install the new APK over the prior version,
-   reconnect it, repeat playback and voting, then verify the same controls and
-   shared queue in Android Auto or DHU, including Track Radio's ready state and
-   Clear upcoming queue.
-
-Do not publish a Docker image or GitHub APK release until the automated gate
-and the relevant manual checks have passed.
-
-The web download button and its QR code use Harmonicast's `/api/downloads/android`
-redirect. It checks GitHub releases for the highest versioned
-`harmonicast-X.Y.Z.apk` asset and caches the result, so server-only releases do
-not break Android downloads. Publish Android assets with the versioned filename
-created by `android/build-release.sh`; no web-link edit is needed for an Android
-update.
-
-## API notes
-
-All REST routes are under `/api` and require a Harmonicast Bearer token unless
-they start the Plex sign-in flow. The app clients are the supported API
-consumers. Key integration routes are:
-
-- `GET /api/auth/plex` and callback: Plex sign-in.
-- `GET /api/search`, `GET /api/stream/:id`, and `GET /api/cover-art/:id`:
-  selected Plex library search and playback.
-- `GET|POST|DELETE /api/queue` and `POST /api/queue/similar`: shared queue and
-  Track Radio.
-- `GET /api/plex/tracks/:id/discovery`: on-demand artist and album context for
-  a selected Plex track.
-- `GET|POST /api/now-playing`, `POST /api/player/claim`, and
-  `GET /api/player/status`: active-player coordination.
-- `POST /api/vote`, `POST /api/stats/play-event`, and `POST /api/scrobble`:
-  shared Plex rating adjustments and completed-play reporting.
-
-The WebSocket endpoint is `/ws`; it broadcasts queue, now-playing, active
-player, vote, and playback-position changes.
-
-## License
-
-Harmonicast is licensed under the [GNU Affero General Public License v3.0 or
-later](LICENSE) (`AGPL-3.0-or-later`).
+Harmonicast is not affiliated with Plex. Licensed under AGPL-3.0-or-later.

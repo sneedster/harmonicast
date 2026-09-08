@@ -1,3 +1,10 @@
+# Current cutover decision
+
+Testing was accepted by the owner on 2026-09-07. v1.1.0 retires server and F-Droid
+distribution. Historical source is retained, unsupported; server image release
+helper and F-Droid automatic updates are disabled. Android is the supported
+product. Earlier migration steps below are historical.
+
 # Harmonicast standalone architecture
 
 ## Product direction
@@ -330,7 +337,19 @@ discontinue each of:
 - editing Plex playlists or synchronizing playlist changes back to Plex;
 - non-Android host platforms.
 
-No item in this list is implicitly removed by adopting the standalone design.
+### Owner disposition — 2026-09-07
+
+The owner explicitly approved deferring server-only features **and retiring the
+server at v1.1.0**. The owner no longer uses the server; retaining it as a supported
+legacy option is not required. Defer loadable plugins/connected-source acquisition,
+Subsonic, historical-stat/rating import, Plex playlist editing/synchronization,
+and non-Android hosting. These do not block server retirement after the remaining
+Android acceptance checks. Preserve historical source through Git history/tags.
+
+No-install guest control and the room display remain bundled with Android and
+are retained. Subsequent owner decision on 2026-09-07 cancels acquisition
+connectors/plugins and alternative music-source support. Harmonicast remains
+Plex-only; those proposals are outside the planned scope.
 
 Remote and out-of-home guest control is a resolved product boundary rather than
 an undecided feature: it is excluded. Rooms are for guests physically present

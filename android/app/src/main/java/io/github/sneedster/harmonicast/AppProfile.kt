@@ -54,6 +54,14 @@ class HomeProfileStore(private val storage: ProfileStorage) {
     }
     val homeReady: Boolean get() = ready || personalSource != null
 
+    /** v1.1.0 retires remote-server sign-in without touching personal Plex data. */
+    fun retireRemoteServer() {
+        val values = mutableMapOf("home.remote.base" to "", "home.remote.token" to "",
+            "base" to "", "token" to "")
+        if (mode == HomeMode.REMOTE_SERVER) values["home.mode"] = HomeMode.UNCONFIGURED.name
+        if (values.any { (key, value) -> storage.read(key).orEmpty() != value }) storage.write(values)
+    }
+
     fun setBase(value: String) {
         val normalized = value.trim().trimEnd('/')
         // An old server's bearer token must never be sent to a newly selected server.

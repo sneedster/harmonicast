@@ -1,3 +1,7 @@
+# Retired F-Droid submission
+
+Retired or cancelled at the v1.1.0 standalone cutover; retained for historical reference.
+
 # F-Droid submission material
 
 `io.github.sneedster.harmonicast.yml` is the proposed metadata for an initial
