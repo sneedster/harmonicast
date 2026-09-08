@@ -11,9 +11,6 @@ class NativePlaybackProtocolTest {
             override fun write(next: Map<String, String>) { values.putAll(next) }
         })
         assertFalse(NativePlaybackProtocol.ownerEligible(profile))
-        profile.setBase("http://server")
-        profile.setToken("remote-token")
-        assertFalse(NativePlaybackProtocol.ownerEligible(profile))
         val source = PersonalPlexSource("test-token", "http://plex", "machine", "Test", "1", "Music", canWriteToPlex = false)
         profile.savePersonalSource(source)
         assertFalse(NativePlaybackProtocol.ownerEligible(profile))

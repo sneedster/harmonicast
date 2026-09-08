@@ -1,7 +1,7 @@
 package io.github.sneedster.harmonicast
 
 /** Home configuration persists independently of any temporary room connection. */
-enum class HomeMode { UNCONFIGURED, REMOTE_SERVER, PERSONAL_PLEX }
+enum class HomeMode { UNCONFIGURED, PERSONAL_PLEX }
 
 data class PersonalPlexSource(
     val token: String,
@@ -20,20 +20,9 @@ interface ProfileStorage {
 }
 
 class HomeProfileStore(private val storage: ProfileStorage) {
-    init {
-        // A single migration marker prevents stale legacy keys from restoring old credentials.
-        if (storage.read("home.mode") == null) {
-            val base = storage.read("base").orEmpty()
-            val token = storage.read("token").orEmpty()
-            save(base, token)
-        }
-    }
     val mode: HomeMode get() = storage.read("home.mode")?.let {
         runCatching { HomeMode.valueOf(it) }.getOrNull()
     } ?: HomeMode.UNCONFIGURED
-    val base: String get() = storage.read("home.remote.base").orEmpty()
-    val token: String get() = storage.read("home.remote.token").orEmpty()
-    val ready: Boolean get() = mode == HomeMode.REMOTE_SERVER && base.isNotBlank() && token.isNotBlank()
     val personalSource: PersonalPlexSource? get() {
         if (mode != HomeMode.PERSONAL_PLEX) return null
         val source = PersonalPlexSource(
@@ -52,22 +41,8 @@ class HomeProfileStore(private val storage: ProfileStorage) {
                 it.libraryKey.isNotBlank() && it.serverName.isNotBlank() && it.libraryName.isNotBlank()
         }
     }
-    val homeReady: Boolean get() = ready || personalSource != null
+    val homeReady: Boolean get() = personalSource != null
 
-    /** v1.1.0 retires remote-server sign-in without touching personal Plex data. */
-    fun retireRemoteServer() {
-        val values = mutableMapOf("home.remote.base" to "", "home.remote.token" to "",
-            "base" to "", "token" to "")
-        if (mode == HomeMode.REMOTE_SERVER) values["home.mode"] = HomeMode.UNCONFIGURED.name
-        if (values.any { (key, value) -> storage.read(key).orEmpty() != value }) storage.write(values)
-    }
-
-    fun setBase(value: String) {
-        val normalized = value.trim().trimEnd('/')
-        // An old server's bearer token must never be sent to a newly selected server.
-        save(normalized, if (normalized == base) token else "")
-    }
-    fun setToken(value: String) = save(base, value)
     fun savePersonalSource(source: PersonalPlexSource) {
         require(source.token.isNotBlank() && source.baseUrl.isNotBlank()) { "Plex credentials are incomplete" }
         require(source.machineIdentifier.isNotBlank() && source.libraryKey.matches(Regex("\\d+"))) {
@@ -108,11 +83,7 @@ class HomeProfileStore(private val storage: ProfileStorage) {
             "local.jukeboxMixIndex" to "",
         ))
     }
-    private fun save(base: String, token: String) = storage.write(mapOf(
-        "home.mode" to if (base.isNotBlank() && token.isNotBlank()) HomeMode.REMOTE_SERVER.name else HomeMode.UNCONFIGURED.name,
-        "home.remote.base" to base,
-        "home.remote.token" to token,
-    ))
+
 }
 
 /** Ephemeral overlay only. It is never the configuration source for the Media3 service. */

@@ -15,6 +15,17 @@ class LocalHarmonicastCoreTest {
         "plex:machine:$id", "Song $id", "Artist", streamUri = "https://plex/part/$id?token",
     )
 
+    @Test fun unconfiguredCoreRequiresPlexWithoutOpeningRemoteTransport() = runBlocking {
+        val core = LocalHarmonicastCore(null, MemoryStorage())
+        assertFalse(core.guests.policy().configured)
+        try {
+            core.library.search("test")
+            fail("Expected Plex sign-in requirement")
+        } catch (e: IllegalStateException) {
+            assertEquals("Sign in with Plex first", e.message)
+        }
+    }
+
     @Test fun queueAndPlaybackSurviveCoreRecreation() = runBlocking {
         val storage = MemoryStorage()
         val first = LocalHarmonicastCore(source, storage)

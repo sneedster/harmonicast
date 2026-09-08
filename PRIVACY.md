@@ -1,6 +1,6 @@
 # Privacy
 
-Harmonicast 1.1.0 is a standalone Android Plex music player. The project operates
+Harmonicast is a standalone Android Plex music player. The project operates
 no central account service and includes no advertising, analytics, telemetry,
 or third-party crash-reporting SDK.
 
@@ -21,10 +21,6 @@ Ending a room revokes access. Native transfer sends current audio through the ho
 to the chosen receiver. Guests/receivers do not receive the host's Plex token.
 Network visibility depends on local network security. No public room relay is
 provided, and the app does not sell personal data.
-
-The separate server is retired. Android upgrades do not erase its database,
-volumes, or backups; their owner manages retention. Legacy Android server
-credentials are cleared at cutover while personal Plex configuration is preserved.
 
 Questions: [GitHub issues](https://github.com/sneedster/harmonicast/issues).
 Harmonicast is not affiliated with or endorsed by Plex.

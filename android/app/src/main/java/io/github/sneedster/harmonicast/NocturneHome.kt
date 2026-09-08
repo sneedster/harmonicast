@@ -127,7 +127,6 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
             val message = vm.error.ifBlank { vm.notice }
             if (message.isNotBlank()) Text(message, Modifier.padding(horizontal = 20.dp, vertical = 4.dp), color = colors.primary, maxLines = 2, fontSize = 12.sp)
         }
-        if (vm.musicSourceDialog != null) MusicSourceSheet(vm)
         }
     }
 }

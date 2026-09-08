@@ -38,7 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 class HarmonicastMediaService : MediaLibraryService() {
     private lateinit var player: ExoPlayer
     private var mediaLibrarySession: MediaLibrarySession? = null
-    private lateinit var api: Api
+    private lateinit var api: AppStorage
     private lateinit var core: HarmonicastCore
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -124,7 +124,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
-        api = Api(getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
+        api = AppStorage(getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
         core = harmonicastCore(api)
 
         exoPlayer.addListener(object : Player.Listener {
@@ -230,7 +230,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
 
-        Log.d("HarmonicastMedia", "Service created, base: ${api.base}, token length: ${api.token.length}")
+        Log.d("HarmonicastMedia", "Playback service created")
 
         connectWebSocket()
 
@@ -478,7 +478,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                         if (query != null) {
                             if (query.isBlank()) return@map core.playback.snapshot().nowPlaying.song?.let(::createMediaItem)
                                 ?: requireNotNull(dequeueRandomItem()) { "No music available" }
-                            val song = core.library.search(query).firstOrNull { it.streamUri != null || api.profile.mode == HomeMode.REMOTE_SERVER }
+                            val song = core.library.search(query).firstOrNull { it.streamUri != null }
                             requireNotNull(song) { "No music matched the voice request" }
                             return@map createMediaItem(song)
                         }
@@ -889,7 +889,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         webSocketReconnectJob = null
         webSocket?.close()
         webSocket = null
-        api = Api(getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
+        api = AppStorage(getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
         core = harmonicastCore(api)
         player.stop()
         player.clearMediaItems()
@@ -901,7 +901,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun connectWebSocket() {
-        if (webSocketStopped || !api.profile.ready) return
+        if (webSocketStopped || !api.profile.homeReady) return
         webSocketReconnectJob?.cancel()
         val generation = ++webSocketGeneration
         webSocket = core.observe(onEvent = { event ->
@@ -1002,7 +1002,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     /**
-     * A player claim switches the server's active session, but it does not
+     * A player claim switches the active playback session, but it does not
      * transfer the old device's ExoPlayer timeline. Recreate that timeline on
      * the newly active device from the shared now-playing state so Media3 has
      * an actual stream to control.
@@ -1055,7 +1055,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     /**
-     * The first item in the player timeline is already out of the server
+     * The first item in the player timeline is already out of the shared
      * queue. When ExoPlayer advances to its next item automatically, remove
      * that matching head from Harmonicast, record the completed play, and let
      * the resulting queue broadcast refresh the timeline again.

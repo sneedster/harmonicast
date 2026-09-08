@@ -1,1 +1,0 @@
-Companion client for a self-hosted Harmonicast server

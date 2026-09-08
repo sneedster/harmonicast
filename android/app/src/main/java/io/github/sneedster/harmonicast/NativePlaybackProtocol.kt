@@ -9,7 +9,7 @@ import java.util.Base64
 
 internal object NativePlaybackProtocol {
     fun ownerEligible(context: android.content.Context): Boolean {
-        val profile = Api(context.getSharedPreferences("harmonicast", android.content.Context.MODE_PRIVATE)).profile
+        val profile = AppStorage(context.getSharedPreferences("harmonicast", android.content.Context.MODE_PRIVATE)).profile
         return ownerEligible(profile)
     }
     fun ownerEligible(profile: HomeProfileStore) = profile.mode == HomeMode.PERSONAL_PLEX && profile.personalSource?.canWriteToPlex == true

@@ -1,2 +1,0 @@
-First synchronized Harmonicast Android and Docker release. Includes the
-Harmonicast application identity and F-Droid metadata.

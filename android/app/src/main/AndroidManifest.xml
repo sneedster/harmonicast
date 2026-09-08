@@ -40,12 +40,6 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="harmonicast" android:host="auth"/>
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="harmonicast" android:host="plex-auth"/>
             </intent-filter>
         </activity>
@@ -53,10 +47,6 @@
         <service android:name=".NativePlaybackReceiver" android:exported="false" android:foregroundServiceType="mediaPlayback">
             <intent-filter><action android:name="androidx.media3.session.MediaSessionService" /></intent-filter>
         </service>
-
-        <activity
-            android:name=".SetupActivity"
-            android:exported="false" />
 
         <service
             android:name=".HarmonicastMediaService"

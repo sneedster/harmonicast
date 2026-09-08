@@ -57,7 +57,7 @@ interface PlaybackState {
     suspend fun recordEvent(song: Song, event: String, progress: Double)
 }
 
-/** The remote server remains authoritative for these permissions. */
+/** The local playback host owns these permissions. */
 data class GuestPolicy(
     val isHost: Boolean,
     val isActivePlayer: Boolean,

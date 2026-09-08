@@ -12,10 +12,11 @@ private object LocalCoreEvents {
 
 /** Personal-mode authority backed by Android app storage and the selected Plex server. */
 class LocalHarmonicastCore(
-    private val source: PersonalPlexSource,
+    private val configuredSource: PersonalPlexSource?,
     private val storage: ProfileStorage,
     private val plex: LocalPlexClient = LocalPlexClient(storage),
 ) : HarmonicastCore {
+    private val source: PersonalPlexSource get() = checkNotNull(configuredSource) { "Sign in with Plex first" }
     override fun observe(onEvent: (CoreEvent) -> Unit, onDisconnected: () -> Unit): CoreSubscription {
         LocalCoreEvents.listeners += onEvent
         return CoreSubscription { LocalCoreEvents.listeners -= onEvent }
@@ -154,7 +155,7 @@ class LocalHarmonicastCore(
         override suspend fun policy() = GuestPolicy(
             isHost = true,
             isActivePlayer = true,
-            configured = true,
+            configured = configuredSource != null,
             needsPlexSetup = false,
             isSetupOwner = true,
         )
@@ -173,9 +174,7 @@ class LocalHarmonicastCore(
     private fun readSongs(key: String): List<Song> = storage.read(key)?.let {
         runCatching {
             val array = JSONArray(it)
-            // Personal queues written before 1.0.33 omitted provenance. Those entries
-            // were the automatic tail in the standalone player, so migrate them into
-            // that lane before accepting new manual requests.
+            // Entries without provenance belong to the automatic lane.
             if (key == "local.queue") {
                 for (index in 0 until array.length()) {
                     val item = array.getJSONObject(index)
@@ -209,9 +208,7 @@ internal fun fairManualQueue(songs: List<Song>): List<Song> {
     return fair + songs.filterNot(Song::isManual)
 }
 
-fun harmonicastCore(api: Api): HarmonicastCore = api.profile.personalSource?.let {
-    LocalHarmonicastCore(it, api.storage)
-} ?: RemoteHarmonicastCore(api)
+fun harmonicastCore(api: AppStorage): HarmonicastCore = LocalHarmonicastCore(api.profile.personalSource, api.storage)
 
 data class JukeboxSelection(val songs: List<Song>, val nextMixIndex: Int)
 

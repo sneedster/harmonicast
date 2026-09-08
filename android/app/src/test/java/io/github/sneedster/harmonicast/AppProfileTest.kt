@@ -4,93 +4,52 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppProfileTest {
-    @Test fun retirementClearsLegacyCredentialsWithoutRestoringThem() {
-        val storage = MemoryStorage("base" to "https://old.example", "token" to "old-token")
-        val home = HomeProfileStore(storage)
-        home.retireRemoteServer()
-        val restarted = HomeProfileStore(storage)
-        assertEquals(HomeMode.UNCONFIGURED, restarted.mode)
-        assertFalse(restarted.homeReady)
-        assertEquals("", restarted.token)
-        assertEquals("", storage.read("token"))
-    }
-
-    @Test fun retirementPreservesPersonalPlexAndQueue() {
-        val storage = MemoryStorage("local.queue" to "saved-queue", "home.remote.token" to "legacy")
-        val home = HomeProfileStore(storage)
-        val source = PersonalPlexSource("plex-token", "https://plex.example", "machine", "Plex", "1", "Music")
-        home.savePersonalSource(source)
-        home.retireRemoteServer()
-        assertEquals(source, HomeProfileStore(storage).personalSource)
-        assertEquals("saved-queue", storage.read("local.queue"))
-        assertEquals("", home.token)
-    }
     private class MemoryStorage(vararg entries: Pair<String, String>) : ProfileStorage {
         val values = mutableMapOf(*entries)
         override fun read(key: String) = values[key]
         override fun write(values: Map<String, String>) { this.values.putAll(values) }
     }
+    private val source = PersonalPlexSource("plex-token", "https://plex.example", "machine", "Plex", "1", "Music")
 
-    @Test fun existingInstallKeepsItsSignInAcrossMigrationAndRestart() {
-        val storage = MemoryStorage("base" to "https://home.example", "token" to "owner")
-        val home = HomeProfileStore(storage)
-        assertTrue(home.ready)
-        assertEquals(HomeMode.REMOTE_SERVER, home.mode)
-        assertEquals("https://home.example", home.base)
-        assertEquals("owner", HomeProfileStore(storage).token)
+    @Test fun unconfiguredAndUnknownModesCannotBecomeReady() {
+        for (storage in listOf(MemoryStorage(), MemoryStorage("home.mode" to "UNKNOWN"))) {
+            val home = HomeProfileStore(storage)
+            assertFalse(home.homeReady)
+            assertNull(home.personalSource)
+        }
     }
 
-    @Test fun partiallyConfiguredInstallCanFinishSetup() {
-        val storage = MemoryStorage("base" to "https://home.example")
-        val home = HomeProfileStore(storage)
-        assertFalse(home.ready)
-        home.setToken("owner")
-        assertTrue(HomeProfileStore(storage).ready)
-    }
-
-    @Test fun switchingServerClearsOldTokenAndDoesNotRemigrateIt() {
-        val storage = MemoryStorage("base" to "https://old.example", "token" to "old-owner")
-        val home = HomeProfileStore(storage)
-        home.setBase(" https://new.example/ ")
+    @Test fun personalProfileAndQueueSurviveRestart() {
+        val storage = MemoryStorage("local.queue" to "saved-queue")
+        HomeProfileStore(storage).savePersonalSource(source)
         val restarted = HomeProfileStore(storage)
-        assertEquals("https://new.example", restarted.base)
-        assertEquals("", restarted.token)
-        assertFalse(restarted.ready)
-        restarted.setToken("new-owner")
-        assertTrue(restarted.ready)
+        assertTrue(restarted.homeReady)
+        assertEquals(source, restarted.personalSource)
+        assertEquals("saved-queue", storage.read("local.queue"))
     }
 
-    @Test fun savingSameServerRetainsSignIn() {
-        val home = HomeProfileStore(MemoryStorage("base" to "https://home.example", "token" to "owner"))
-        home.setBase("https://home.example/")
-        assertTrue(home.ready)
-        assertEquals("owner", home.token)
-    }
-
-    @Test fun roomEntryExpiryAndRestartNeverChangeHomeCredentials() {
-        val storage = MemoryStorage("base" to "https://home.example", "token" to "owner")
+    @Test fun roomEntryExpiryAndRestartPreservePlexConfiguration() {
+        val storage = MemoryStorage()
         val app = AppProfile(HomeProfileStore(storage))
-        app.enterRoom(ActiveRoom("https://guest.example", "temporary", 200), 100)
-        assertEquals("https://home.example", app.home.base)
-        assertEquals("owner", app.home.token)
+        app.home.savePersonalSource(source)
+        app.enterRoom(ActiveRoom("https://nearby.example", "temporary", 200), 100)
         app.expireRoom(199)
         assertNotNull(app.activeRoom)
         app.expireRoom(200)
         assertNull(app.activeRoom)
-        app.enterRoom(ActiveRoom("https://guest.example", "temporary", 300), 200)
+        app.enterRoom(ActiveRoom("https://nearby.example", "temporary", 300), 200)
         val restarted = AppProfile(HomeProfileStore(storage))
         assertNull(restarted.activeRoom)
-        assertEquals("owner", restarted.home.token)
+        assertEquals(source, restarted.home.personalSource)
         app.leaveRoom()
-        assertTrue(app.home.ready)
+        assertTrue(app.home.homeReady)
     }
 
-    @Test fun guestRoomDoesNotRequirePlexOrRemoteServerCredentials() {
+    @Test fun guestRoomDoesNotRequirePlexCredentials() {
         val app = AppProfile(HomeProfileStore(MemoryStorage()))
-        app.enterRoom(ActiveRoom("https://nearby.example", "temporary-room-only", 200), 100)
+        app.enterRoom(ActiveRoom("https://nearby.example", "temporary", 200), 100)
         assertNotNull(app.activeRoom)
-        assertFalse(app.home.ready)
-        assertEquals("", app.home.token)
+        assertFalse(app.home.homeReady)
         app.leaveRoom()
         assertEquals(HomeMode.UNCONFIGURED, app.home.mode)
     }
@@ -100,65 +59,24 @@ class AppProfileTest {
         AppProfile(HomeProfileStore(MemoryStorage())).enterRoom(ActiveRoom("host", "expired", 100), 100)
     }
 
-    @Test fun unknownModeDoesNotSilentlyFallBackToRemoteCredentials() {
-        val home = HomeProfileStore(MemoryStorage("home.mode" to "FUTURE_MODE", "home.remote.base" to "host", "home.remote.token" to "owner"))
-        assertFalse(home.ready)
-    }
-
-    @Test fun personalPlexSourceIsCompleteAndIndependentOfRemoteCredentials() {
-        val storage = MemoryStorage("base" to "https://old-harmonicast.example", "token" to "old-session")
+    @Test fun signingOutClearsCredentialsAndTokenBearingPlaybackState() {
+        val storage = MemoryStorage("local.queue" to "queue", "local.playback" to "playback", "local.playbackHistory" to "history")
         val home = HomeProfileStore(storage)
-        home.savePersonalSource(PersonalPlexSource(
-            "plex-owner", "https://plex.direct/", "machine", "Living Room", "7", "Music",
-        ))
-        val restarted = HomeProfileStore(storage)
-        assertEquals(HomeMode.PERSONAL_PLEX, restarted.mode)
-        assertTrue(restarted.homeReady)
-        assertFalse(restarted.ready)
-        assertEquals("plex-owner", restarted.personalSource?.token)
-        assertEquals("https://plex.direct", restarted.personalSource?.baseUrl)
-        assertEquals("old-session", restarted.token)
-    }
-
-    @Test fun signingOutClearsPersonalCredentialsAndTokenBearingPlaybackState() {
-        val storage = MemoryStorage(
-            "local.queue" to "token-bearing queue",
-            "local.playback" to "token-bearing playback",
-            "local.playbackHistory" to "token-bearing history",
-        )
-        val home = HomeProfileStore(storage)
-        home.savePersonalSource(PersonalPlexSource(
-            "plex-owner", "https://plex.direct", "machine", "Living Room", "7", "Music",
-        ))
-
+        home.savePersonalSource(source)
         home.clearPersonalSource()
-
-        val restarted = HomeProfileStore(storage)
-        assertEquals(HomeMode.UNCONFIGURED, restarted.mode)
-        assertNull(restarted.personalSource)
-        assertEquals("", storage.values["home.plex.token"])
-        assertEquals("[]", storage.values["local.queue"])
-        assertEquals("", storage.values["local.playback"])
-        assertEquals("[]", storage.values["local.playbackHistory"])
+        assertFalse(HomeProfileStore(storage).homeReady)
+        assertEquals("", storage.read("home.plex.token"))
+        assertEquals("[]", storage.read("local.queue"))
+        assertEquals("", storage.read("local.playback"))
+        assertEquals("[]", storage.read("local.playbackHistory"))
     }
 
-    @Test fun sharedPlexSourceKeepsAccountAndServerTokensSeparateAndReadOnly() {
+    @Test fun sharedLibraryRetainsSeparateAccountAndServerTokens() {
         val storage = MemoryStorage()
-        val home = HomeProfileStore(storage)
-        home.savePersonalSource(PersonalPlexSource(
-            token = "shared-server-token",
-            baseUrl = "https://shared.plex.direct",
-            machineIdentifier = "shared-machine",
-            serverName = "Family Plex",
-            libraryKey = "7",
-            libraryName = "Music",
-            accountToken = "shared-user-account-token",
-            canWriteToPlex = false,
-        ))
-
-        val source = HomeProfileStore(storage).personalSource
-        assertEquals("shared-server-token", source?.token)
-        assertEquals("shared-user-account-token", source?.accountToken)
-        assertFalse(source?.canWriteToPlex ?: true)
+        HomeProfileStore(storage).savePersonalSource(source.copy(token = "shared-token", accountToken = "account-token", canWriteToPlex = false))
+        val restored = HomeProfileStore(storage).personalSource!!
+        assertEquals("shared-token", restored.token)
+        assertEquals("account-token", restored.accountToken)
+        assertFalse(restored.canWriteToPlex)
     }
 }

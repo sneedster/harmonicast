@@ -51,7 +51,3 @@ clipped by shelf/grid bounds.
   deliberate browse refresh behavior.
 - Validation: compare actual phone/TV screens to the approved direction; test
   D-pad and touch, source changes, navigation restoration and browse-to-play.
-
-Nocturne is a prerequisite for final TV acceptance and v1.1.0 retirement, not
-evidence that either gate is already complete. Later slices remain explicit
-work until implemented and device accepted.
