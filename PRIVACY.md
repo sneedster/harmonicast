@@ -22,5 +22,11 @@ to the chosen receiver. Guests/receivers do not receive the host's Plex token.
 Network visibility depends on local network security. No public room relay is
 provided, and the app does not sell personal data.
 
+Update checks connect to GitHub for public release metadata. Optional automatic
+checks are off by default and run at most once a day when the app launches. APKs
+are downloaded only on request. GitHub receives normal connection information
+such as IP address and the app version in the update-check user agent; no Plex
+credentials or listening data are sent. Downloads stay in the app cache.
+
 Questions: [GitHub issues](https://github.com/sneedster/harmonicast/issues).
 Harmonicast is not affiliated with or endorsed by Plex.

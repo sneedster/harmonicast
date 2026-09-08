@@ -25,6 +25,15 @@ Rooms are for nearby guests. Native transfer needs a reachable local Wi-Fi/Ether
 network. Internet guest control is outside scope. Active Android Auto projection
 retains playback authority until disconnected. Track Radio depends on Plex support.
 
+## App updates
+
+Use **Settings → App updates → Check for updates** to check GitHub Releases.
+Optional automatic checks run on launch at most once a day; downloading is always
+your choice. Harmonicast verifies the APK checksum, package, newer version code
+and matching signing certificate before opening Android’s installer. If prompted,
+allow Harmonicast to install apps, then return and tap **Install update**. Installing
+restarts the app; same-key updates preserve settings and local data.
+
 ## Background playback
 
 If music stops with the screen off, use **Settings → Background playback settings**

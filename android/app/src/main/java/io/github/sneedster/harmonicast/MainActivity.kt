@@ -785,6 +785,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun HarmonicastApp(vm: HarmonicastViewModel) {
     MaterialTheme(colorScheme = playerColors(vm.colorSchemeName)) {
+        UpdatePrompt()
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
@@ -1450,6 +1451,7 @@ class MainActivity : ComponentActivity() {
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        UpdateSettings()
         Text("Color scheme", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PlayerPalette.entries.forEach { palette ->

@@ -24,3 +24,13 @@ release build, APK signature and version checks passed.
 Run `scripts/release-check.sh` for debug assembly, unit tests and lint. Run
 `android/build-release.sh` for release checks and the signed APK. Keep device
 installation, launch and end-to-end playback verification distinct in reports.
+
+## In-app updater
+
+2026-09-07: implemented Settings update checks, optional daily launch checks,
+release notes, user-requested APK downloads and Android installer handoff.
+Checks reject a wrong package, signer, version, download URL or missing checksum.
+All 66 unit tests, debug lint and signed release assembly passed. Installed on
+Pixel and verified App updates controls and a live GitHub check returning
+"You're up to date" for 1.1.1. Automatic checks remain off. A full download-to-upgrade
+cycle and Shield permission/installer screens are not yet device-verified.
