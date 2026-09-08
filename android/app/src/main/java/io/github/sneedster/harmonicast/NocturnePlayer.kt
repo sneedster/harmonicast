@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.sp
     if (song == null) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             DisplayTitle("Make room for music.")
-            Button(onClick = { vm.startRandomPlayback() }, enabled = vm.isActivePlayer) { Text("Start your mix") }
+            Button(onClick = { vm.startRandomPlayback() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) { Text("Start your mix") }
         }
         return
     }
@@ -65,18 +65,18 @@ import androidx.compose.ui.unit.sp
                 Text(if (vm.nowPlaying.isPlaying) "NOW PLAYING" else "PAUSED", color = colors.primary, letterSpacing = 3.sp, fontSize = 11.sp)
                 Text(song.title, fontFamily = FontFamily.Serif, fontSize = if (wide) 36.sp else 27.sp, lineHeight = if (wide) 40.sp else 31.sp,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                TextButton(onClick = { search(song.artist) }, contentPadding = PaddingValues(0.dp)) {
+                TextButton(onClick = { search(song.artist) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.tvFocusFeedback()) {
                     Text(song.artist, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                if (song.album.isNotBlank()) TextButton(onClick = { search(song.album) }, contentPadding = PaddingValues(0.dp)) { Text(song.album + (song.year?.let { " · $it" } ?: ""), color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                if (song.album.isNotBlank()) TextButton(onClick = { search(song.album) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.tvFocusFeedback()) { Text(song.album + (song.year?.let { " · $it" } ?: ""), color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     repeat(5) { index -> Icon(if (index < ((song.rating ?: 0.0) / 2).toInt()) Icons.Default.Star else Icons.Outlined.StarBorder,
                         if (index == 0) "Plex rating ${song.rating ?: 0.0} out of 10" else null, Modifier.size(17.dp), tint = colors.primary) }
                 }
                 PhonePlayerControls(vm, floating = true)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    TextButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer) { Icon(Icons.Default.Radio, null, Modifier.size(19.dp)); Text(" Track Radio") }
-                    TextButton(onClick = { details = true; vm.loadArtistDiscovery(song) }) { Icon(Icons.Default.Info, null, Modifier.size(19.dp)); Text(" Discover") }
+                    TextButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Radio, null, Modifier.size(19.dp)); Text(" Track Radio") }
+                    TextButton(onClick = { details = true; vm.loadArtistDiscovery(song) }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Info, null, Modifier.size(19.dp)); Text(" Discover") }
                 }
             }
         }

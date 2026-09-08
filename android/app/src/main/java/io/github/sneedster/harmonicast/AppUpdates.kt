@@ -183,10 +183,10 @@ class AppUpdateViewModel(app: Application) : AndroidViewModel(app) {
             Text("Installed version ${BuildConfig.VERSION_NAME}")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Check automatically on launch", Modifier.weight(1f))
-                Switch(vm.automatic, vm::updateAutomatic)
+                Switch(vm.automatic, vm::updateAutomatic, modifier = Modifier.tvFocusFeedback())
             }
             Text("Checks GitHub at most once a day. Downloads only when you choose.", style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { vm.check() }, enabled = !vm.busy) { Text("Check for updates") }
+            TextButton(onClick = { vm.check() }, modifier = Modifier.tvFocusFeedback()) { Text("Check for updates") }
             UpdateActions(vm)
         }
     }
@@ -194,24 +194,24 @@ class AppUpdateViewModel(app: Application) : AndroidViewModel(app) {
 @Composable private fun UpdateActions(vm: AppUpdateViewModel) {
     val context = LocalContext.current
     if (vm.message.isNotBlank()) Text(vm.message)
-    if (vm.busy) { LinearProgressIndicator(progress = { vm.progress }, modifier = Modifier.fillMaxWidth()); TextButton(onClick = vm::cancel) { Text("Cancel") } }
+    if (vm.busy) { LinearProgressIndicator(progress = { vm.progress }, modifier = Modifier.fillMaxWidth()); TextButton(onClick = vm::cancel, modifier = Modifier.tvFocusFeedback()) { Text("Cancel") } }
     vm.release?.let { release ->
         if (!vm.busy) {
             if (vm.downloaded) {
                 Text("Android will ask you to confirm. Installing restarts Harmonicast.")
-                Button(onClick = { vm.install(context) }) { Text("Install update") }
+                Button(onClick = { vm.install(context) }, modifier = Modifier.tvFocusFeedback()) { Text("Install update") }
             }
-            else Button(onClick = vm::download) { Text("Download ${release.version}") }
-            TextButton(onClick = { vm.showPrompt = true }) { Text("Release notes") }
+            else Button(onClick = vm::download, modifier = Modifier.tvFocusFeedback()) { Text("Download ${release.version}") }
+            TextButton(onClick = { vm.showPrompt = true }, modifier = Modifier.tvFocusFeedback()) { Text("Release notes") }
         }
     }
 }
 @Composable internal fun UpdatePrompt() {
     val vm: AppUpdateViewModel = viewModel()
     if (vm.showPrompt) vm.release?.let { release ->
-        AlertDialog(onDismissRequest = { vm.showPrompt = false }, title = { Text("Harmonicast ${release.version}") },
+        FocusRestoringAlertDialog(onDismissRequest = { vm.showPrompt = false }, title = { Text("Harmonicast ${release.version}") },
             text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(release.notes.ifBlank { "A new version is available." }); UpdateActions(vm)
-            } }, confirmButton = { TextButton(onClick = { vm.showPrompt = false }) { Text("Close") } })
+            } }, confirmButton = { TextButton(onClick = { vm.showPrompt = false }, modifier = Modifier.tvFocusFeedback()) { Text("Close") } })
     }
 }

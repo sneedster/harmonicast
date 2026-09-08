@@ -1,5 +1,19 @@
 # Releases
 
+## v1.1.3 — TV navigation and live voice search
+
+Version code: **60**.
+
+- Subtle TV focus outlines and focus restoration across pages, dialogs and external screens.
+- TV text fields open the keyboard on OK, and keyboard Search submits and dismisses it.
+- Microphone buttons support spoken text; TV uses direct Android speech recognition.
+- Search and library filters update automatically after a brief typing or speech pause.
+- Album search matches open the existing album page instead of expanding into all tracks.
+- Album pages label the return control Back and initially focus it on TV.
+
+The owner accepted the Shield changes and confirmed spoken recognition.
+Voice input uses the installed speech provider and may require microphone permission.
+
 ## v1.1.2 — in-app updates
 
 Version code: **59**.
@@ -10,7 +24,7 @@ Version code: **59**.
 - Remove unused external-server and acquisition code.
 
 Automatic checks are off by default. Installation requires user confirmation.
-The Pixel update-check UI is verified; full upgrade and Shield installer verification remain pending.
+The owner confirmed successful in-app upgrades on both Pixel and Shield.
 
 ## v1.1.1 — artist release browsing
 

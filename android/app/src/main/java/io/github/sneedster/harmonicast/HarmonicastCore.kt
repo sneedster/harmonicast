@@ -5,6 +5,7 @@ interface MusicLibrary {
     suspend fun browse(kind: BrowseKind, order: BrowseOrder, offset: Int = 0, parent: String? = null, query: String = ""): LibraryPage = LibraryPage(emptyList(), null)
     suspend fun albumTracks(id: String): List<Song> = emptyList()
     suspend fun search(query: String): List<Song>
+    suspend fun searchForBrowsing(query: String): List<Song> = search(query)
     suspend fun track(id: String): Song?
     suspend fun artist(query: String): LibraryArtistBrowse?
     suspend fun discovery(song: Song): ArtistDiscovery

@@ -567,20 +567,37 @@ class HarmonicastViewModel : ViewModel() {
         }
     }
 
-    fun search() {
-        viewModelScope.launch {
-            if (query.isBlank()) return@launch
-            val generation = ++searchGeneration
-            searchLoading = true
-            libraryArtistBrowse = null
+    var searchAlbums by mutableStateOf<List<LibraryEntry>>(emptyList()); private set
+    internal val searchLibrary: MusicLibrary get() = core.library
+    private var searchJob: kotlinx.coroutines.Job? = null
+
+    fun updateSearchQuery(value: String) {
+        query = value
+        search(300)
+    }
+
+    fun search(debounceMillis: Long = 0) {
+        searchJob?.cancel()
+        val generation = ++searchGeneration
+        val term = query.trim()
+        results = emptyList()
+        searchAlbums = emptyList()
+        libraryArtistBrowse = null
+        searchLoading = term.isNotEmpty()
+        if (term.isEmpty()) return
+        searchJob = viewModelScope.launch {
             try {
-                val term = query.trim()
-                val localResults = core.library.search(term)
+                kotlinx.coroutines.delay(debounceMillis)
+                val localResults = core.library.searchForBrowsing(term)
+                val albums = core.library.browse(BrowseKind.ALBUMS, BrowseOrder.TITLE, query = term).entries
                 val artist = core.library.artist(term)
                 if (generation != searchGeneration) return@launch
                 results = localResults
+                searchAlbums = albums
                 libraryArtistBrowse = artist
                 error = ""
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (generation == searchGeneration) error = e.message ?: "Search failed"
             } finally {
@@ -773,7 +790,7 @@ class MainActivity : ComponentActivity() {
                     vm.refresh()
                 }
             }
-            HarmonicastApp(vm)
+            TvFocusHost { HarmonicastApp(vm) }
         }
     }
 
@@ -817,7 +834,7 @@ class MainActivity : ComponentActivity() {
                 Text("Harmonicast", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 Text("Room ${room.roomCode}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             }
-            TextButton(onClick = vm::leaveNearbyRoom) {
+            TextButton(onClick = vm::leaveNearbyRoom, modifier = Modifier.tvFocusFeedback()) {
                 Icon(Icons.AutoMirrored.Filled.Logout, "Leave room")
                 Spacer(Modifier.width(6.dp))
                 Text("Leave")
@@ -829,10 +846,10 @@ class MainActivity : ComponentActivity() {
                     Text("Room playback", style = MaterialTheme.typography.titleMedium)
                     if (vm.offeringRoomPlayback) {
                         Text(NativePlaybackReceiver.state.value.message)
-                        OutlinedButton(onClick = vm::stopOfferingRoomPlayback, enabled = !room.busy) { Text("Stop playing here") }
+                        OutlinedButton(onClick = vm::stopOfferingRoomPlayback, enabled = !room.busy, modifier = Modifier.tvFocusFeedback()) { Text("Stop playing here") }
                     } else {
                         Text("Let the host play the room's music here. Both devices need the same Wi-Fi for audio.")
-                        Button(onClick = vm::offerRoomPlayback, enabled = !room.busy) { Text("Offer this device as player") }
+                        Button(onClick = vm::offerRoomPlayback, enabled = !room.busy, modifier = Modifier.tvFocusFeedback()) { Text("Offer this device as player") }
                     }
                 }
             }
@@ -892,7 +909,7 @@ class MainActivity : ComponentActivity() {
                         enabled = !room.busy && room.title.isNotBlank(),
                         label = { Text(if (room.vote < 0) "Voted down" else "Vote down") },
                         leadingIcon = { Icon(Icons.Default.ThumbDown, null, Modifier.size(18.dp)) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.tvFocusFeedback().then(Modifier.weight(1f)),
                     )
                     FilterChip(
                         selected = room.vote > 0,
@@ -900,7 +917,7 @@ class MainActivity : ComponentActivity() {
                         enabled = !room.busy && room.title.isNotBlank(),
                         label = { Text(if (room.vote > 0) "Voted up" else "Vote up") },
                         leadingIcon = { Icon(Icons.Default.ThumbUp, null, Modifier.size(18.dp)) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.tvFocusFeedback().then(Modifier.weight(1f)),
                     )
                 }
             }
@@ -908,7 +925,7 @@ class MainActivity : ComponentActivity() {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Request music", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("Search the host's library and add something to the shared queue.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedTextField(
+            RemoteTextField(
                 value = search,
                 onValueChange = { search = it },
                 label = { Text("Song, artist, or album") },
@@ -920,7 +937,7 @@ class MainActivity : ComponentActivity() {
             Button(
                 onClick = { vm.searchNearbyRoom(search) },
                 enabled = search.isNotBlank() && !room.busy,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
                 shape = RoundedCornerShape(14.dp),
             ) {
                 Icon(Icons.Default.Search, null)
@@ -936,11 +953,11 @@ class MainActivity : ComponentActivity() {
                 TextButton(
                     onClick = { vm.searchNearbyRoom(search, (room.searchOffset - NearbyRoomWire.PAGE_SIZE).coerceAtLeast(0)) },
                     enabled = room.searchOffset > 0 && !room.busy,
-                ) { Text("Previous results") }
+                 modifier = Modifier.tvFocusFeedback()) { Text("Previous results") }
                 TextButton(
                     onClick = { vm.searchNearbyRoom(search, room.searchOffset + NearbyRoomWire.PAGE_SIZE) },
                     enabled = room.searchHasMore && !room.busy,
-                ) { Text("More results") }
+                 modifier = Modifier.tvFocusFeedback()) { Text("More results") }
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -948,7 +965,7 @@ class MainActivity : ComponentActivity() {
                 Text("Up next", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text("Shared request queue", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = { vm.loadNearbyQueue(room.queueOffset) }, enabled = !room.busy) { Icon(Icons.Default.Refresh, "Refresh queue") }
+            IconButton(onClick = { vm.loadNearbyQueue(room.queueOffset) }, enabled = !room.busy, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Refresh, "Refresh queue") }
         }
         if (room.queue.isEmpty() && !room.busy) {
             Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = Color(0xff242029)) {
@@ -966,11 +983,11 @@ class MainActivity : ComponentActivity() {
             TextButton(
                 onClick = { vm.loadNearbyQueue((room.queueOffset - NearbyRoomWire.PAGE_SIZE).coerceAtLeast(0)) },
                 enabled = room.queueOffset > 0 && !room.busy,
-            ) { Text("Previous") }
+             modifier = Modifier.tvFocusFeedback()) { Text("Previous") }
             TextButton(
                 onClick = { vm.loadNearbyQueue(room.queueOffset + NearbyRoomWire.PAGE_SIZE) },
                 enabled = room.queueHasMore && !room.busy,
-            ) { Text("More") }
+             modifier = Modifier.tvFocusFeedback()) { Text("More") }
         }
         if (room.busy) LinearProgressIndicator(Modifier.fillMaxWidth().clip(RoundedCornerShape(50)))
         if (room.message.isNotBlank()) GuestNotice(room.message, false)
@@ -1068,13 +1085,13 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     enabled = !vm.loading,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
                 ) {
                     Text("Restart Plex sign-in")
                 }
             }
             if (vm.personalSetupCanCancel) {
-                OutlinedButton(onClick = vm::cancelPersonalSetup, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = vm::cancelPersonalSetup, modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth())) {
                     Text("Cancel")
                 }
             }
@@ -1112,7 +1129,7 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 enabled = !vm.loading,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
             ) {
                 Icon(Icons.AutoMirrored.Filled.Login, null)
                 Spacer(Modifier.width(8.dp))
@@ -1132,7 +1149,7 @@ class MainActivity : ComponentActivity() {
                     } else nearbyPermissionLauncher.launch(nearbyPermissions)
                 },
                 enabled = !vm.nearbyRoomState.scanning,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
             ) {
                 Text(if (vm.nearbyRoomState.scanning) "Looking for nearby rooms…" else if (vm.nearbyRoomState.availableRooms.size > 1) "Scan again" else "Join nearby room")
             }
@@ -1145,7 +1162,7 @@ class MainActivity : ComponentActivity() {
                             dismissKeyboard()
                             vm.joinNearbyRoom(roomCode)
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
                     ) {
                         Icon(Icons.Default.BluetoothConnected, null)
                         Spacer(Modifier.width(8.dp))
@@ -1162,7 +1179,7 @@ class MainActivity : ComponentActivity() {
                     if (nearby.title.isBlank()) "Nothing is playing" else "${nearby.title} — ${nearby.artist}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                OutlinedButton(onClick = vm::leaveNearbyRoom, modifier = Modifier.fillMaxWidth()) { Text("Leave room") }
+                OutlinedButton(onClick = vm::leaveNearbyRoom, modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth())) { Text("Leave room") }
             } else if (nearby.error.isNotBlank()) {
                 Text(nearby.error, color = MaterialTheme.colorScheme.error)
             }
@@ -1187,7 +1204,7 @@ class MainActivity : ComponentActivity() {
             vm.plexServers.forEachIndexed { index, server ->
                 OutlinedButton(
                     onClick = { vm.choosePlexServer(server) },
-                    modifier = Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(firstChoice) else Modifier),
+                    modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(firstChoice) else Modifier)),
                 ) {
                     Text(if (server.owned) server.name else "${server.name} · Shared read-only")
                 }
@@ -1198,7 +1215,7 @@ class MainActivity : ComponentActivity() {
             vm.plexLibraries.forEachIndexed { index, library ->
                 Button(
                     onClick = { vm.selectPlexLibrary(library) },
-                    modifier = Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(firstChoice) else Modifier),
+                    modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(firstChoice) else Modifier)),
                 ) {
                     Text(library.title)
                 }
@@ -1234,16 +1251,16 @@ class MainActivity : ComponentActivity() {
                 actions = {
                     if (vm.loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                     if (vm.isHost && !vm.isActivePlayer) {
-                        IconButton(onClick = { vm.claim() }) {
+                        IconButton(onClick = { vm.claim() }, modifier = Modifier.tvFocusFeedback()) {
                             Icon(Icons.Default.PlayCircle, contentDescription = "Take control of playback on this device")
                         }
                     }
                     if (vm.isHost && vm.nowPlaying.song != null) {
-                        IconButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer) {
+                        IconButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) {
                             Icon(Icons.Default.AutoAwesome, contentDescription = "Start Track Radio")
                         }
                     }
-                    IconButton(onClick = { vm.refresh() }) {
+                    IconButton(onClick = { vm.refresh() }, modifier = Modifier.tvFocusFeedback()) {
                         Icon(imageVector = Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                 }
@@ -1302,8 +1319,8 @@ class MainActivity : ComponentActivity() {
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.onFocusChanged { focused = it.isFocused }
-            .border(if (focused) 3.dp else 0.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(12.dp)),
+        modifier = Modifier.tvFocusFeedback().then(modifier.onFocusChanged { focused = it.isFocused }
+            .border(if (focused) 3.dp else 0.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(12.dp))),
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (selected || focused) MaterialTheme.colorScheme.primary else Color(0xff30243a),
@@ -1391,7 +1408,7 @@ class MainActivity : ComponentActivity() {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Plex playlists", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-            IconButton(onClick = vm::loadPlaylists, enabled = !vm.playlistsLoading) {
+            IconButton(onClick = vm::loadPlaylists, enabled = !vm.playlistsLoading, modifier = Modifier.tvFocusFeedback()) {
                 Icon(Icons.Default.Refresh, "Refresh playlists")
             }
         }
@@ -1413,10 +1430,10 @@ class MainActivity : ComponentActivity() {
                         Text(playlist.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         if (playlist.trackCount > 0) Text("${playlist.trackCount} tracks", style = MaterialTheme.typography.bodySmall)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.PLAY) }) { Text("Play") }
-                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.SHUFFLE) }) { Text("Shuffle") }
-                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.NEXT) }) { Text("Next") }
-                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.QUEUE) }) { Text("Queue") }
+                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.PLAY) }, modifier = Modifier.tvFocusFeedback()) { Text("Play") }
+                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.SHUFFLE) }, modifier = Modifier.tvFocusFeedback()) { Text("Shuffle") }
+                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.NEXT) }, modifier = Modifier.tvFocusFeedback()) { Text("Next") }
+                            TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.QUEUE) }, modifier = Modifier.tvFocusFeedback()) { Text("Queue") }
                         }
                     }
                 }
@@ -1455,26 +1472,26 @@ class MainActivity : ComponentActivity() {
         Text("Color scheme", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PlayerPalette.entries.forEach { palette ->
-                FilterChip(selected = vm.colorSchemeName == palette.name, onClick = { vm.selectColorScheme(palette.name) }, label = { Text(palette.name) })
+                FilterChip(selected = vm.colorSchemeName == palette.name, onClick = { vm.selectColorScheme(palette.name) }, label = { Text(palette.name) }, modifier = Modifier.tvFocusFeedback())
             }
         }
         if (!television) {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(Modifier.fillMaxWidth().toggleable(vm.keepScreenOnWhileCharging,
+                    Row(Modifier.fillMaxWidth().tvFocusFeedback().toggleable(vm.keepScreenOnWhileCharging,
                         role = androidx.compose.ui.semantics.Role.Switch, onValueChange = vm::updateKeepScreenOnWhileCharging),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Column(Modifier.weight(1f)) {
                             Text("Stay awake while charging", style = MaterialTheme.typography.titleMedium)
                             Text("Keep the screen on while Harmonicast is open and connected to power.", style = MaterialTheme.typography.bodyMedium)
                         }
-                        Switch(checked = vm.keepScreenOnWhileCharging, onCheckedChange = null)
+                        Switch(checked = vm.keepScreenOnWhileCharging, onCheckedChange = null, modifier = Modifier.tvFocusFeedback())
                     }
                     Text("Keep music playing", style = MaterialTheme.typography.titleMedium)
                     Text("If music stops with the screen off, allow Harmonicast to run without battery optimization in Android settings.")
                     OutlinedButton(onClick = {
                         context.startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                    }) { Text("Background playback settings") }
+                    }, modifier = Modifier.tvFocusFeedback()) { Text("Background playback settings") }
                 }
             }
         }
@@ -1491,7 +1508,7 @@ class MainActivity : ComponentActivity() {
                                 }) vm.setGuestControl(true)
                             else hostPermissionLauncher.launch(hostPermissions)
                         },
-                    ) {
+                     modifier = Modifier.tvFocusFeedback()) {
                         Text(if (room.enabled) "End room ${room.roomCode}" else "Open room on this TV")
                     }
                     if (room.enabled) {
@@ -1510,11 +1527,11 @@ class MainActivity : ComponentActivity() {
                 Button(onClick = {
                     if (joinPermissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) vm.scanNearbyRoom()
                     else joinPermissionLauncher.launch(joinPermissions)
-                }, enabled = !vm.nearbyRoomState.scanning && !HarmonicastMediaService.roomShareState.value.enabled) {
+                }, enabled = !vm.nearbyRoomState.scanning && !HarmonicastMediaService.roomShareState.value.enabled, modifier = Modifier.tvFocusFeedback()) {
                     Text(if (vm.nearbyRoomState.scanning) "Looking for nearby rooms…" else "Join nearby room")
                 }
                 if (vm.nearbyRoomState.availableRooms.size > 1) vm.nearbyRoomState.availableRooms.forEach { code ->
-                    OutlinedButton(onClick = { vm.joinNearbyRoom(code) }) { Text("Room $code") }
+                    OutlinedButton(onClick = { vm.joinNearbyRoom(code) }, modifier = Modifier.tvFocusFeedback()) { Text("Room $code") }
                 }
                 if (vm.nearbyRoomState.error.isNotBlank()) Text(vm.nearbyRoomState.error, color = MaterialTheme.colorScheme.error)
             }
@@ -1531,7 +1548,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         enabled = !vm.loading,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
                     ) {
                         Text("Move this device to personal mode")
                     }
@@ -1556,11 +1573,11 @@ class MainActivity : ComponentActivity() {
                     Button(
                         onClick = vm::beginPersonalSourceChange,
                         enabled = !vm.loading,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
                     ) {
                         Text("Change Plex server or library")
                     }
-                    TextButton(onClick = { confirmPlexSignOut = true }, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = { confirmPlexSignOut = true }, modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth())) {
                         Text("Sign out of Plex", color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -1586,7 +1603,7 @@ class MainActivity : ComponentActivity() {
                                     }) vm.setGuestControl(true)
                                 else hostPermissionLauncher.launch(hostPermissions)
                             },
-                        )
+                         modifier = Modifier.tvFocusFeedback())
                     }
                     Text(
                         "Guests can search, request tracks, view the queue and now playing, and vote. Plex credentials and owner controls stay on this device.",
@@ -1600,12 +1617,12 @@ class MainActivity : ComponentActivity() {
                         Text("Room ${room.roomCode}", style = MaterialTheme.typography.headlineSmall)
                         Text("Room playback", style = MaterialTheme.typography.titleMedium)
                         if (HarmonicastMediaService.nativeOutputActive.value) {
-                            Button(onClick = vm::takeBackPlayback) { Text("Play on this device") }
+                            Button(onClick = vm::takeBackPlayback, modifier = Modifier.tvFocusFeedback()) { Text("Play on this device") }
                         } else {
                             val devices = HarmonicastMediaService.roomPlaybackDevices.value
                             if (devices.isEmpty()) Text("An owner-signed-in app can join this room and offer to play the music.")
                             devices.forEach { (id, name) ->
-                                OutlinedButton(onClick = { vm.transferPlayback(id) }) { Text("Play on $name") }
+                                OutlinedButton(onClick = { vm.transferPlayback(id) }, modifier = Modifier.tvFocusFeedback()) { Text("Play on $name") }
                             }
                         }
                         if (HarmonicastMediaService.nativeOutputStatus.value.isNotBlank()) Text(HarmonicastMediaService.nativeOutputStatus.value)
@@ -1635,7 +1652,7 @@ class MainActivity : ComponentActivity() {
                                     "Share Harmonicast room",
                                 ))
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
                         ) {
                             Text("Share guest link")
                         }
@@ -1656,11 +1673,11 @@ class MainActivity : ComponentActivity() {
                                     "Share Harmonicast display",
                                 ))
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
                         ) {
                             Text("Share display link")
                         }
-                        OutlinedButton(onClick = { vm.setGuestControl(false) }, modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick = { vm.setGuestControl(false) }, modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth())) {
                             Text("End guest room")
                         }
                     }
@@ -1699,7 +1716,7 @@ class MainActivity : ComponentActivity() {
                     valueRange = 0f..10f,
                     steps = 9,
                     enabled = vm.isHost,
-                )
+                 modifier = Modifier.tvFocusFeedback())
                 Text(
                     when (value) {
                         0 -> "All unrated"
@@ -1717,7 +1734,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     if (confirmPlexSignOut) {
-        AlertDialog(
+        FocusRestoringAlertDialog(
             onDismissRequest = { confirmPlexSignOut = false },
             title = { Text("Sign out of Plex?") },
             text = { Text("This removes the Plex account and source from this phone and clears its saved queue and playback history.") },
@@ -1725,10 +1742,10 @@ class MainActivity : ComponentActivity() {
                 TextButton(onClick = {
                     confirmPlexSignOut = false
                     vm.signOutPersonalPlex()
-                }) { Text("Sign out", color = MaterialTheme.colorScheme.error) }
+                }, modifier = Modifier.tvFocusFeedback()) { Text("Sign out", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmPlexSignOut = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmPlexSignOut = false }, modifier = Modifier.tvFocusFeedback()) { Text("Cancel") }
             },
         )
     }
@@ -1749,7 +1766,7 @@ class MainActivity : ComponentActivity() {
                 if (vm.loading) CircularProgressIndicator()
                 if (vm.selectedPlexServer == null) {
                     vm.plexServers.forEach { server ->
-                        OutlinedButton(onClick = { vm.choosePlexServer(server) }, modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick = { vm.choosePlexServer(server) }, modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth())) {
                             Text(server.name)
                         }
                     }
@@ -1757,7 +1774,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     Text("${vm.selectedPlexServer?.name} — choose a Music library", style = MaterialTheme.typography.titleSmall)
                     vm.plexLibraries.forEach { library ->
-                        Button(onClick = { vm.selectPlexLibrary(library) }, modifier = Modifier.fillMaxWidth()) {
+                        Button(onClick = { vm.selectPlexLibrary(library) }, modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth())) {
                             Text(library.title)
                         }
                     }
@@ -1844,7 +1861,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 Text(
                     song.artist,
-                    modifier = Modifier.clickable { onSearch(song.artist) }.padding(vertical = 1.dp),
+                    modifier = Modifier.tvFocusFeedback().clickable { onSearch(song.artist) }.padding(vertical = 1.dp),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
@@ -1855,7 +1872,7 @@ class MainActivity : ComponentActivity() {
                     val albumLabel = song.year?.let { "${song.album} ($it)" } ?: song.album
                     Text(
                         albumLabel,
-                        modifier = Modifier.clickable { onSearch(song.album) }.padding(vertical = 1.dp),
+                        modifier = Modifier.tvFocusFeedback().clickable { onSearch(song.album) }.padding(vertical = 1.dp),
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1872,8 +1889,8 @@ class MainActivity : ComponentActivity() {
             Spacer(Modifier.height(100.dp))
             Text("Nothing is playing")
             if (vm.isHost) {
-                Button({ vm.claim() }, enabled = !vm.isActivePlayer) { Text("Take control on this device") }
-                Button({ vm.startRandomPlayback() }, enabled = vm.isActivePlayer) { Text("Play random music") }
+                Button({ vm.claim() }, enabled = !vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) { Text("Take control on this device") }
+                Button({ vm.startRandomPlayback() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) { Text("Play random music") }
             }
         }
         }
@@ -1915,7 +1932,7 @@ class MainActivity : ComponentActivity() {
                         },
                         valueRange = 0f..duration,
                         enabled = vm.isActivePlayer,
-                        modifier = Modifier.height(24.dp),
+                        modifier = Modifier.tvFocusFeedback().then(Modifier.height(24.dp)),
                         thumb = {},
                         track = { sliderState ->
                             SliderDefaults.Track(
@@ -1947,26 +1964,26 @@ class MainActivity : ComponentActivity() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (vm.canWriteToPlex) {
-                    IconButton(onClick = { vm.vote(false) }, modifier = Modifier.size(48.dp)) {
+                    IconButton(onClick = { vm.vote(false) }, modifier = Modifier.tvFocusFeedback().then(Modifier.size(48.dp))) {
                         Icon(Icons.Default.ThumbDown, "Vote down")
                     }
                 } else Spacer(Modifier.size(48.dp))
-                IconButton(onClick = { vm.previousSong() }, enabled = vm.isActivePlayer, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = { vm.previousSong() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback().then(Modifier.size(48.dp))) {
                     Icon(Icons.Default.SkipPrevious, "Previous track or restart", modifier = Modifier.size(32.dp))
                 }
-                FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.size(64.dp)) {
+                FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback().then(Modifier.size(64.dp))) {
                     Icon(if (vm.nowPlaying.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (vm.nowPlaying.isPlaying) "Pause" else "Play", modifier = Modifier.size(36.dp))
                 }
-                IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost, modifier = Modifier.tvFocusFeedback().then(Modifier.size(48.dp))) {
                     Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(32.dp))
                 }
                 if (vm.canWriteToPlex) {
-                    IconButton(onClick = { vm.vote(true) }, modifier = Modifier.size(48.dp)) {
+                    IconButton(onClick = { vm.vote(true) }, modifier = Modifier.tvFocusFeedback().then(Modifier.size(48.dp))) {
                         Icon(Icons.Default.ThumbUp, "Vote up")
                     }
                 } else Spacer(Modifier.size(48.dp))
             }
-            if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }) { Text("Take control on this device") }
+            if (vm.isHost && !vm.isActivePlayer) Button({ vm.claim() }, modifier = Modifier.tvFocusFeedback()) { Text("Take control on this device") }
         }
     }
 }
@@ -2001,7 +2018,7 @@ class MainActivity : ComponentActivity() {
             Column(Modifier.padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Artist discovery", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = close) { Text("Down") }
+                    TextButton(onClick = close, modifier = Modifier.tvFocusFeedback()) { Text("Down") }
                 }
                 when {
                     vm.artistDiscoveryLoading -> CircularProgressIndicator()
@@ -2082,14 +2099,14 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
 @Composable internal fun Queue(vm: HarmonicastViewModel) {
     var confirmClear by remember { mutableStateOf(false) }
     if (confirmClear) {
-        AlertDialog(
+        FocusRestoringAlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("Clear queue?") },
             text = { Text("This removes every upcoming track from the shared queue. The current song will keep playing.") },
             confirmButton = {
-                TextButton(onClick = { confirmClear = false; vm.clearQueue() }) { Text("Clear queue") }
+                TextButton(onClick = { confirmClear = false; vm.clearQueue() }, modifier = Modifier.tvFocusFeedback()) { Text("Clear queue") }
             },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }, modifier = Modifier.tvFocusFeedback()) { Text("Cancel") } },
         )
     }
     LazyColumn(Modifier.fillMaxSize()) {
@@ -2104,7 +2121,7 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
                     Text("${vm.queue.size} tracks · requests before automatic picks", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (vm.isHost && vm.queue.isNotEmpty()) {
-                    TextButton(onClick = { confirmClear = true }) {
+                    TextButton(onClick = { confirmClear = true }, modifier = Modifier.tvFocusFeedback()) {
                         Icon(Icons.Default.DeleteSweep, null)
                         Spacer(Modifier.width(6.dp))
                         Text("Clear")
@@ -2123,24 +2140,46 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
     }
 }
 
-@Composable internal fun Search(vm: HarmonicastViewModel) {
+@Composable internal fun Search(vm: HarmonicastViewModel, openAlbum: ((LibraryEntry) -> Unit)? = null) {
+    var selectedAlbum by remember { mutableStateOf<LibraryEntry?>(null) }
+    BackHandler(selectedAlbum != null) { selectedAlbum = null }
+    selectedAlbum?.let { album ->
+        AlbumPage(vm, vm.searchLibrary, album) { selectedAlbum = null }
+        return
+    }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(horizontal = 24.dp, vertical = 12.dp)) {
             DisplayTitle("Find your sound.")
             Text("Songs, artists and albums in your library", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Row(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(vm.query, { vm.query = it }, label = { Text("Search music") }, singleLine = true,
+            RemoteTextField(vm.query, { vm.updateSearchQuery(it) }, label = { Text("Search music") }, singleLine = true,
                 shape = RoundedCornerShape(20.dp),
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { vm.search() }), modifier = Modifier.weight(1f))
-            IconButton(onClick = { vm.search() }) { Icon(Icons.Default.Search, "Search") }
+            IconButton(onClick = { vm.search() }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Search, "Search") }
         }
         LazyColumn {
+            if (vm.searchAlbums.isNotEmpty()) item { Text("Albums", Modifier.padding(horizontal = 24.dp, vertical = 12.dp), style = MaterialTheme.typography.titleLarge) }
+            items(vm.searchAlbums, key = { "album:${it.id}" }) { album ->
+                Surface(onClick = { if (openAlbum != null) openAlbum(album) else selectedAlbum = album },
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().tvFocusFeedback(),
+                    shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        coil.compose.AsyncImage(album.artwork, null, Modifier.size(64.dp).clip(RoundedCornerShape(8.dp)))
+                        Column(Modifier.weight(1f)) {
+                            Text(album.title, style = MaterialTheme.typography.titleMedium)
+                            Text(listOfNotNull(album.subtitle.takeIf { it.isNotBlank() }, album.year?.toString()).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Text("›", style = MaterialTheme.typography.headlineMedium)
+                    }
+                }
+            }
+            if (vm.results.isNotEmpty()) item { Text("Songs", Modifier.padding(horizontal = 24.dp, vertical = 12.dp), style = MaterialTheme.typography.titleLarge) }
             items(vm.results, key = { it.id }) { SongRow(vm, it, true) }
             if (vm.searchLoading) {
                 item { Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) { CircularProgressIndicator() } }
-            } else if (vm.query.isNotBlank() && vm.results.isEmpty()) {
+            } else if (vm.query.isNotBlank() && vm.results.isEmpty() && vm.searchAlbums.isEmpty()) {
                 item {
                     ElevatedCard(
                         Modifier.fillMaxWidth().padding(16.dp),
@@ -2169,13 +2208,13 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
         colors = ListItemDefaults.colors(containerColor = if (focused) colors.secondaryContainer else colors.surface.copy(alpha = .6f)),
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp).clip(RoundedCornerShape(16.dp))
             .onFocusChanged { focused = it.hasFocus }
-            .clickable(enabled = !add && vm.isActivePlayer) { vm.playQueued(song) },
+            .tvFocusFeedback().clickable(enabled = !add && vm.isActivePlayer) { vm.playQueued(song) },
         headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = { Text("${song.artist}${if (song.addedByEmail.isNotBlank()) " · ${song.addedByEmail}" else ""}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         leadingContent = { Cover(vm, song, 48.dp) },
         trailingContent = {
-            if (add) IconButton(onClick = { vm.add(song) }) { Icon(Icons.Default.Add, "Add to queue") }
-            else if (vm.isHost) IconButton(onClick = { vm.remove(song) }) { Icon(Icons.Default.Delete, "Remove from queue") }
+            if (add) IconButton(onClick = { vm.add(song) }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Add, "Add to queue") }
+            else if (vm.isHost) IconButton(onClick = { vm.remove(song) }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Delete, "Remove from queue") }
         }
     )
 }

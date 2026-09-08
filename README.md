@@ -14,7 +14,8 @@ owner-only Plex writes and room hosting require owner access.
 ## Features
 
 - Nocturne browsing/player UI with persistent Nocturne, Aurora, and Ember palettes.
-- Albums, singles, EPs, artists, biographies, search, and paged Plex playlists.
+- Albums, singles, EPs, artists, biographies, live search, and paged Plex playlists.
+- Voice input through Android speech recognition and remote-friendly TV focus.
 - Request-first queues, configurable automatic mix, adaptive ratings, and Track Radio.
 - Android Auto library browsing, artwork grids, and playback.
 - Temporary nearby rooms, requests/votes, and bundled browser guest/display pages.

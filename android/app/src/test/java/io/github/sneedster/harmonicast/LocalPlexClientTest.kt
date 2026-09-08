@@ -79,6 +79,24 @@ class LocalPlexClientTest {
         assertTrue(http.calls.first().url.contains("query=A+%26+B"))
     }
 
+    @Test fun browseSearchKeepsAlbumMetadataWithoutExpandingAlbumTracks() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{}}"""
+            responses += """{"MediaContainer":{}}"""
+            responses += """{"MediaContainer":{"Metadata":[{"type":"album","ratingKey":"91","title":"Blue","parentTitle":"Joni Mitchell","year":1971}],"totalSize":1}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val client = LocalPlexClient(MemoryStorage(), http)
+        assertTrue(client.search(source, "Blue", expandAlbums = false).isEmpty())
+        val album = client.browse(source, BrowseKind.ALBUMS, BrowseOrder.TITLE, query = "Blue").entries.single()
+        assertEquals("Blue", album.title)
+        assertEquals("Joni Mitchell", album.subtitle)
+        assertEquals("plex-collection:machine:7:91", album.id)
+        assertEquals(BrowseKind.ALBUMS, album.kind)
+        assertFalse(http.calls.any { it.url.contains("/children") || it.url.contains("/allLeaves") })
+        assertTrue(http.calls.last().url.contains("type=9"))
+    }
+
     @Test fun connectionUrlsRejectNonHttpSchemesAndDropWebSuffix() {
         assertNull(normalizeServerUrl("file:///secret"))
         assertEquals("https://plex.example/prefix", normalizeServerUrl("https://plex.example/prefix/web/"))

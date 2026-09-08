@@ -35,6 +35,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -89,33 +91,35 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
             Row(Modifier.fillMaxWidth().padding(horizontal = if (wide) 28.dp else 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.GraphicEq, null, tint = colors.primary, modifier = Modifier.size(22.dp))
                 Text("HARMONICAST", Modifier.padding(start = 10.dp).weight(1f), fontSize = 12.sp, letterSpacing = 3.sp)
-                TextButton(onClick = { navigate("Settings") }) {
+                TextButton(onClick = { navigate("Settings") }, modifier = Modifier.tvFocusFeedback()) {
                     Icon(Icons.Default.Sensors, null, Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("Rooms", fontSize = 12.sp)
                 }
-                IconButton(onClick = { navigate("Settings") }) { Icon(Icons.Default.Settings, "Settings and color scheme") }
+                IconButton(onClick = { navigate("Settings") }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Settings, "Settings and color scheme") }
             }
             Row(Modifier.weight(1f)) {
                 if (wide) {
                     NavigationRail(containerColor = Color.Transparent, modifier = Modifier.width(104.dp)) {
                         destinations.forEach { (name, icon) ->
                             NavigationRailItem(selected = destination == name, onClick = { navigate(name) },
-                                icon = { Icon(icon, name) }, label = { Text(name) }, modifier = Modifier.padding(vertical = 8.dp))
+                                icon = { Icon(icon, name) }, label = { Text(name) }, modifier = Modifier.tvFocusFeedback().then(Modifier.padding(vertical = 8.dp)))
                         }
                     }
                 }
                 Crossfade(screenKey, Modifier.weight(1f), animationSpec = tween(220), label = "Browse destination") { route ->
                     stateHolder.SaveableStateProvider(route) {
+                        TvFocusPage(route, route == screenKey) {
                         val entry = stack.lastOrNull { it.id == route }
                         when {
                             entry?.kind == BrowseKind.ARTISTS -> CollectionBrowser(vm, library, wide, entry, { stack.add(it) }) { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
                             entry != null -> AlbumPage(vm, library, entry) { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
                             route == "Home" -> DiscoveryHome(vm, library, wide, { stack.add(it) }, { navigate("Library") }, { navigate("Player") })
                             route == "Library" -> CollectionBrowser(vm, library, wide, null, { stack.add(it) }) {}
-                            route == "Search" -> Search(vm)
+                            route == "Search" -> Search(vm) { stack.add(it) }
                             route == "Queue" -> Queue(vm)
                             route == "Settings" -> SettingsScreen(vm)
                             route == "Player" -> NocturnePlayer(vm) { vm.query = it; vm.search(); navigate("Search") }
                         }
+                    }
                     }
                 }
             }
@@ -135,7 +139,7 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
     val song = vm.nowPlaying.song ?: return
     val colors = MaterialTheme.colorScheme
     Surface(onClick = open, color = colors.surfaceVariant.copy(alpha = .85f), shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth(), border = BorderStroke(1.dp, colors.primary.copy(alpha = .15f))) {
+        modifier = Modifier.tvFocusFeedback().then(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth()), border = BorderStroke(1.dp, colors.primary.copy(alpha = .15f))) {
         Column {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Cover(vm, song, 42.dp)
@@ -143,8 +147,8 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
                     Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp, color = colors.onSurfaceVariant)
                 }
-                IconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer) { Icon(if (vm.nowPlaying.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (vm.nowPlaying.isPlaying) "Pause" else "Play") }
-                IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost) { Icon(Icons.Default.SkipNext, "Next track") }
+                IconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) { Icon(if (vm.nowPlaying.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (vm.nowPlaying.isPlaying) "Pause" else "Play") }
+                IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.SkipNext, "Next track") }
             }
             if (song.duration > 0) LinearProgressIndicator(progress = { (vm.playbackPosition / song.duration).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(2.dp), drawStopIndicator = {})
         }
@@ -160,7 +164,7 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 DisplayTitle("Your next obsession.", Modifier.weight(1f))
-                TextButton(onClick = collection) { Text("Your library →") }
+                TextButton(onClick = collection, modifier = Modifier.tvFocusFeedback()) { Text("Your library →") }
             }
         }
         item {
@@ -179,9 +183,9 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
     val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val lift by animateFloatAsState(if (focused && wide) 1.025f else 1f, tween(180), label = "Discovery focus")
-    Surface(onClick = action, enabled = enabled, modifier = modifier.fillMaxHeight()
+    Surface(onClick = action, enabled = enabled, modifier = Modifier.tvFocusFeedback().then(modifier.fillMaxHeight()
         .onFocusChanged { focused = it.hasFocus }.graphicsLayer { scaleX = lift; scaleY = lift }
-        .shadow(if (wide) 20.dp else 0.dp, RoundedCornerShape(20.dp), spotColor = colors.primary.copy(alpha = .35f)),
+        .shadow(if (wide) 20.dp else 0.dp, RoundedCornerShape(20.dp), spotColor = colors.primary.copy(alpha = .35f))),
         shape = RoundedCornerShape(20.dp),
         color = colors.secondaryContainer.copy(alpha = .7f),
         border = BorderStroke(if (focused) 2.dp else 1.dp, colors.primary.copy(alpha = if (focused) .95f else .25f))) {
@@ -228,9 +232,9 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
     val wide = LocalConfiguration.current.screenWidthDp >= 840
     val scale by animateFloatAsState(if (focused) { if (wide) 1.055f else 1.025f } else 1f, tween(180), label = "Artwork focus")
     val colors = MaterialTheme.colorScheme
-    Surface(onClick = open, modifier = modifier.onFocusChanged { focused = it.hasFocus }.graphicsLayer { scaleX = scale; scaleY = scale }
+    Surface(onClick = open, modifier = Modifier.tvFocusFeedback().then(modifier.onFocusChanged { focused = it.hasFocus }.graphicsLayer { scaleX = scale; scaleY = scale }
         .shadow(if (wide) { if (focused) 24.dp else 10.dp } else 0.dp, RoundedCornerShape(14.dp),
-            spotColor = if (focused) colors.primary else Color.Black),
+            spotColor = if (focused) colors.primary else Color.Black)),
         shape = RoundedCornerShape(14.dp), color = if (focused) colors.secondaryContainer else colors.surface.copy(alpha = if (wide) .9f else .3f),
         border = BorderStroke(if (focused) 2.dp else 1.dp, if (focused) colors.primary else colors.onSurface.copy(alpha = if (wide) .13f else .07f))) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -245,21 +249,25 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
 }
 
 @Composable private fun RetryMessage(retry: () -> Unit) {
-    Column { Text("Couldn’t load your library.", color = MaterialTheme.colorScheme.onSurfaceVariant); TextButton(onClick = retry) { Text("Try again") } }
+    Column { Text("Couldn’t load your library.", color = MaterialTheme.colorScheme.onSurfaceVariant); TextButton(onClick = retry, modifier = Modifier.tvFocusFeedback()) { Text("Try again") } }
 }
 
 @Composable private fun CollectionBrowser(vm: HarmonicastViewModel, library: MusicLibrary, wide: Boolean, parent: LibraryEntry?, open: (LibraryEntry) -> Unit, back: () -> Unit) {
     var category by rememberSaveable { mutableStateOf("Albums") }
     var draftQuery by rememberSaveable { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(draftQuery) {
+        if (draftQuery.isNotBlank()) kotlinx.coroutines.delay(300)
+        query = draftQuery.trim()
+    }
     var biography by remember { mutableStateOf(false) }
-    if (biography && parent != null) AlertDialog(onDismissRequest = { biography = false },
+    if (biography && parent != null) FocusRestoringAlertDialog(onDismissRequest = { biography = false },
         title = { Text(parent.title) }, text = { Text(parent.summary, Modifier.verticalScroll(rememberScrollState())) },
-        confirmButton = { TextButton(onClick = { biography = false }) { Text("Close") } })
+        confirmButton = { TextButton(onClick = { biography = false }, modifier = Modifier.tvFocusFeedback()) { Text("Close") } })
     var order by rememberSaveable { mutableStateOf(BrowseOrder.RECENT.name) }
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (parent != null) IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+            if (parent != null) IconButton(onClick = back, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
             if (parent != null) {
                 AsyncImage(parent.artwork, null, Modifier.padding(vertical = 12.dp).size(if (wide) 88.dp else 64.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentScale = ContentScale.Crop)
                 Spacer(Modifier.width(16.dp))
@@ -267,27 +275,27 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
                     Text("ARTIST", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, letterSpacing = 2.sp)
                     DisplayTitle(parent.title)
                     Text("Albums & releases", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    if (parent.summary.isNotBlank()) TextButton(onClick = { biography = true }) { Text("About the artist") }
+                    if (parent.summary.isNotBlank()) TextButton(onClick = { biography = true }, modifier = Modifier.tvFocusFeedback()) { Text("About the artist") }
                 }
             } else DisplayTitle("Your library", Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (parent == null) listOf("Albums", "Artists", "Playlists").forEach { label ->
-                FilterChip(selected = category == label, onClick = { category = label }, label = { Text(label) })
+                FilterChip(selected = category == label, onClick = { category = label }, label = { Text(label) }, modifier = Modifier.tvFocusFeedback())
             }
         }
         if (category == "Playlists" && parent == null) { NocturnePlaylists(vm, library); return@Column }
         if (parent == null) Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(draftQuery, { draftQuery = it }, singleLine = true, label = { Text("Find ${category.lowercase()}") },
+            RemoteTextField(draftQuery, { draftQuery = it }, singleLine = true, label = { Text("Find ${category.lowercase()}") },
                 shape = RoundedCornerShape(18.dp), modifier = Modifier.weight(1f),
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { query = draftQuery.trim() }))
-            IconButton(onClick = { query = draftQuery.trim() }) { Icon(Icons.Default.Search, "Find in library") }
-            if (query.isNotEmpty()) IconButton(onClick = { query = ""; draftQuery = "" }) { Icon(Icons.Default.Close, "Clear library filter") }
+            IconButton(onClick = { query = draftQuery.trim() }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Search, "Find in library") }
+            if (query.isNotEmpty()) IconButton(onClick = { query = ""; draftQuery = "" }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Close, "Clear library filter") }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BrowseOrder.entries.filter { it != BrowseOrder.PLAYED }.forEach { choice ->
-                TextButton(onClick = { order = choice.name }) { Text(choice.label, color = if (order == choice.name) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                TextButton(onClick = { order = choice.name }, modifier = Modifier.tvFocusFeedback()) { Text(choice.label, color = if (order == choice.name) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
         key(category, order, parent?.id, query) {
@@ -324,22 +332,34 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
             when {
                 loading -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(12.dp))
                 failed -> RetryMessage { load() }
-                offset != null -> TextButton(onClick = { load() }, modifier = Modifier.fillMaxWidth()) { Text("Load more") }
+                offset != null -> TextButton(onClick = { load() }, modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth())) { Text("Load more") }
                 entries.isEmpty() -> Text("No ${kind.label.lowercase()} found.", Modifier.padding(20.dp))
             }
         }
     }
 }
 
-@Composable private fun AlbumPage(vm: HarmonicastViewModel, library: MusicLibrary, entry: LibraryEntry, back: () -> Unit) {
+@Composable internal fun AlbumPage(vm: HarmonicastViewModel, library: MusicLibrary, entry: LibraryEntry, back: () -> Unit) {
+    val albumListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val backFocus = remember { FocusRequester() }
+    val television = isTvDevice()
+    LaunchedEffect(entry.id) {
+        if (television) {
+            albumListState.scrollToItem(0)
+            // Apply the album entry default after the surrounding page restores focus.
+            withFrameNanos { }
+            withFrameNanos { }
+            backFocus.requestFocus()
+        }
+    }
     var attempt by remember { mutableIntStateOf(0) }
     var result by remember(entry.id, library) { mutableStateOf<Result<List<Song>>?>(null) }
     LaunchedEffect(entry.id, library, attempt) {
         result = null
         result = try { Result.success(library.albumTracks(entry.id)) } catch (e: CancellationException) { throw e } catch (e: Exception) { Result.failure(e) }
     }
-    LazyColumn(contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { TextButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null); Text(" Library") } }
+    LazyColumn(state = albumListState, contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { TextButton(onClick = back, modifier = Modifier.tvFocusFeedback().focusRequester(backFocus)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null); Text(" Back") } }
         item {
             val wide = LocalConfiguration.current.screenWidthDp >= 840
             val art: @Composable () -> Unit = {
@@ -367,12 +387,12 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
         Text(entry.subtitle, color = MaterialTheme.colorScheme.primary)
         Text(listOfNotNull(entry.year?.toString(), result?.getOrNull()?.let { "${it.size} ${if (it.size == 1) "track" else "tracks"}" }).joinToString(" · "), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = { vm.loadAlbum(entry, PlaylistAction.PLAY) }, enabled = vm.isActivePlayer && result?.isSuccess == true) { Icon(Icons.Default.PlayArrow, null); Text("Play album") }
-            OutlinedButton(onClick = { vm.loadAlbum(entry, PlaylistAction.SHUFFLE) }, enabled = vm.isActivePlayer && result?.isSuccess == true) { Text("Shuffle") }
+            Button(onClick = { vm.loadAlbum(entry, PlaylistAction.PLAY) }, enabled = vm.isActivePlayer && result?.isSuccess == true, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.PlayArrow, null); Text("Play album") }
+            OutlinedButton(onClick = { vm.loadAlbum(entry, PlaylistAction.SHUFFLE) }, enabled = vm.isActivePlayer && result?.isSuccess == true, modifier = Modifier.tvFocusFeedback()) { Text("Shuffle") }
         }
         Row {
-            TextButton(onClick = { vm.loadAlbum(entry, PlaylistAction.NEXT) }, enabled = vm.isActivePlayer && result?.isSuccess == true) { Text("Play next") }
-            TextButton(onClick = { vm.loadAlbum(entry, PlaylistAction.QUEUE) }, enabled = vm.isActivePlayer && result?.isSuccess == true) { Text("Add to queue") }
+            TextButton(onClick = { vm.loadAlbum(entry, PlaylistAction.NEXT) }, enabled = vm.isActivePlayer && result?.isSuccess == true, modifier = Modifier.tvFocusFeedback()) { Text("Play next") }
+            TextButton(onClick = { vm.loadAlbum(entry, PlaylistAction.QUEUE) }, enabled = vm.isActivePlayer && result?.isSuccess == true, modifier = Modifier.tvFocusFeedback()) { Text("Add to queue") }
         }
     }
 }

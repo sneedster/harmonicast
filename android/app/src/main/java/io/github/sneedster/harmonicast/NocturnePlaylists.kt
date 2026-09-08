@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 
 @Composable internal fun NocturnePlaylists(vm: HarmonicastViewModel, library: MusicLibrary) {
+    val focusState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
     var filter by rememberSaveable { mutableStateOf("") }
@@ -41,18 +42,22 @@ import kotlinx.coroutines.CancellationException
     val playlist = result?.getOrNull()?.firstOrNull { it.id == selected }
     BackHandler(selected != null) { selected = null }
     if (playlist != null) {
-        PlaylistDestination(vm, library, playlist) { selected = null }
+        focusState.SaveableStateProvider(playlist.id) {
+            TvFocusPage("playlist:${playlist.id}") { PlaylistDestination(vm, library, playlist) { selected = null } }
+        }
         return
     }
+    focusState.SaveableStateProvider("list") {
+    TvFocusPage("playlists:list") {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(filter, { filter = it }, singleLine = true, label = { Text("Filter playlists") },
+            RemoteTextField(filter, { filter = it }, singleLine = true, label = { Text("Filter playlists") },
                 shape = RoundedCornerShape(18.dp), modifier = Modifier.weight(1f))
-            IconButton(onClick = { attempt++ }) { Icon(Icons.Default.Refresh, "Refresh playlists") }
+            IconButton(onClick = { attempt++ }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Refresh, "Refresh playlists") }
         }
         when {
             result == null -> LinearProgressIndicator(Modifier.fillMaxWidth())
-            result!!.isFailure -> { Text("Couldn’t load playlists."); TextButton(onClick = { attempt++ }) { Text("Try again") } }
+            result!!.isFailure -> { Text("Couldn’t load playlists."); TextButton(onClick = { attempt++ }, modifier = Modifier.tvFocusFeedback()) { Text("Try again") } }
             result!!.getOrThrow().isEmpty() -> Text("No audio playlists in this Plex account. Playlists belong to their creator.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             else -> {
                 val visible = result!!.getOrThrow().filter { it.title.contains(filter, ignoreCase = true) }.sortedBy { it.title.lowercase() }
@@ -63,7 +68,7 @@ import kotlinx.coroutines.CancellationException
                         var focused by remember { mutableStateOf(false) }
                         val colors = MaterialTheme.colorScheme
                         Surface(onClick = { selected = entry.id }, shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier.onFocusChanged { focused = it.hasFocus },
+                            modifier = Modifier.tvFocusFeedback().then(Modifier.onFocusChanged { focused = it.hasFocus }),
                             border = BorderStroke(if (focused) 2.dp else 1.dp, colors.primary.copy(alpha = if (focused) 1f else .2f))) {
                             Column(Modifier.background(Brush.linearGradient(listOf(colors.secondaryContainer, colors.surface))).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Icon(Icons.AutoMirrored.Filled.QueueMusic, null, Modifier.size(48.dp), tint = colors.primary)
@@ -75,6 +80,8 @@ import kotlinx.coroutines.CancellationException
                 }
             }
         }
+    }
+    }
     }
 }
 
@@ -95,7 +102,7 @@ import kotlinx.coroutines.CancellationException
         finally { loading = false }
     }
     LazyColumn(contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { TextButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null); Text(" Playlists") } }
+        item { TextButton(onClick = back, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null); Text(" Playlists") } }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("PLEX PLAYLIST", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
@@ -103,12 +110,12 @@ import kotlinx.coroutines.CancellationException
                 Text("${playlist.trackCount} tracks", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("${tracks.size} playable tracks loaded", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = { vm.loadPlaylist(playlist, PlaylistAction.PLAY) }, enabled = vm.isActivePlayer && tracks.isNotEmpty()) { Icon(Icons.Default.PlayArrow, null); Text("Play") }
-                    OutlinedButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.SHUFFLE) }, enabled = vm.isActivePlayer && tracks.isNotEmpty()) { Text("Shuffle") }
+                    Button(onClick = { vm.loadPlaylist(playlist, PlaylistAction.PLAY) }, enabled = vm.isActivePlayer && tracks.isNotEmpty(), modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.PlayArrow, null); Text("Play") }
+                    OutlinedButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.SHUFFLE) }, enabled = vm.isActivePlayer && tracks.isNotEmpty(), modifier = Modifier.tvFocusFeedback()) { Text("Shuffle") }
                 }
                 Row {
-                    TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.NEXT) }, enabled = vm.isActivePlayer && tracks.isNotEmpty()) { Text("Play next") }
-                    TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.QUEUE) }, enabled = vm.isActivePlayer && tracks.isNotEmpty()) { Text("Add to queue") }
+                    TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.NEXT) }, enabled = vm.isActivePlayer && tracks.isNotEmpty(), modifier = Modifier.tvFocusFeedback()) { Text("Play next") }
+                    TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.QUEUE) }, enabled = vm.isActivePlayer && tracks.isNotEmpty(), modifier = Modifier.tvFocusFeedback()) { Text("Add to queue") }
                 }
             }
         }
@@ -116,8 +123,8 @@ import kotlinx.coroutines.CancellationException
         item {
             when {
                 loading -> LinearProgressIndicator(Modifier.fillMaxWidth())
-                failed -> { Text("Couldn’t load playlist tracks."); TextButton(onClick = { attempt++ }) { Text("Try again") } }
-                nextOffset != null -> OutlinedButton(onClick = { offset = nextOffset!! }, modifier = Modifier.fillMaxWidth()) { Text("Load more tracks") }
+                failed -> { Text("Couldn’t load playlist tracks."); TextButton(onClick = { attempt++ }, modifier = Modifier.tvFocusFeedback()) { Text("Try again") } }
+                nextOffset != null -> OutlinedButton(onClick = { offset = nextOffset!! }, modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth())) { Text("Load more tracks") }
                 tracks.isEmpty() -> Text("No playable tracks in this playlist.")
             }
         }

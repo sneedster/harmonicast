@@ -192,13 +192,13 @@ class LocalPlexClient(
         return id.removePrefix(prefix).also { require(it.matches(Regex("\\d+"))) { "Invalid collection" } }
     }
 
-    suspend fun search(source: PersonalPlexSource, query: String): List<Song> {
+    suspend fun search(source: PersonalPlexSource, query: String, expandAlbums: Boolean = true): List<Song> {
         val term = query.trim()
         if (term.isBlank()) return emptyList()
         val base = "/library/sections/${source.libraryKey}/search?query=${encodePlex(term)}"
         val direct = songs(source, serverContainer(source.baseUrl, source.token, "$base&type=10&limit=40"))
         val artists = metadataArray(serverContainer(source.baseUrl, source.token, "$base&type=8&limit=8"))
-        val albums = metadataArray(serverContainer(source.baseUrl, source.token, "$base&type=9&limit=8"))
+        val albums = if (expandAlbums) metadataArray(serverContainer(source.baseUrl, source.token, "$base&type=9&limit=8")) else emptyList()
         val expanded = mutableListOf<Song>()
         for (artist in artists) {
             val key = artist.optString("ratingKey")
