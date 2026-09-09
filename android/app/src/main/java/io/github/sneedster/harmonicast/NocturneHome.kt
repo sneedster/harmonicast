@@ -59,7 +59,10 @@ private class CollectionState {
 private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, CollectionState>> { error("Missing browse scope") }
 
 @Composable internal fun NocturneHome(vm: HarmonicastViewModel) {
-    val wide = LocalConfiguration.current.screenWidthDp >= 840
+    val configuration = LocalConfiguration.current
+    val wide = configuration.screenWidthDp >= 840
+    val useRail = wide || configuration.screenWidthDp > configuration.screenHeightDp
+    val compactLandscape = useRail && configuration.screenHeightDp < 500
     val colors = MaterialTheme.colorScheme
     var destination by rememberSaveable { mutableStateOf("Home") }
     // Source changes dispose collection data, including authenticated art URLs.
@@ -88,7 +91,7 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
             }
         }
             .windowInsetsPadding(WindowInsets.safeDrawing)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = if (wide) 28.dp else 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = if (wide) 28.dp else 20.dp, vertical = if (compactLandscape) 0.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.GraphicEq, null, tint = colors.primary, modifier = Modifier.size(22.dp))
                 Text("HARMONICAST", Modifier.padding(start = 10.dp).weight(1f), fontSize = 12.sp, letterSpacing = 3.sp)
                 TextButton(onClick = { navigate("Settings") }, modifier = Modifier.tvFocusFeedback()) {
@@ -97,11 +100,11 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
                 IconButton(onClick = { navigate("Settings") }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Settings, "Settings and color scheme") }
             }
             Row(Modifier.weight(1f)) {
-                if (wide) {
-                    NavigationRail(containerColor = Color.Transparent, modifier = Modifier.width(104.dp)) {
+                if (useRail) {
+                    NavigationRail(containerColor = Color.Transparent, modifier = Modifier.width(if (compactLandscape) 80.dp else 104.dp)) {
                         destinations.forEach { (name, icon) ->
                             NavigationRailItem(selected = destination == name, onClick = { navigate(name) },
-                                icon = { Icon(icon, name) }, label = { Text(name) }, modifier = Modifier.tvFocusFeedback().then(Modifier.padding(vertical = 8.dp)))
+                                icon = { Icon(icon, name) }, label = if (compactLandscape) null else ({ Text(name) }), modifier = Modifier.tvFocusFeedback().then(Modifier.padding(vertical = if (compactLandscape) 0.dp else 8.dp)))
                         }
                     }
                 }
@@ -124,7 +127,7 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
                 }
             }
             if (destination != "Player") BrowseMiniPlayer(vm) { navigate("Player") }
-            if (!wide) NavigationBar(containerColor = colors.background, windowInsets = WindowInsets(0, 0, 0, 0)) {
+            if (!useRail) NavigationBar(containerColor = colors.background, windowInsets = WindowInsets(0, 0, 0, 0)) {
                 destinations.forEach { (name, icon) -> NavigationBarItem(selected = destination == name,
                     onClick = { navigate(name) }, icon = { Icon(icon, name) }, label = { Text(name, fontSize = 11.sp) }) }
             }

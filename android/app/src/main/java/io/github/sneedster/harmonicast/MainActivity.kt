@@ -1934,11 +1934,7 @@ class MainActivity : ComponentActivity() {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                val rating = song.rating ?: 0.0
-                val filledStars = (rating / 2).toInt().coerceIn(0, 5)
-                Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-                    repeat(5) { index -> Icon(if (index < filledStars) Icons.Default.Star else Icons.Outlined.StarBorder, if (index == 0) "Plex rating $rating out of 10" else null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(23.dp)) }
-                }
+                PlexRatingStars(song.rating, Modifier.padding(top = 3.dp))
             }
 
         } else {
@@ -1954,7 +1950,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun PhonePlayerControls(vm: HarmonicastViewModel, floating: Boolean = false) {
+@Composable internal fun PhonePlayerControls(vm: HarmonicastViewModel, floating: Boolean = false, compact: Boolean = false) {
     val song = vm.nowPlaying.song ?: return
     var scrubPosition by remember(song.id) { mutableFloatStateOf(vm.playbackPosition) }
     var isScrubbing by remember(song.id) { mutableStateOf(false) }
@@ -1971,7 +1967,7 @@ class MainActivity : ComponentActivity() {
 
     Surface(color = if (floating) Color.Transparent else MaterialTheme.colorScheme.surface, tonalElevation = if (floating) 0.dp else 3.dp) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(horizontal = if (compact) 0.dp else 16.dp, vertical = if (compact) 0.dp else 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.fillMaxWidth()) {
@@ -2027,7 +2023,7 @@ class MainActivity : ComponentActivity() {
                 IconButton(onClick = { vm.previousSong() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback().then(Modifier.size(48.dp))) {
                     Icon(Icons.Default.SkipPrevious, "Previous track or restart", modifier = Modifier.size(32.dp))
                 }
-                FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback().then(Modifier.size(64.dp))) {
+                FilledIconButton(onClick = { vm.toggle() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback().then(Modifier.size(if (compact) 56.dp else 64.dp))) {
                     Icon(if (vm.nowPlaying.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (vm.nowPlaying.isPlaying) "Pause" else "Play", modifier = Modifier.size(36.dp))
                 }
                 IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost, modifier = Modifier.tvFocusFeedback().then(Modifier.size(48.dp))) {

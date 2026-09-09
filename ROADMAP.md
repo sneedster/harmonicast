@@ -15,7 +15,7 @@ are outside the planned scope.
 
 - Automatic Plex rating changes require explicit opt-in in Settings and default to disabled, including upgrades (owner decision, 2026-09-08).
 - Future update: let users adjust completion, skip, repeat-play and selection weights with clear explanations and safe defaults.
-- Project Memory sync pending: this session has no callable Project Memory tools; persist these decisions when the connection is restored.
+- The opt-in decision and v1.1.6 release were synchronized to Project Memory on 2026-09-08.
 
 ## Ongoing quality
 

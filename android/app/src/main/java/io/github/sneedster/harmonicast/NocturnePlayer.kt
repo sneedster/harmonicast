@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -12,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.automirrored.filled.StarHalf
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,9 +43,10 @@ import androidx.compose.ui.unit.sp
         return
     }
     val colors = MaterialTheme.colorScheme
-    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp)) {
-        val wide = maxWidth >= 650.dp
-        val artSize = if (wide) minOf(maxWidth * .42f, maxHeight - 32.dp).coerceAtLeast(100.dp)
+    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        val wide = maxWidth >= 480.dp && maxWidth > maxHeight
+        val compact = wide && maxHeight < 380.dp
+        val artSize = if (wide) minOf(maxWidth * .36f, maxHeight - if (compact) 56.dp else 16.dp).coerceAtLeast(64.dp)
             else minOf(maxWidth - 24.dp, maxHeight * .42f).coerceAtLeast(100.dp)
         val artwork: @Composable () -> Unit = {
             Crossfade(song, animationSpec = tween(280), label = "Now playing artwork") { track ->
@@ -61,30 +64,72 @@ import androidx.compose.ui.unit.sp
             }
         }
         val information: @Composable () -> Unit = {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (vm.nowPlaying.isPlaying) "NOW PLAYING" else "PAUSED", color = colors.primary, letterSpacing = 3.sp, fontSize = 11.sp)
-                Text(song.title, fontFamily = FontFamily.Serif, fontSize = if (wide) 36.sp else 27.sp, lineHeight = if (wide) 40.sp else 31.sp,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                TextButton(onClick = { search(song.artist) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.tvFocusFeedback()) {
-                    Text(song.artist, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                if (song.album.isNotBlank()) TextButton(onClick = { search(song.album) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.tvFocusFeedback()) { Text(song.album + (song.year?.let { " · $it" } ?: ""), color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    repeat(5) { index -> Icon(if (index < ((song.rating ?: 0.0) / 2).toInt()) Icons.Default.Star else Icons.Outlined.StarBorder,
-                        if (index == 0) "Plex rating ${song.rating ?: 0.0} out of 10" else null, Modifier.size(17.dp), tint = colors.primary) }
-                }
-                PhonePlayerControls(vm, floating = true)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 8.dp)) {
+                if (!compact) Text(if (vm.nowPlaying.isPlaying) "NOW PLAYING" else "PAUSED", color = colors.primary, letterSpacing = 3.sp, fontSize = 11.sp)
+                Text(song.title, fontFamily = FontFamily.Serif,
+                    fontSize = if (compact) 24.sp else if (wide) 36.sp else 27.sp,
+                    lineHeight = if (compact) 28.sp else if (wide) 40.sp else 31.sp,
+                    maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
+                Text(song.artist, fontSize = if (compact) 16.sp else 18.sp,
+                    color = colors.primary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().tvFocusFeedback().clickable { search(song.artist) }
+                        .heightIn(min = 40.dp).wrapContentHeight(Alignment.CenterVertically))
+                if (song.album.isNotBlank()) Text(song.album + (song.year?.let { " · $it" } ?: ""),
+                    color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().tvFocusFeedback().clickable { search(song.album) }
+                        .heightIn(min = 40.dp).wrapContentHeight(Alignment.CenterVertically))
+                PlexRatingStars(song.rating)
+            }
+        }
+        val extraActions: @Composable () -> Unit = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                if (compact) {
+                    IconButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Radio, "Track Radio") }
+                    IconButton(onClick = { details = true; vm.loadArtistDiscovery(song) }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Info, "Discover") }
+                } else {
                     TextButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Radio, null, Modifier.size(19.dp)); Text(" Track Radio") }
                     TextButton(onClick = { details = true; vm.loadArtistDiscovery(song) }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Info, null, Modifier.size(19.dp)); Text(" Discover") }
                 }
             }
         }
-        if (wide) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(36.dp), verticalAlignment = Alignment.CenterVertically) {
-            artwork()
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { information() }
-        } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            artwork(); information()
+        val controls: @Composable () -> Unit = {
+            Column(Modifier.fillMaxWidth()) {
+                PhonePlayerControls(vm, floating = true, compact = compact)
+                if (!compact) extraActions()
+            }
         }
+        if (wide) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(if (compact) 20.dp else 36.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.width(artSize), horizontalAlignment = Alignment.CenterHorizontally) {
+                artwork()
+                if (compact) extraActions()
+            }
+            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 16.dp)) {
+                // Keep transport visible; long metadata or large fonts can scroll independently.
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.Center) { information() }
+                controls()
+            }
+        } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            artwork()
+            information()
+            controls()
+        }
+    }
+}
+
+/** Plex stores tenths on a ten-point scale; votes move one point (half a star). */
+@Composable internal fun PlexRatingStars(rating: Double?, modifier: Modifier = Modifier) {
+    val value = (rating ?: 0.0).coerceIn(0.0, 10.0)
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        repeat(5) { index ->
+            val icon = when {
+                value >= (index + 1) * 2 -> Icons.Default.Star
+                value >= index * 2 + 1 -> Icons.AutoMirrored.Filled.StarHalf
+                else -> Icons.Outlined.StarBorder
+            }
+            Icon(icon, if (index == 0) "Plex rating $value out of 10" else null,
+                Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
+        }
+        Text(if (rating == null) "Unrated" else String.format(java.util.Locale.ROOT, "%.1f / 10", value),
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

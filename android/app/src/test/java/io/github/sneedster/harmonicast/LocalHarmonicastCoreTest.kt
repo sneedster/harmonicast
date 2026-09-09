@@ -82,6 +82,67 @@ class LocalHarmonicastCoreTest {
         assertTrue(calls.isEmpty())
     }
 
+    @Test fun confirmedVoteRefreshesSnapshotAndSurvivesPlaybackCallbacks() = runBlocking {
+        val storage = MemoryStorage()
+        val http = object : PlexHttp {
+            override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>) =
+                """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"1","librarySectionID":"7","title":"Song","userRating":6,"Media":[{"Part":[{"key":"/part/1"}]}]}]}}"""
+        }
+        val core = LocalHarmonicastCore(source, storage, LocalPlexClient(storage, http))
+        val original = song("1").copy(rating = 6.0)
+        core.playback.publish(original, true, false)
+        core.playback.savePosition(42.0)
+        val events = mutableListOf<CoreEvent>()
+        val subscription = core.observe({ events += it }, {})
+        try {
+            core.guests.vote(true)
+            assertEquals(7.0, core.playback.snapshot().nowPlaying.song!!.rating!!, 0.0)
+            assertTrue(events.contains(CoreEvent.CHANGED))
+            assertEquals(42.0, core.playback.snapshot().positionSeconds, 0.0)
+            core.playback.publish(original, false, false)
+            val recreated = LocalHarmonicastCore(source, storage).playback.snapshot()
+            assertEquals(7.0, recreated.nowPlaying.song!!.rating!!, 0.0)
+            assertEquals(original.streamUri, recreated.nowPlaying.song!!.streamUri)
+            assertEquals(42.0, recreated.positionSeconds, 0.0)
+            assertFalse(recreated.nowPlaying.isPlaying)
+        } finally { subscription.close() }
+    }
+
+    @Test fun failedVoteDoesNotChangeDisplayedRating() = runBlocking {
+        val storage = MemoryStorage()
+        val http = object : PlexHttp {
+            override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+                if (method == "PUT") error("Plex unavailable")
+                return """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"1","librarySectionID":"7","title":"Song","userRating":6}]}}"""
+            }
+        }
+        val core = LocalHarmonicastCore(source, storage, LocalPlexClient(storage, http))
+        core.playback.publish(song("1").copy(rating = 6.0), true, false)
+        assertThrows(IllegalStateException::class.java) { runBlocking { core.guests.vote(true) } }
+        assertEquals(6.0, core.playback.snapshot().nowPlaying.song!!.rating!!, 0.0)
+    }
+
+    @Test fun delayedVoteDoesNotChangeOrSkipTheNextTrack() = runBlocking {
+        val storage = MemoryStorage()
+        lateinit var core: LocalHarmonicastCore
+        val http = object : PlexHttp {
+            override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+                if (method == "PUT") core.playback.publish(song("2").copy(rating = 8.0), true, true)
+                return """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"1","librarySectionID":"7","title":"Song","userRating":6}]}}"""
+            }
+        }
+        core = LocalHarmonicastCore(source, storage, LocalPlexClient(storage, http))
+        core.playback.publish(song("1").copy(rating = 6.0), true, true)
+        val events = mutableListOf<CoreEvent>()
+        val subscription = core.observe({ events += it }, {})
+        try {
+            core.guests.vote(false)
+            assertEquals(song("2").id, core.playback.snapshot().nowPlaying.song!!.id)
+            assertEquals(8.0, core.playback.snapshot().nowPlaying.song!!.rating!!, 0.0)
+            assertFalse(events.contains(CoreEvent.FORCE_SKIP))
+        } finally { subscription.close() }
+    }
+
     @Test fun unconfiguredCoreRequiresPlexWithoutOpeningRemoteTransport() = runBlocking {
         val core = LocalHarmonicastCore(null, MemoryStorage())
         assertFalse(core.guests.policy().configured)

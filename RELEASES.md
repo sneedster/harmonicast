@@ -1,5 +1,17 @@
 # Releases
 
+## v1.1.7 — landscape player and live rating feedback
+
+Version code: **64**.
+
+- Phone landscape separates song details from progress and playback controls, with spacing that adapts to available height.
+- Compact landscape navigation leaves more room for the player. Track Radio and Discover sit beneath artwork on short screens.
+- Thumbs-up/down updates the visible rating after Plex confirms the change. Half-stars and a numeric rating make small changes visible.
+- Rating feedback preserves playback position and survives later playback updates. Failed or delayed votes cannot incorrectly update another song's display.
+- Automatic Plex rating changes remain opt-in and disabled by default.
+
+The owner accepted the fixes on Pixel. Validation includes 78 tests, rendered portrait/landscape checks, full debug lint, and the signed release build.
+
 ## v1.1.6 — automatic Plex ratings require opt-in
 
 Version code: **63**.

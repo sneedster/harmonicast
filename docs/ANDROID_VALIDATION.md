@@ -145,3 +145,35 @@ The owner authorized publication as v1.1.6 (code 63). Release checks passed:
 71 tests, full debug lint, signed release build and release vital lint. APK
 version metadata and signing-certificate continuity with v1.1.5 were verified.
 No device installation was performed.
+
+## Phone landscape and live ratings — 2026-09-08
+
+Separated song metadata from progress/transport in NocturnePlayer. Landscape
+uses a compact navigation rail/header, fits artwork to available height, and
+places Track Radio/Discover below artwork on short displays. Metadata scrolls
+independently if needed; portrait keeps the stacked layout.
+
+Confirmed Plex vote writes now update the current playback snapshot and publish
+a change event. Playback callbacks preserve that rating. Failed votes leave the
+display unchanged; delayed votes cannot overwrite or skip a different current
+track. Both native star displays show half stars plus the numeric Plex rating.
+
+Validation: 78 tests, debug assembly, full debug lint, signed local release
+assembly and release vital lint passed. Four native-rendered Compose tests cover
+portrait, landscape, short landscape, full landscape navigation, and visible
+rating changes. Core tests cover successful/failed/delayed vote responses.
+
+Installed signed 1.1.6-player-test (code 63) on Pixel 10 Pro over wireless ADB.
+Observed full metadata, ratings, progress and all transport buttons in landscape
+and portrait. Screenshots showed the same paused song changing from 4.7 to 5.7;
+the agent did not issue a live vote. Restored automatic rotation to its original
+enabled state. Wireless ADB was re-enabled at the owner's request and verified.
+No Shield installation and no public release for these changes. Device owner
+acceptance remains pending. Project Memory sync of the v1.1.6 opt-in decision
+and release is now complete.
+
+The owner accepted the Pixel layout and rating fixes and authorized publication
+as v1.1.7 (version code 64) on 2026-09-08.
+Release checks for v1.1.7 passed: 78 tests, full debug lint, signed release
+build and release vital lint. Verified APK version metadata and signing
+certificate continuity with v1.1.6.

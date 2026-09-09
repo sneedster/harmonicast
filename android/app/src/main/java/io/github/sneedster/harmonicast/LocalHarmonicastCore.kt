@@ -1,11 +1,14 @@
 package io.github.sneedster.harmonicast
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.roundToInt
 
 private object LocalCoreEvents {
+    val ratingMutex = Mutex()
     val listeners = CopyOnWriteArrayList<(CoreEvent) -> Unit>()
     fun publish(event: CoreEvent) = listeners.forEach { it(event) }
 }
@@ -115,8 +118,13 @@ class LocalHarmonicastCore(
                 else previous.nowPlaying.song?.takeIf { it.id == value.id && it.streamUri != null }
                     ?: plex.track(source, value.id) ?: value
             }
+            // Playback callbacks can carry metadata captured before a vote finished.
+            val displayedSong = persistedSong?.let { current ->
+                previous.nowPlaying.song?.takeIf { it.id == current.id }
+                    ?.let { current.copy(rating = it.rating) } ?: current
+            }
             val value = JSONObject()
-                .put("song", persistedSong?.let(::encodeSong) ?: JSONObject.NULL)
+                .put("song", displayedSong?.let(::encodeSong) ?: JSONObject.NULL)
                 .put("isPlaying", isPlaying)
                 .put("isAutoQueue", isAutoQueue)
                 .put("position", if (previous.nowPlaying.song?.id == persistedSong?.id) previous.positionSeconds else 0.0)
@@ -140,7 +148,10 @@ class LocalHarmonicastCore(
                 val current = runCatching { plex.track(source, song.id) }.getOrNull()
                 if (current != null) {
                     val adjusted = adjustPersonalRating(current.rating, event, progress, current.viewCount)
-                    if (adjusted != current.rating && AutomaticPlexRatings(storage).enabled) plex.rate(source, song.id, adjusted)
+                    if (adjusted != current.rating && AutomaticPlexRatings(storage).enabled) {
+                        val saved = plex.rate(source, song.id, adjusted)
+                        updateDisplayedRating(song.id, saved)
+                    }
                 }
             }
             val history = storage.read("local.playbackHistory")?.let { runCatching { JSONArray(it) }.getOrNull() } ?: JSONArray()
@@ -160,16 +171,27 @@ class LocalHarmonicastCore(
             needsPlexSetup = false,
             isSetupOwner = true,
         )
-        override suspend fun vote(up: Boolean) {
+        override suspend fun vote(up: Boolean) = LocalCoreEvents.ratingMutex.withLock {
             check(source.canWriteToPlex) { "Ratings are unavailable on a shared read-only Plex server" }
             val state = playback.snapshot()
             val current = state.nowPlaying.song
                 ?: throw IllegalStateException("No song is currently playing")
             val fresh = plex.track(source, current.id) ?: current
             val points = ((fresh.rating ?: 5.0) * 10).toInt()
-            plex.rate(source, current.id, (points + if (up) 10 else -10).coerceIn(0, 100) / 10.0)
-            if (shouldSkipAfterVote(up, state.isAutoQueue)) LocalCoreEvents.publish(CoreEvent.FORCE_SKIP)
+            val saved = plex.rate(source, current.id, (points + if (up) 10 else -10).coerceIn(0, 100) / 10.0)
+            updateDisplayedRating(current.id, saved)
+            if (shouldSkipAfterVote(up, state.isAutoQueue) && playback.snapshot().nowPlaying.song?.id == current.id) LocalCoreEvents.publish(CoreEvent.FORCE_SKIP)
         }
+    }
+
+    private fun updateDisplayedRating(id: String, rating: Double) {
+        val state = storage.read("local.playback")?.let(::JSONObject) ?: return
+        val song = state.optJSONObject("song")?.let(::decodeSong) ?: return
+        // A Plex request can finish after the listener has moved to the next track.
+        if (song.id != id) return
+        state.put("song", encodeSong(song.copy(rating = rating)))
+        storage.write(mapOf("local.playback" to state.toString()))
+        LocalCoreEvents.publish(CoreEvent.CHANGED)
     }
 
     private fun readSongs(key: String): List<Song> = storage.read(key)?.let {
