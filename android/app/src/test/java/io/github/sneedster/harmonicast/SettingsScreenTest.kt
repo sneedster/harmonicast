@@ -166,4 +166,16 @@ class SettingsScreenTest {
         compose.runOnIdle { assertEquals(3, vm.musicTuning.selection); assertFalse(vm.automaticPlexRatings) }
     }
 
+    @Test fun replayWindowDefaultsToWeekAndIsIndependentOfRatingConsent() {
+        setup()
+        open("Automatic mix")
+        compose.onNodeWithContentDescription("Avoid recent repeats: 1 week").assertExists()
+        compose.onNodeWithContentDescription("Increase Avoid recent repeats").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(14, vm.replayWindowDays); assertFalse(vm.automaticPlexRatings) }
+        compose.onNodeWithText("Back").performScrollTo().performClick()
+        open("Automatic mix")
+        compose.onNodeWithContentDescription("Avoid recent repeats: 2 weeks").assertExists()
+        screenshot("phone-replay-window")
+    }
+
 }

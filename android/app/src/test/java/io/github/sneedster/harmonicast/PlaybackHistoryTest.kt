@@ -54,4 +54,13 @@ class PlaybackHistoryTest {
         assertNull(history.previous(0))
         assertEquals("C", history.next())
     }
+    @Test fun startingRandomDiscardsForwardReplayWithoutRemovingPreviousHistory() {
+        val history = PlaybackHistory<String>()
+        history.record("A"); history.record("B"); history.record("C")
+        assertEquals("B", history.previous(0))
+        history.discardForward()
+        assertNull(history.next())
+        assertEquals("A", history.previous(0))
+    }
+
 }

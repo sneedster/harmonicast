@@ -206,3 +206,39 @@ no Shield installation or physical TV tests were performed. Automated TV layout
 checks ran locally, not on the TV. No live Plex rating changes were issued.
 No new physical Android Auto or room-transfer acceptance is claimed. Public release
 is pending Pixel review; v1.1.7 remains the published release.
+
+
+### Replay-window follow-up — 2026-09-09
+
+The owner requested excluding songs played within the last week from automatic
+mixes, including skips that do not receive a Plex completion scrobble. Added
+Settings → Automatic mix → Avoid recent repeats, defaulting to 1 week with Off,
+1 day, 3 days, 1 week, 2 weeks, and 30 days options.
+
+Automatic candidates use the newer of Plex `lastViewedAt` and durable local
+play/start/skip timestamps. Existing available local history is imported on upgrade;
+the recent-track index is retained by age rather than the 500-event display-history
+limit. It remains independent of automatic-rating consent. Source changes retain
+server-scoped timestamps; sign-out clears local history. Skips on another host or in
+another app require Plex to record them to become visible here.
+
+All candidate pools respect the cutoff. Bounded oldest-first pages top up random
+samples dominated by recent tracks. Automatic queue entries are checked again
+against current local history and fresh Plex metadata when dequeued. Explicit
+requests, Track Radio, and Previous retain their behavior. Starting a new random
+mix discards the forward playback-history lane; exhaustion displays a message and
+never relaxes the exclusion window.
+
+Validation: 115 tests, full debug lint, signed release assembly, and release vital
+lint passed. New regressions cover boundary dates, persistence, history migration,
+more than 500 recent tracks, opt-out/read-only playback, queue freshness, requests
+arriving during metadata fetch, fallback filtering, bounded top-up, library changes,
+sign-out, forward-history reset, and the Settings control. The phone layout was
+rendered and visually inspected. No physical TV tests were run, per owner request.
+
+The updated signed v1.1.8/code 65 candidate replaced the earlier candidate on Pixel
+with `adb install -r`. Signature continuity and APK metadata were verified. SHA-256:
+43fc79eb76048d04fddb1f0a7c9ec52a1a50a885d03e8bd7db019d9a416b282b.
+The Pixel remains locked; interactive acceptance and public release remain pending.
+The earlier candidate hash above is superseded. No live Plex votes or completion
+scrobbles were issued as part of these checks.

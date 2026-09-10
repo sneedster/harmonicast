@@ -4,7 +4,7 @@
 
 Version code: **65**. Pixel acceptance and public release are pending; the owner requested no TV device testing.
 
-Validation: 98 tests, full debug lint, and signed release checks passed. Installed
+Validation: 115 tests, full debug lint, and signed release checks passed. Installed
 over v1.1.7 on Pixel; interactive verification is pending screen unlock.
 
 - Settings is organized into Appearance, Playback, Automatic mix, Automatic ratings,
@@ -13,7 +13,11 @@ over v1.1.7 on Pixel; interactive verification is pending screen unlock.
   playback transfer/take-back, and separate guest/display QR dialogs.
 - Tune completion boosts, skip penalties, repeat-play influence, and automatic
   selection preference with simple stepped controls and calculated examples.
-- Defaults preserve existing behavior. Automatic rating tuning requires explicit
+- Avoid recent repeats defaults to one week and is configurable in Automatic mix.
+  Uses Plex last-played timestamps plus local playback starts, completions, and skips,
+  independently of rating consent. Already queued automatic tracks are rechecked;
+  manual requests and Track Radio remain available.
+- Rating and selection-strength defaults preserve existing behavior. Automatic rating tuning requires explicit
   opt-in; selection tuning works independently. Settings stay local to each device.
 - Rating updates serialize with explicit votes, and failed automatic writes do not
   prevent local listening history from being recorded.

@@ -64,6 +64,7 @@ class HomeProfileStore(private val storage: ProfileStorage) {
         "local.queue" to "[]",
         "local.playback" to "",
         "local.playbackHistory" to "[]",
+        "local.automaticMixStatus" to "",
         "local.jukeboxMixIndex" to "",
     ))
     fun clearPersonalSource() {
@@ -80,6 +81,8 @@ class HomeProfileStore(private val storage: ProfileStorage) {
             "local.queue" to "[]",
             "local.playback" to "",
             "local.playbackHistory" to "[]",
+            "local.recentTrackPlays" to "{}",
+            "local.automaticMixStatus" to "",
             "local.jukeboxMixIndex" to "",
         ))
     }

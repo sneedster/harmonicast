@@ -18,7 +18,10 @@ class LocalHarmonicastCore(
     private val configuredSource: PersonalPlexSource?,
     private val storage: ProfileStorage,
     private val plex: LocalPlexClient = LocalPlexClient(storage),
+    private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : HarmonicastCore {
+    private val replayWindow = ReplayWindow(storage)
+    private val recentPlays = RecentTrackPlays(storage)
     private val source: PersonalPlexSource get() = checkNotNull(configuredSource) { "Sign in with Plex first" }
     override fun observe(onEvent: (CoreEvent) -> Unit, onDisconnected: () -> Unit): CoreSubscription {
         LocalCoreEvents.listeners += onEvent
@@ -44,11 +47,39 @@ class LocalHarmonicastCore(
     override val queue: MusicQueue = object : MusicQueue {
         override suspend fun songs() = readSongs("local.queue")
         override suspend fun dequeue(): QueueSelection {
-            val items = songs().toMutableList()
-            val song = items.removeFirstOrNull()
-            writeSongs("local.queue", items)
-            if (song != null) LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
-            return QueueSelection(song, song?.isManual ?: true)
+            var removedAutomatic = false
+            while (true) {
+                val candidate = songs().firstOrNull() ?: run {
+                    if (removedAutomatic) {
+                        storage.write(mapOf(ReplayWindow.STATUS_KEY to ReplayWindow.EMPTY_MESSAGE))
+                        LocalCoreEvents.publish(CoreEvent.CHANGED)
+                    }
+                    return QueueSelection(null)
+                }
+                val cutoff = replayWindow.cutoff(nowMillis())
+                val automatic = !candidate.isManual && !candidate.isRadio
+                var selected: Song? = candidate
+                if (automatic && cutoff != null) {
+                    val local = recentPlays.snapshot(nowMillis())
+                    selected = if (!eligibleForAutomaticMix(candidate, cutoff, local)) null
+                        else plex.track(source, candidate.id)?.copy(isManual = false)
+                    // Re-read preferences/history after the metadata request. Another
+                    // device may have played it, or the user may have changed the window.
+                    if (selected != null && !eligibleForAutomaticMix(selected,
+                            replayWindow.cutoff(nowMillis()), recentPlays.snapshot(nowMillis()))) selected = null
+                }
+                // A request may have arrived while Plex metadata was loading. Respect
+                // the new queue head and never overwrite newly added requests.
+                val latest = songs()
+                if (latest.firstOrNull() != candidate) continue
+                writeSongs("local.queue", latest.drop(1))
+                if (selected == null) removedAutomatic = true
+                LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
+                if (selected != null) {
+                    storage.write(mapOf(ReplayWindow.STATUS_KEY to ""))
+                    return QueueSelection(selected, candidate.isManual)
+                }
+            }
         }
         override suspend fun add(song: Song) {
             val current = songs()
@@ -83,11 +114,16 @@ class LocalHarmonicastCore(
         }
         override suspend fun enableAutomaticPlayback() {
             if (songs().isEmpty()) {
-                val pools = plex.jukeboxPools(source)
+                val cutoff = replayWindow.cutoff(nowMillis())
+                val local = recentPlays.snapshot(nowMillis())
+                val pools = plex.jukeboxPools(source) { eligibleForAutomaticMix(it, cutoff, local) }
                 val share = ratedTrackShare()
                 val start = storage.read("local.jukeboxMixIndex")?.toIntOrNull()?.coerceAtLeast(0) ?: 0
                 val selection = chooseJukeboxTracks(pools, 5, share, start, MusicTuningStore(storage).read())
-                writeSongs("local.queue", selection.songs.map { it.copy(isManual = false) })
+                // Preserve requests added during candidate loading.
+                writeSongs("local.queue", songs() + selection.songs.map { it.copy(isManual = false) })
+                storage.write(mapOf(ReplayWindow.STATUS_KEY to if (selection.songs.isEmpty() && songs().isEmpty())
+                    ReplayWindow.EMPTY_MESSAGE else ""))
                 storage.write(mapOf("local.jukeboxMixIndex" to selection.nextMixIndex.toString()))
                 LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
             }
@@ -113,6 +149,10 @@ class LocalHarmonicastCore(
         override suspend fun isActivePlayer() = true
         override suspend fun publish(song: Song?, isPlaying: Boolean, isAutoQueue: Boolean) {
             val previous = snapshot()
+            if (song != null && isPlaying && (previous.nowPlaying.song?.id != song.id || !previous.nowPlaying.isPlaying)) {
+                recentPlays.record(song.id, nowMillis())
+                storage.write(mapOf(ReplayWindow.STATUS_KEY to ""))
+            }
             val persistedSong = song?.let { value ->
                 if (value.streamUri != null) value
                 else previous.nowPlaying.song?.takeIf { it.id == value.id && it.streamUri != null }
@@ -144,6 +184,7 @@ class LocalHarmonicastCore(
             if (source.canWriteToPlex && submission) plex.scrobble(source, id)
         }
         override suspend fun recordEvent(song: Song, event: String, progress: Double) {
+            if (event == "complete" || event == "skip") recentPlays.record(song.id, nowMillis())
             try {
                 if (source.canWriteToPlex && AutomaticPlexRatings(storage).enabled && event in setOf("complete", "skip")) {
                     LocalCoreEvents.ratingMutex.withLock {
@@ -167,7 +208,7 @@ class LocalHarmonicastCore(
             }
             val history = storage.read("local.playbackHistory")?.let { runCatching { JSONArray(it) }.getOrNull() } ?: JSONArray()
             history.put(JSONObject().put("song", encodeSong(song)).put("event", event)
-                .put("progress", progress.coerceIn(0.0, 1.0)).put("at", System.currentTimeMillis()))
+                .put("progress", progress.coerceIn(0.0, 1.0)).put("at", nowMillis()))
             val bounded = JSONArray()
             for (index in maxOf(0, history.length() - 500) until history.length()) bounded.put(history.get(index))
             storage.write(mapOf("local.playbackHistory" to bounded.toString()))

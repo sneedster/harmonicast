@@ -16,6 +16,8 @@ data class Song(
     val streamUri: String? = null,
     val artworkUri: String? = null,
     val viewCount: Int = 0,
+    /** Plex lastViewedAt converted from epoch seconds; null means no known Plex play. */
+    val lastPlayedAtMillis: Long? = null,
 )
 data class NowPlaying(val song: Song? = null, val isPlaying: Boolean = false)
 data class ArtistDiscovery(val name: String, val bio: String, val genres: List<String>, val similarArtists: List<String>, val albumName: String, val albumYear: Int?, val albumSummary: String)

@@ -22,6 +22,11 @@ internal class PlaybackHistory<T>(private val capacity: Int = 100) {
         return items[--index]
     }
 
+    /** Starting a new automatic mix must not resume the forward replay lane. */
+    fun discardForward() {
+        while (items.lastIndex > index) items.removeAt(items.lastIndex)
+    }
+
     /** Null means continue with the shared queue. */
     fun next(): T? = if (index < items.lastIndex) items[++index] else null
 }

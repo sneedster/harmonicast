@@ -227,14 +227,34 @@ class LocalPlexClient(
         ),
     )
 
-    suspend fun jukeboxPools(source: PersonalPlexSource, limit: Int = 100): PlexJukeboxPools {
+    suspend fun jukeboxPools(
+        source: PersonalPlexSource,
+        limit: Int = 100,
+        eligible: (Song) -> Boolean = { true },
+    ): PlexJukeboxPools {
         val bounded = limit.coerceIn(1, 100)
-        val path = "/library/sections/${source.libraryKey}/all?type=10&sort=random&limit=$bounded"
-        val rated = songs(source, serverContainer(source.baseUrl, source.token, "$path&userRating%3E=1"))
-            .filter { (it.rating ?: 0.0) > 1.0 }
-        val unrated = songs(source, serverContainer(source.baseUrl, source.token, "$path&userRating=-1"))
-            .filter { it.rating == null }
-        val fallback = songs(source, serverContainer(source.baseUrl, source.token, path))
+        suspend fun pool(filter: String, category: (Song) -> Boolean): List<Song> {
+            val base = "/library/sections/${source.libraryKey}/all?type=10"
+            val random = songs(source, serverContainer(source.baseUrl, source.token,
+                "$base&sort=random&limit=$bounded&X-Plex-Container-Size=$bounded$filter"))
+            val candidates = random.filter { category(it) && eligible(it) }.associateByTo(linkedMapOf(), Song::id)
+            if (candidates.size >= minOf(5, bounded) || random.size < bounded) return candidates.values.toList()
+            // A random sample can be dominated by recent plays. Top up from oldest
+            // candidates with bounded, stable pages; never relax the replay cutoff.
+            for (page in 0 until 4) {
+                val offset = page * bounded
+                val container = serverContainer(source.baseUrl, source.token,
+                    "$base&sort=${encodePlex("lastViewedAt:asc,titleSort:asc")}&X-Plex-Container-Start=$offset&X-Plex-Container-Size=$bounded$filter")
+                val raw = metadataArray(container)
+                songs(source, container).filter { category(it) && eligible(it) }.forEach { candidates[it.id] = it }
+                if (candidates.size >= minOf(5, bounded) || raw.size < bounded ||
+                    (container.has("totalSize") && offset + raw.size >= container.optInt("totalSize"))) break
+            }
+            return candidates.values.toList()
+        }
+        val rated = pool("&userRating%3E=1") { (it.rating ?: 0.0) > 1.0 }
+        val unrated = pool("&userRating=-1") { it.rating == null }
+        val fallback = pool("") { true }
         return PlexJukeboxPools(rated, unrated, fallback)
     }
 
@@ -387,6 +407,7 @@ class LocalPlexClient(
             streamUri = firstPart(item)?.let { authenticatedUrl(source, it) },
             artworkUri = item.optString("thumb").takeIf { it.startsWith('/') }?.let { authenticatedUrl(source, it) },
             viewCount = item.optInt("viewCount").coerceAtLeast(0),
+            lastPlayedAtMillis = item.optLong("lastViewedAt").takeIf { it in 1..(Long.MAX_VALUE / 1000) }?.times(1000),
         )
     }
 

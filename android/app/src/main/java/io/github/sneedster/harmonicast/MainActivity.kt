@@ -119,6 +119,8 @@ class HarmonicastViewModel : ViewModel() {
     var isHost by mutableStateOf(false); var isActivePlayer by mutableStateOf(false)
     internal var musicTuning by mutableStateOf(MusicTuning()); private set
     var automaticPlexRatings by mutableStateOf(false); private set
+    var replayWindowDays by mutableIntStateOf(7); private set
+    var automaticMixStatus by mutableStateOf(""); private set
     var ratedTrackShare by mutableIntStateOf(8); private set
     var settingsSaving by mutableStateOf(false); private set
     var configured by mutableStateOf(true)
@@ -154,6 +156,7 @@ class HarmonicastViewModel : ViewModel() {
         colorSchemeName = context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE).getString("ui.palette", "Nocturne") ?: "Nocturne"
         keepScreenOnWhileCharging = context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE)
             .getBoolean("ui.keepScreenOnWhileCharging", false)
+        replayWindowDays = ReplayWindow(api.storage).days
         musicTuning = MusicTuningStore(api.storage).read()
         automaticPlexRatings = AutomaticPlexRatings(api.storage).enabled
         plex = LocalPlexClient(api.storage)
@@ -338,6 +341,8 @@ class HarmonicastViewModel : ViewModel() {
                     val state = core.playback.snapshot()
                     nowPlaying = state.nowPlaying
                     playbackPosition = state.positionSeconds.toFloat().coerceAtLeast(0f)
+                    replayWindowDays = ReplayWindow(api.storage).days
+                    automaticMixStatus = api.storage.read(ReplayWindow.STATUS_KEY).orEmpty()
                     musicTuning = MusicTuningStore(api.storage).read()
                     automaticPlexRatings = AutomaticPlexRatings(api.storage).enabled
                     ratedTrackShare = core.queue.ratedTrackShare()
@@ -643,6 +648,15 @@ class HarmonicastViewModel : ViewModel() {
         }
     }
 
+    fun saveReplayWindow(days: Int) {
+        if (!isPersonalMode || !isHost) return
+        try {
+            ReplayWindow(api.storage).days = days
+            replayWindowDays = days
+            automaticMixStatus = ""
+        } catch (e: Exception) { error = e.message ?: "Could not save replay window" }
+    }
+
     fun saveRatedTrackShare(share: Int, announce: Boolean = true) {
         if (!isHost || settingsSaving) return
         val value = share.coerceIn(0, 10)
@@ -681,16 +695,11 @@ class HarmonicastViewModel : ViewModel() {
 
     /** Enables Jukebox, populates its random queue, and starts its first song. */
     fun startRandomPlayback() {
-        viewModelScope.launch {
-            try {
-                core.queue.enableAutomaticPlayback()
-                nextSong()
-            } catch (e: Exception) {
-                error = "Failed to start random playback"
-            }
-        }
+        if (!isActivePlayer) return
+        context.startService(Intent(context, HarmonicastMediaService::class.java)
+            .setAction(HarmonicastMediaService.START_RANDOM_PLAYBACK_ACTION))
     }
-    
+
     fun toggle() {
         nowPlaying.song ?: return
         if (nowPlaying.isPlaying) controller?.pause() else controller?.play()

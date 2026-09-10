@@ -96,6 +96,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         private const val COMMAND_PLAY_SIMILAR = "io.github.sneedster.harmonicast.PLAY_SIMILAR"
         private const val COMMAND_CLEAR_QUEUE = "io.github.sneedster.harmonicast.CLEAR_QUEUE"
         const val CLAIM_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.CLAIM_PLAYBACK"
+        const val START_RANDOM_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.START_RANDOM_PLAYBACK"
         const val SKIP_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.SKIP_PLAYBACK"
         const val RELOAD_PROFILE_ACTION = "io.github.sneedster.harmonicast.RELOAD_PROFILE"
         const val ENABLE_GUEST_CONTROL_ACTION = "io.github.sneedster.harmonicast.ENABLE_GUEST_CONTROL"
@@ -507,6 +508,8 @@ class HarmonicastMediaService : MediaLibraryService() {
             ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
                 if (mediaItems.size == 1 && mediaItems[0].mediaId == PLAY_RANDOM_ID) {
                     return scope.future {
+                        playbackHistory.discardForward()
+                        player.currentMediaItem?.let { RecentTrackPlays(api.storage).record(it.mediaId, System.currentTimeMillis()) }
                         val item = dequeueRandomItem()
                         MediaSession.MediaItemsWithStartPosition(item?.let(::listOf) ?: emptyList(), 0, 0)
                     }
@@ -659,6 +662,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 }
             }
             TAKE_BACK_PLAYBACK_ACTION -> scope.launch { takeBackNativePlayback(true) }
+            START_RANDOM_PLAYBACK_ACTION -> { playbackHistory.discardForward(); advance("skip") }
             SKIP_PLAYBACK_ACTION -> advance("skip")
             RELOAD_PROFILE_ACTION -> reloadProfile()
             ENABLE_GUEST_CONTROL_ACTION -> enableGuestControl()

@@ -36,7 +36,13 @@ Use **Rooms** to join or host a room, share guest/display QR codes, or transfer 
 take back playback. The Settings hub also links to Rooms.
 
 **Automatic mix** sets the rated/unrated balance and preference for higher ratings.
-Changes apply to new automatic batches; already queued songs stay in place.
+Selection-strength changes apply to new automatic batches. **Avoid recent repeats**
+defaults to **1 week**, with Off, 1 day, 3 days, 1 week, 2 weeks, and 30 days options.
+Automatic tracks are excluded using the newer of Plex last-played time and local
+play/skip history, including tracks already queued when they come up. Skips count
+even with automatic ratings off. Explicit requests, Track Radio, and Previous remain
+available. If no eligible tracks are found, the mix stops instead of relaxing the
+window. Skips on other devices or in other apps are only known when Plex records them.
 **Automatic ratings** requires explicit opt-in before its completion, skip, and
 repeat-play controls can be adjusted. Changes are saved to Plex and can replace
 existing ratings. Turning the feature off does not undo past changes. Defaults

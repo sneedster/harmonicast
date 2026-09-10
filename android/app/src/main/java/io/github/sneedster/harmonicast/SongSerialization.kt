@@ -15,6 +15,7 @@ internal fun decodeSong(item: JSONObject) = Song(
     item.optString("streamUri").takeIf { it.isNotBlank() },
     item.optString("artworkUri").takeIf { it.isNotBlank() },
     item.optInt("viewCount").coerceAtLeast(0),
+    item.optLong("lastPlayedAtMillis").takeIf { it > 0 },
 )
 internal fun encodeSong(song: Song) = JSONObject().put("id", song.id).put("title", song.title)
     .put("artist", song.artist).put("album", song.album).put("year", song.year)
@@ -23,3 +24,4 @@ internal fun encodeSong(song: Song) = JSONObject().put("id", song.id).put("title
     .put("isManual", song.isManual).put("isRadio", song.isRadio)
     .put("streamUri", song.streamUri).put("artworkUri", song.artworkUri)
     .put("viewCount", song.viewCount)
+    .put("lastPlayedAtMillis", song.lastPlayedAtMillis)

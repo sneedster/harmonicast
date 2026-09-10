@@ -231,6 +231,11 @@ private val selectionLabels = listOf("Equal chance", "Mild", "Normal", "Strong",
 
 @Composable private fun MixSettings(vm: HarmonicastViewModel) {
     val tuning = vm.musicTuning
+    SteppedSetting("Avoid recent repeats", "Keep songs out of the automatic mix after they were played or skipped. Uses Plex last-played dates plus listening on this device.",
+        ReplayWindow.DAY_OPTIONS.indexOf(vm.replayWindowDays), ReplayWindow.LABELS, vm.isPersonalMode && vm.isHost) { vm.saveReplayWindow(ReplayWindow.DAY_OPTIONS[it]) }
+    SettingsDescription("Default: 1 week. Applies to automatic songs already queued as they come up. Explicit requests, Track Radio, and Previous still work. Skips in other apps are only known when Plex records them.")
+    if (vm.automaticMixStatus.isNotBlank()) SettingsDescription(vm.automaticMixStatus)
+    HorizontalDivider()
     SteppedSetting("Rated-track share", "Choose how many of every ten automatic picks come from rated tracks. The rest explore unrated tracks.",
         vm.ratedTrackShare, (0..10).map { when (it) { 0 -> "All unrated"; 10 -> "All rated"; else -> "$it rated · ${10-it} unrated" } }, vm.isHost && !vm.settingsSaving) { vm.saveRatedTrackShare(it, announce = false) }
     HorizontalDivider()
