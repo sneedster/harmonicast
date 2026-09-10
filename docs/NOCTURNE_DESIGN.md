@@ -51,3 +51,19 @@ clipped by shelf/grid bounds.
   deliberate browse refresh behavior.
 - Validation: compare actual phone/TV screens to the approved direction; test
   D-pad and touch, source changes, navigation restoration and browse-to-play.
+
+
+## Settings and Rooms — v1.1.8 candidate
+
+Settings has six focused categories with compact rows and semantic palette colors.
+Use a hub/detail flow below 840 dp of available content width; otherwise show a
+240 dp category pane beside independently scrolling details. Categories activate
+on click or D-pad OK, not focus. Preserve category scroll, TV focus, and Back
+navigation across dialogs, external Android screens, and configuration changes.
+Keep primary navigation and the mini-player accessible.
+
+Rooms is a separate destination, also linked from Settings. Prioritize current
+room status and playback controls; show guest/display QR codes in dedicated dialogs.
+Navigating away does not close a room. Rating consent consequences remain visible;
+longer tuning examples use a disclosure. Use explicit stepped controls for touch
+and D-pad input. The three automatic rating controls require opt-in.

@@ -177,18 +177,11 @@ class AppUpdateViewModel(app: Application) : AndroidViewModel(app) {
 
 @Composable internal fun UpdateSettings() {
     val vm: AppUpdateViewModel = viewModel()
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("App updates", style = MaterialTheme.typography.titleMedium)
-            Text("Installed version ${BuildConfig.VERSION_NAME}")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Check automatically on launch", Modifier.weight(1f))
-                Switch(vm.automatic, vm::updateAutomatic, modifier = Modifier.tvFocusFeedback())
-            }
-            Text("Checks GitHub at most once a day. Downloads only when you choose.", style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { vm.check() }, modifier = Modifier.tvFocusFeedback()) { Text("Check for updates") }
-            UpdateActions(vm)
-        }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Installed version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium)
+        SettingsToggle("Check automatically on launch", "Checks GitHub at most once a day. Downloads only when you choose.", vm.automatic, true, vm::updateAutomatic)
+        TextButton(onClick = { vm.check() }, modifier = Modifier.tvFocusFeedback()) { Text("Check for updates") }
+        UpdateActions(vm)
     }
 }
 @Composable private fun UpdateActions(vm: AppUpdateViewModel) {

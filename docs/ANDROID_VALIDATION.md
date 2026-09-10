@@ -177,3 +177,32 @@ as v1.1.7 (version code 64) on 2026-09-08.
 Release checks for v1.1.7 passed: 78 tests, full debug lint, signed release
 build and release vital lint. Verified APK version metadata and signing
 certificate continuity with v1.1.6.
+
+
+## Settings redesign and tuning — v1.1.8 candidate, 2026-09-09
+
+Implemented six Settings categories, adaptive hub/detail and two-pane layouts,
+a separate Rooms destination, compact room sharing dialogs, and four device-local
+music tuning controls. The existing Plex rating opt-in gates rating tuning;
+selection tuning is independent. Defaults reproduce the previous formulas.
+
+Validation completed:
+
+- 98 unit/Compose tests passed, including 20 new tuning/integration/UI tests.
+- Full debug lint, debug assembly, signed release assembly, and release vital lint passed.
+- Native-rendered Compose checks cover phone hub, consent-gated ratings, automatic
+  mix, Rooms, short landscape examples, tablet/Ember, and TV two-pane navigation.
+- Tests cover saved-state restoration, read-only restrictions, rating-write failures,
+  concurrent automatic/explicit votes, storage errors, and deterministic selection.
+- Verified APK package, version 1.1.8/code 65, and signing-certificate continuity
+  with v1.1.7. Candidate SHA-256:
+  a490cdb4a8520606a143554dffadd8ff02b886b0082bd59ff88b8ed84eea98c6.
+- Installed the signed candidate on Pixel 10 Pro over v1.1.7 with `adb install -r`;
+  package metadata confirms version 1.1.8/code 65.
+
+The Pixel was locked, so interactive Settings/playback verification and owner
+acceptance remain pending. The owner explicitly requested no TV device testing;
+no Shield installation or physical TV tests were performed. Automated TV layout
+checks ran locally, not on the TV. No live Plex rating changes were issued.
+No new physical Android Auto or room-transfer acceptance is claimed. Public release
+is pending Pixel review; v1.1.7 remains the published release.

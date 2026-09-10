@@ -117,6 +117,7 @@ class HarmonicastViewModel : ViewModel() {
     var artistDiscoveryLoading by mutableStateOf(false); private set
     var artistDiscoveryError by mutableStateOf(""); private set
     var isHost by mutableStateOf(false); var isActivePlayer by mutableStateOf(false)
+    internal var musicTuning by mutableStateOf(MusicTuning()); private set
     var automaticPlexRatings by mutableStateOf(false); private set
     var ratedTrackShare by mutableIntStateOf(8); private set
     var settingsSaving by mutableStateOf(false); private set
@@ -153,6 +154,8 @@ class HarmonicastViewModel : ViewModel() {
         colorSchemeName = context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE).getString("ui.palette", "Nocturne") ?: "Nocturne"
         keepScreenOnWhileCharging = context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE)
             .getBoolean("ui.keepScreenOnWhileCharging", false)
+        musicTuning = MusicTuningStore(api.storage).read()
+        automaticPlexRatings = AutomaticPlexRatings(api.storage).enabled
         plex = LocalPlexClient(api.storage)
         core = harmonicastCore(api)
         ready = api.profile.homeReady
@@ -335,6 +338,7 @@ class HarmonicastViewModel : ViewModel() {
                     val state = core.playback.snapshot()
                     nowPlaying = state.nowPlaying
                     playbackPosition = state.positionSeconds.toFloat().coerceAtLeast(0f)
+                    musicTuning = MusicTuningStore(api.storage).read()
                     automaticPlexRatings = AutomaticPlexRatings(api.storage).enabled
                     ratedTrackShare = core.queue.ratedTrackShare()
                     ensureSocket()
@@ -619,24 +623,38 @@ class HarmonicastViewModel : ViewModel() {
     fun clearQueue() = coreAction { core.queue.clear(); refresh() }
     fun saveAutomaticPlexRatings(enabled: Boolean) {
         if (!isPersonalMode || !canWriteToPlex) return
-        AutomaticPlexRatings(api.storage).enabled = enabled
-        automaticPlexRatings = enabled
+        try {
+            AutomaticPlexRatings(api.storage).enabled = enabled
+            automaticPlexRatings = enabled
+        } catch (e: Exception) { error = e.message ?: "Could not save automatic ratings" }
+    }
+
+    internal fun saveMusicTuning(value: MusicTuning) {
+        if (!isPersonalMode || !isHost) return
+        val current = MusicTuningStore(api.storage).read()
+        val allowed = if (canWriteToPlex && automaticPlexRatings) value
+            else current.copy(selection = value.selection)
+        try {
+            MusicTuningStore(api.storage).write(allowed)
+            musicTuning = allowed
+        } catch (e: Exception) {
+            musicTuning = current
+            error = e.message ?: "Could not save music tuning"
+        }
     }
 
     fun saveRatedTrackShare(share: Int, announce: Boolean = true) {
-        if (!isHost) return
+        if (!isHost || settingsSaving) return
         val value = share.coerceIn(0, 10)
-        ratedTrackShare = value
         viewModelScope.launch {
             settingsSaving = true
             try {
                 core.queue.setRatedTrackShare(value)
+                ratedTrackShare = value
                 if (announce) showTemporaryNotice("Automatic mix saved")
             } catch (e: Exception) {
                 error = e.message ?: "Could not save automatic mix"
-            } finally {
-                settingsSaving = false
-            }
+            } finally { settingsSaving = false }
         }
     }
 
@@ -1448,365 +1466,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable internal fun SettingsScreen(vm: HarmonicastViewModel) {
-    var share by remember(vm.ratedTrackShare) { mutableFloatStateOf(vm.ratedTrackShare.toFloat()) }
-    var confirmPlexSignOut by remember { mutableStateOf(false) }
-    var showAppShare by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val television = context.isTelevision()
-    val room = HarmonicastMediaService.roomShareState.value
-    val hostPermissions = remember { bluetoothPermissions(advertise = true) }
-    val hostPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { result ->
-        if (hostPermissions.all {
-                result[it] == true || ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-            }) vm.setGuestControl(true)
-        else vm.error = "Nearby devices permission is required to open a Bluetooth room"
-    }
-    val joinPermissions = remember { bluetoothPermissions(advertise = false) }
-    val joinPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        if (joinPermissions.all { result[it] == true || ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) vm.scanNearbyRoom()
-        else vm.error = "Nearby devices permission is required to find a room"
-    }
-    val value = share.roundToInt().coerceIn(0, 10)
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        Text("Settings", style = MaterialTheme.typography.headlineMedium)
-        UpdateSettings()
-        OutlinedButton(onClick = { showAppShare = true }, modifier = Modifier.tvFocusFeedback().fillMaxWidth()) { Text("Share app") }
-        Text("Color scheme", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PlayerPalette.entries.forEach { palette ->
-                FilterChip(selected = vm.colorSchemeName == palette.name, onClick = { vm.selectColorScheme(palette.name) }, label = { Text(palette.name) }, modifier = Modifier.tvFocusFeedback())
-            }
-        }
-        if (!television) {
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(Modifier.fillMaxWidth().tvFocusFeedback().toggleable(vm.keepScreenOnWhileCharging,
-                        role = androidx.compose.ui.semantics.Role.Switch, onValueChange = vm::updateKeepScreenOnWhileCharging),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Stay awake while charging", style = MaterialTheme.typography.titleMedium)
-                            Text("Keep the screen on while Harmonicast is open and connected to power.", style = MaterialTheme.typography.bodyMedium)
-                        }
-                        Switch(checked = vm.keepScreenOnWhileCharging, onCheckedChange = null, modifier = Modifier.tvFocusFeedback())
-                    }
-                    Text("Keep music playing", style = MaterialTheme.typography.titleMedium)
-                    Text("If music stops with the screen off, allow Harmonicast to run without battery optimization in Android settings.")
-                    OutlinedButton(onClick = {
-                        context.startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                    }, modifier = Modifier.tvFocusFeedback()) { Text("Background playback settings") }
-                }
-            }
-        }
-        if (television && vm.isPersonalMode && vm.canWriteToPlex) {
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Room on this TV", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("Keep playback on the TV and let nearby phones browse, request, vote, and follow the queue.")
-                    Button(
-                        onClick = {
-                            if (room.enabled) vm.setGuestControl(false)
-                            else if (hostPermissions.all {
-                                    ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-                                }) vm.setGuestControl(true)
-                            else hostPermissionLauncher.launch(hostPermissions)
-                        },
-                     modifier = Modifier.tvFocusFeedback()) {
-                        Text(if (room.enabled) "End room ${room.roomCode}" else "Open room on this TV")
-                    }
-                    if (room.enabled) {
-                        Text(
-                            if (room.nearbyAvailable) "Bluetooth room is ready" else "Bluetooth is unavailable; same-Wi-Fi access still works",
-                            color = if (room.nearbyAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-            }
-        }
-        ElevatedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Join a room", style = MaterialTheme.typography.titleMedium)
-                Text("Join a nearby host to request music or offer this device for playback.")
-                Button(onClick = {
-                    if (joinPermissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }) vm.scanNearbyRoom()
-                    else joinPermissionLauncher.launch(joinPermissions)
-                }, enabled = !vm.nearbyRoomState.scanning && !HarmonicastMediaService.roomShareState.value.enabled, modifier = Modifier.tvFocusFeedback()) {
-                    Text(if (vm.nearbyRoomState.scanning) "Looking for nearby rooms…" else "Join nearby room")
-                }
-                if (vm.nearbyRoomState.availableRooms.size > 1) vm.nearbyRoomState.availableRooms.forEach { code ->
-                    OutlinedButton(onClick = { vm.joinNearbyRoom(code) }, modifier = Modifier.tvFocusFeedback()) { Text("Room $code") }
-                }
-                if (vm.nearbyRoomState.error.isNotBlank()) Text(vm.nearbyRoomState.error, color = MaterialTheme.colorScheme.error)
-            }
-        }
-        if (!vm.isPersonalMode) {
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Personal mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("Play directly from Plex on this phone. Your current server profile remains saved during migration.")
-                    Button(
-                        onClick = {
-                            vm.beginPersonalSetup { url ->
-                                CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
-                            }
-                        },
-                        enabled = !vm.loading,
-                        modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
-                    ) {
-                        Text("Move this device to personal mode")
-                    }
-                }
-            }
-        }
-        if (vm.isPersonalMode) {
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Plex music source", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        vm.plexSourceLabel.ifBlank { "Personal Plex library" },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (!vm.canWriteToPlex) {
-                        Text(
-                            "Shared read-only server · playback and local queues are available; Plex ratings and guest hosting are disabled.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    Button(
-                        onClick = vm::beginPersonalSourceChange,
-                        enabled = !vm.loading,
-                        modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
-                    ) {
-                        Text("Change Plex server or library")
-                    }
-                    TextButton(onClick = { confirmPlexSignOut = true }, modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth())) {
-                        Text("Sign out of Plex", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-            if (vm.canWriteToPlex) {
-                ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Allow guest control", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("Temporary and accountless", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = room.enabled,
-                            onCheckedChange = { enabled ->
-                                if (!enabled) vm.setGuestControl(false)
-                                else if (hostPermissions.all {
-                                        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-                                    }) vm.setGuestControl(true)
-                                else hostPermissionLauncher.launch(hostPermissions)
-                            },
-                         modifier = Modifier.tvFocusFeedback())
-                    }
-                    Text(
-                        "Guests can search, request tracks, view the queue and now playing, and vote. Plex credentials and owner controls stay on this device.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (room.error.isNotBlank()) {
-                        Text(room.error, color = MaterialTheme.colorScheme.error)
-                    }
-                    if (room.enabled) {
-                        Text("Room ${room.roomCode}", style = MaterialTheme.typography.headlineSmall)
-                        Text("Room playback", style = MaterialTheme.typography.titleMedium)
-                        if (HarmonicastMediaService.nativeOutputActive.value) {
-                            Button(onClick = vm::takeBackPlayback, modifier = Modifier.tvFocusFeedback()) { Text("Play on this device") }
-                        } else {
-                            val devices = HarmonicastMediaService.roomPlaybackDevices.value
-                            if (devices.isEmpty()) Text("An owner-signed-in app can join this room and offer to play the music.")
-                            devices.forEach { (id, name) ->
-                                OutlinedButton(onClick = { vm.transferPlayback(id) }, modifier = Modifier.tvFocusFeedback()) { Text("Play on $name") }
-                            }
-                        }
-                        if (HarmonicastMediaService.nativeOutputStatus.value.isNotBlank()) Text(HarmonicastMediaService.nativeOutputStatus.value)
-                        Text(
-                            "Closes after 30 minutes without guest activity, or after 4 hours total.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            if (room.nearbyAvailable) "Bluetooth room is ready" else "Bluetooth is unavailable; same-Wi-Fi access still works",
-                            color = if (room.nearbyAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                        )
-                        Text(
-                            "Guests already on this Wi-Fi can scan the code below. Bluetooth joining will use the Harmonicast guest app and keep each phone's existing internet connection.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text("Same-Wi-Fi browser controller", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        RoomQrCode(room.joinUrl, "Open Harmonicast room ${room.roomCode}")
-                        Button(
-                            onClick = {
-                                context.startActivity(Intent.createChooser(
-                                    Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, room.joinUrl)
-                                    },
-                                    "Share Harmonicast room",
-                                ))
-                            },
-                            modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
-                        ) {
-                            Text("Share guest link")
-                        }
-                        Text("Same-Wi-Fi room display", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Scan on a tablet or living-room screen for a full-screen view that can browse, queue, and control playback without exposing Plex or app settings.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        RoomQrCode(room.displayUrl, "Open Harmonicast display ${room.roomCode}")
-                        Button(
-                            onClick = {
-                                context.startActivity(Intent.createChooser(
-                                    Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, room.displayUrl)
-                                    },
-                                    "Share Harmonicast display",
-                                ))
-                            },
-                            modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth()),
-                        ) {
-                            Text("Share display link")
-                        }
-                        OutlinedButton(onClick = { vm.setGuestControl(false) }, modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth())) {
-                            Text("End guest room")
-                        }
-                    }
-                }
-                }
-            } else {
-                ElevatedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Guest hosting unavailable", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Only the Plex server owner can open a Harmonicast room. This shared profile remains a local read-only player.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-        if (vm.isPersonalMode) {
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Automatic Plex ratings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Let Harmonicast update your Plex song ratings from listening on this device. Finishing a song raises its rating; skipping lowers it, with a smaller penalty for later skips. Repeat plays increase the completion boost. Unrated songs start from 5 out of 10 when first adjusted.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "These changes are saved to Plex, can replace ratings you set yourself, and affect future automatic mixes. They are visible in other apps using the same Plex account. Turning this off stops future automatic changes; it does not restore earlier ratings.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Enable automatic rating changes", Modifier.weight(1f))
-                        Switch(
-                            checked = vm.automaticPlexRatings,
-                            onCheckedChange = vm::saveAutomaticPlexRatings,
-                            enabled = vm.canWriteToPlex,
-                            modifier = Modifier.tvFocusFeedback().semantics { contentDescription = "Enable automatic Plex rating changes" },
-                        )
-                    }
-                    Text(
-                        "Off by default. Explicit thumbs-up/down votes still change Plex ratings. Play counts and listening history continue to be recorded.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (!vm.canWriteToPlex) Text("Unavailable on a shared read-only Plex server.")
-                }
-            }
-        }
-        ElevatedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Default.Tune, null, tint = MaterialTheme.colorScheme.primary)
-                    Text("Automatic rated-track share", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                }
-                Text(
-                    "Choose how many of every ten automatic picks come from rated tracks. Tracks above 1 stay eligible, but lower ratings are selected less often. The rest explore unrated tracks.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Slider(
-                    value = share,
-                    onValueChange = {
-                        share = it.roundToInt().toFloat()
-                        if (vm.isPersonalMode) vm.saveRatedTrackShare(share.roundToInt(), announce = false)
-                    },
-                    onValueChangeFinished = { vm.saveRatedTrackShare(share.roundToInt()) },
-                    valueRange = 0f..10f,
-                    steps = 9,
-                    enabled = vm.isHost,
-                 modifier = Modifier.tvFocusFeedback())
-                Text(
-                    when (value) {
-                        0 -> "All unrated"
-                        10 -> "All rated"
-                        else -> "$value rated · ${10 - value} unrated"
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                if (!vm.isHost) {
-                    Text("Only the host can change this setting.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else if (vm.settingsSaving) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                }
-            }
-        }
-    }
-    if (showAppShare) {
-        val downloadUrl = "https://harmonicast.app"
-        FocusRestoringAlertDialog(onDismissRequest = { showAppShare = false }, title = { Text("Get Harmonicast for Android") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Scan to visit harmonicast.app and download Harmonicast for Android.")
-                    Box(Modifier.width(220.dp).align(Alignment.CenterHorizontally)) { RoomQrCode(downloadUrl, "Download Harmonicast for Android") }
-                    Text("Open the downloaded APK and follow Android’s installation prompts. Browser guests can keep listening and requesting without installing the app.")
-                }
-            },
-            confirmButton = { TextButton(onClick = { showAppShare = false }, modifier = Modifier.tvFocusFeedback()) { Text("Close") } },
-            dismissButton = if (!television) ({ TextButton(onClick = {
-                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, "Get Harmonicast for Android: $downloadUrl")
-                }, "Share Harmonicast"))
-            }, modifier = Modifier.tvFocusFeedback()) { Text("Share link") } }) else null)
-    }
-    if (confirmPlexSignOut) {
-        FocusRestoringAlertDialog(
-            onDismissRequest = { confirmPlexSignOut = false },
-            title = { Text("Sign out of Plex?") },
-            text = { Text("This removes the Plex account and source from this phone and clears its saved queue and playback history.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmPlexSignOut = false
-                    vm.signOutPersonalPlex()
-                }, modifier = Modifier.tvFocusFeedback()) { Text("Sign out", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmPlexSignOut = false }, modifier = Modifier.tvFocusFeedback()) { Text("Cancel") }
-            },
-        )
-    }
-}
-
 @Composable private fun PlexMusicSetup(vm: HarmonicastViewModel) {
     Box(Modifier.fillMaxSize().padding(28.dp), Alignment.Center) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -2115,7 +1774,7 @@ private fun formatDuration(totalSeconds: Int): String {
     return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
-private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
+internal fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && advertise -> arrayOf(
         Manifest.permission.BLUETOOTH_ADVERTISE,
         Manifest.permission.BLUETOOTH_CONNECT,
@@ -2127,7 +1786,7 @@ private fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
     else -> arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
 }
 
-@Composable private fun RoomQrCode(value: String, description: String) {
+@Composable internal fun RoomQrCode(value: String, description: String) {
     val bitmap = remember(value) {
         val matrix = QRCodeWriter().encode(
             value,

@@ -1,5 +1,25 @@
 # Releases
 
+## v1.1.8 — organized Settings and music tuning (release candidate)
+
+Version code: **65**. Pixel acceptance and public release are pending; the owner requested no TV device testing.
+
+Validation: 98 tests, full debug lint, and signed release checks passed. Installed
+over v1.1.7 on Pixel; interactive verification is pending screen unlock.
+
+- Settings is organized into Appearance, Playback, Automatic mix, Automatic ratings,
+  Plex account, and About & updates. Larger displays keep categories beside details.
+- Rooms opens directly from its shortcut, with consolidated hosting controls,
+  playback transfer/take-back, and separate guest/display QR dialogs.
+- Tune completion boosts, skip penalties, repeat-play influence, and automatic
+  selection preference with simple stepped controls and calculated examples.
+- Defaults preserve existing behavior. Automatic rating tuning requires explicit
+  opt-in; selection tuning works independently. Settings stay local to each device.
+- Rating updates serialize with explicit votes, and failed automatic writes do not
+  prevent local listening history from being recorded.
+- Existing consent, rated/unrated share, Plex setup, palettes, and queued tracks are
+  preserved. New selection settings affect the next automatic batch.
+
 ## v1.1.7 — landscape player and live rating feedback
 
 Version code: **64**.

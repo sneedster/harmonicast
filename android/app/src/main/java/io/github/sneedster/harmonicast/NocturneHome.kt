@@ -65,6 +65,9 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
     val compactLandscape = useRail && configuration.screenHeightDp < 500
     val colors = MaterialTheme.colorScheme
     var destination by rememberSaveable { mutableStateOf("Home") }
+    var auxiliaryReturn by rememberSaveable { mutableStateOf("Home") }
+    var roomsFromSettings by rememberSaveable { mutableStateOf(false) }
+    var settingsSession by rememberSaveable { mutableIntStateOf(0) }
     // Source changes dispose collection data, including authenticated art URLs.
     val library = vm.browseLibrary
     key(library) {
@@ -73,12 +76,32 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
         val stack = remember { mutableStateListOf<LibraryEntry>() }
         val stateHolder = rememberSaveableStateHolder()
         fun navigate(name: String) { stack.clear(); destination = name }
+        fun closeAuxiliary() {
+            if (destination == "Rooms" && roomsFromSettings) {
+                destination = "Settings"
+                roomsFromSettings = false
+            } else destination = auxiliaryReturn
+        }
+        fun openSettings() {
+            if (destination == "Settings") return
+            if (destination !in listOf("Settings", "Rooms")) auxiliaryReturn = destination
+            settingsSession++
+            roomsFromSettings = false
+            destination = "Settings"
+        }
+        fun openRooms() {
+            if (destination == "Rooms") return
+            roomsFromSettings = destination == "Settings"
+            if (!roomsFromSettings) auxiliaryReturn = destination
+            destination = "Rooms"
+        }
         BackHandler(stack.isNotEmpty() || destination != "Home") {
-            if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) else destination = "Home"
+            if (destination in listOf("Settings", "Rooms")) closeAuxiliary()
+            else if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) else destination = "Home"
         }
         val destinations = listOf("Home" to Icons.Default.Home, "Library" to Icons.Default.LibraryMusic,
             "Search" to Icons.Default.Search, "Queue" to Icons.AutoMirrored.Filled.QueueMusic)
-        val screenKey = stack.lastOrNull()?.id ?: destination
+        val screenKey = if (destination in listOf("Settings", "Rooms")) destination else stack.lastOrNull()?.id ?: destination
         Column(Modifier.fillMaxSize().drawWithCache {
             val wash = Brush.verticalGradient(listOf(colors.surfaceVariant.copy(alpha = .65f), colors.background, colors.background))
             val halo = Brush.radialGradient(listOf(colors.primary.copy(alpha = .16f), Color.Transparent),
@@ -94,10 +117,10 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
             Row(Modifier.fillMaxWidth().padding(horizontal = if (wide) 28.dp else 20.dp, vertical = if (compactLandscape) 0.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.GraphicEq, null, tint = colors.primary, modifier = Modifier.size(22.dp))
                 Text("HARMONICAST", Modifier.padding(start = 10.dp).weight(1f), fontSize = 12.sp, letterSpacing = 3.sp)
-                TextButton(onClick = { navigate("Settings") }, modifier = Modifier.tvFocusFeedback()) {
+                TextButton(onClick = { openRooms() }, modifier = Modifier.tvFocusFeedback()) {
                     Icon(Icons.Default.Sensors, null, Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("Rooms", fontSize = 12.sp)
                 }
-                IconButton(onClick = { navigate("Settings") }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Settings, "Settings and color scheme") }
+                IconButton(onClick = { openSettings() }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Settings, "Settings") }
             }
             Row(Modifier.weight(1f)) {
                 if (useRail) {
@@ -119,7 +142,8 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
                             route == "Library" -> CollectionBrowser(vm, library, wide, null, { stack.add(it) }) {}
                             route == "Search" -> Search(vm) { stack.add(it) }
                             route == "Queue" -> Queue(vm)
-                            route == "Settings" -> SettingsScreen(vm)
+                            route == "Settings" -> SettingsScreen(vm, onBack = { closeAuxiliary() }, onRooms = { openRooms() }, session = settingsSession, isActive = route == screenKey)
+                            route == "Rooms" -> RoomsScreen(vm, onBack = { closeAuxiliary() }, isActive = route == screenKey)
                             route == "Player" -> NocturnePlayer(vm) { vm.query = it; vm.search(); navigate("Search") }
                         }
                     }

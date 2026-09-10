@@ -26,15 +26,35 @@ Rooms are for nearby guests. Native transfer needs a reachable local Wi-Fi/Ether
 network. Internet guest control is outside scope. Active Android Auto projection
 retains playback authority until disconnected. Track Radio depends on Plex support.
 
+## Settings and music tuning
+
+Settings has six categories: Appearance, Playback, Automatic mix, Automatic ratings,
+Plex account, and About & updates. Phones open a page per category; larger displays
+keep the category list beside the selected page. The mini-player remains available.
+
+Use **Rooms** to join or host a room, share guest/display QR codes, or transfer and
+take back playback. The Settings hub also links to Rooms.
+
+**Automatic mix** sets the rated/unrated balance and preference for higher ratings.
+Changes apply to new automatic batches; already queued songs stay in place.
+**Automatic ratings** requires explicit opt-in before its completion, skip, and
+repeat-play controls can be adjusted. Changes are saved to Plex and can replace
+existing ratings. Turning the feature off does not undo past changes. Defaults
+preserve the earlier tuning. Preferences stay local to each device; during native
+transfer, the controlling host's preferences apply.
+
+These Settings changes are part of the v1.1.8 release candidate, pending device
+acceptance and publication.
+
 ## Share the app
 
-Use **Settings → Share app** for a QR code linking to [harmonicast.app](https://harmonicast.app).
+Use **Settings → About & updates → Share app** for a QR code linking to [harmonicast.app](https://harmonicast.app).
 Phones also offer a share-link action. Browser guest pages include **Get the Android app**;
 guests can continue using the browser without installing anything.
 
 ## App updates
 
-Use **Settings → App updates → Check for updates** to check GitHub Releases.
+Use **Settings → About & updates → Check for updates** to check GitHub Releases.
 Optional automatic checks run on launch at most once a day; downloading is always
 your choice. Harmonicast verifies the APK checksum, package, newer version code
 and matching signing certificate before opening Android’s installer. If prompted,
@@ -43,7 +63,7 @@ restarts the app; same-key updates preserve settings and local data.
 
 ## Background playback
 
-If music stops with the screen off, use **Settings → Background playback settings**
+If music stops with the screen off, use **Settings → Playback → Background playback settings**
 to review Android battery optimization. Uninterrupted playback under every OEM
 battery policy is not guaranteed. See [validation notes](docs/ANDROID_VALIDATION.md).
 

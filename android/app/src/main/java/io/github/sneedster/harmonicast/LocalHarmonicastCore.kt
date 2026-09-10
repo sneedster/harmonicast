@@ -86,7 +86,7 @@ class LocalHarmonicastCore(
                 val pools = plex.jukeboxPools(source)
                 val share = ratedTrackShare()
                 val start = storage.read("local.jukeboxMixIndex")?.toIntOrNull()?.coerceAtLeast(0) ?: 0
-                val selection = chooseJukeboxTracks(pools, 5, share, start)
+                val selection = chooseJukeboxTracks(pools, 5, share, start, MusicTuningStore(storage).read())
                 writeSongs("local.queue", selection.songs.map { it.copy(isManual = false) })
                 storage.write(mapOf("local.jukeboxMixIndex" to selection.nextMixIndex.toString()))
                 LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
@@ -144,15 +144,26 @@ class LocalHarmonicastCore(
             if (source.canWriteToPlex && submission) plex.scrobble(source, id)
         }
         override suspend fun recordEvent(song: Song, event: String, progress: Double) {
-            if (source.canWriteToPlex && AutomaticPlexRatings(storage).enabled) {
-                val current = runCatching { plex.track(source, song.id) }.getOrNull()
-                if (current != null) {
-                    val adjusted = adjustPersonalRating(current.rating, event, progress, current.viewCount)
-                    if (adjusted != current.rating && AutomaticPlexRatings(storage).enabled) {
-                        val saved = plex.rate(source, song.id, adjusted)
-                        updateDisplayedRating(song.id, saved)
+            try {
+                if (source.canWriteToPlex && AutomaticPlexRatings(storage).enabled && event in setOf("complete", "skip")) {
+                    LocalCoreEvents.ratingMutex.withLock {
+                        if (AutomaticPlexRatings(storage).enabled) {
+                            val current = plex.track(source, song.id)
+                            if (current != null) {
+                                val adjusted = adjustPersonalRating(current.rating, event, progress, current.viewCount,
+                                    MusicTuningStore(storage).read())
+                                if (adjusted != (current.rating ?: 5.0) && AutomaticPlexRatings(storage).enabled) {
+                                    val saved = plex.rate(source, song.id, adjusted)
+                                    updateDisplayedRating(song.id, saved)
+                                }
+                            }
+                        }
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e("HarmonicastCore", "Could not update automatic rating", e)
             }
             val history = storage.read("local.playbackHistory")?.let { runCatching { JSONArray(it) }.getOrNull() } ?: JSONArray()
             history.put(JSONObject().put("song", encodeSong(song)).put("event", event)
@@ -240,6 +251,7 @@ internal fun chooseJukeboxTracks(
     count: Int,
     ratedShare: Int,
     mixIndex: Int,
+    tuning: MusicTuning = MusicTuning(),
     random: () -> Double = Math::random,
 ): JukeboxSelection {
     val chosen = mutableListOf<Song>()
@@ -249,7 +261,7 @@ internal fun chooseJukeboxTracks(
     fun pick(pool: List<Song>): Song? {
         val candidates = pool.filterNot { it.id in used }
         if (candidates.isEmpty()) return null
-        val weighted = candidates.map { it to Math.pow((it.rating ?: 5.0).coerceAtLeast(0.1), 1.6) }
+        val weighted = candidates.map { it to selectionWeight(it.rating, tuning) }
         var target = random().coerceIn(0.0, 0.999999) * weighted.sumOf { it.second }
         return weighted.firstOrNull { (_, weight) -> target.also { target -= weight } <= weight }?.first
             ?: weighted.last().first
@@ -276,12 +288,13 @@ internal fun chooseJukeboxTracks(
     return JukeboxSelection(chosen, cursor)
 }
 
-internal fun adjustPersonalRating(rating: Double?, event: String, progress: Double, viewCount: Int): Double {
+internal fun adjustPersonalRating(rating: Double?, event: String, progress: Double, viewCount: Int,
+    tuning: MusicTuning = MusicTuning()): Double {
     val points = (((rating ?: 5.0) * 10).toInt()).coerceIn(0, 100)
     val delta = if (event == "complete") {
-        (0.5 * (1 + kotlin.math.ln(viewCount.coerceAtLeast(0) + 1.0))).roundToInt()
-    } else {
-        -(3 * (1 - progress.coerceIn(0.0, 1.0))).roundToInt()
-    }
+        (0.5 * tuning.completionMultiplier * (1 + tuning.repeatMultiplier * kotlin.math.ln(viewCount.coerceAtLeast(0) + 1.0))).roundToInt()
+    } else if (event == "skip") {
+        -(3 * tuning.skipMultiplier * (1 - progress.coerceIn(0.0, 1.0))).roundToInt()
+    } else 0
     return (points + delta).coerceIn(0, 100) / 10.0
 }

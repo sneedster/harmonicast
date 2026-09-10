@@ -1,7 +1,9 @@
 # Settings redesign and configurable music tuning
 
-Agreed plan, 2026-09-09. This document records planned work; implementation and
-device acceptance remain pending.
+Agreed plan, 2026-09-09. Implementation is complete in the v1.1.8 candidate.
+Pixel acceptance and publication remain pending; see ANDROID_VALIDATION.md.
+The owner subsequently requested no TV device testing, superseding the Shield
+acceptance steps below.
 
 ## Summary
 
