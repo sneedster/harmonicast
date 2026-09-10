@@ -14,7 +14,7 @@ are outside the planned scope.
 ## Rating consent and future controls
 
 - Automatic Plex rating changes require explicit opt-in in Settings and default to disabled, including upgrades (owner decision, 2026-09-08).
-- Implemented for the v1.1.8 candidate: stepped completion, skip, repeat-play and selection controls with current-behavior defaults, per-device persistence, and explicit rating consent. Device acceptance and publication remain pending.
+- Implemented in v1.1.8: stepped completion, skip, repeat-play and selection controls with current-behavior defaults, per-device persistence, and explicit rating consent. Pixel checks passed and publication was authorized.
 - Automatic mix replay protection defaults to one week, with configurable windows and durable local skip/play timestamps alongside Plex last-played dates.
 - Settings now uses six adaptive categories; Rooms is a separate destination. See [implementation plan](docs/SETTINGS_REDESIGN_PLAN.md).
 - The opt-in decision and v1.1.6 release were synchronized to Project Memory on 2026-09-08.

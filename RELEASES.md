@@ -1,11 +1,11 @@
 # Releases
 
-## v1.1.8 — organized Settings and music tuning (release candidate)
+## v1.1.8 — organized Settings and music tuning
 
-Version code: **65**. Pixel acceptance and public release are pending; the owner requested no TV device testing.
+Version code: **65**. Pixel Settings navigation, replay-window persistence, Rooms/Back navigation, and playback state checks passed. The owner authorized publication after Pixel checks; no physical TV tests were run, as requested.
 
 Validation: 115 tests, full debug lint, and signed release checks passed. Installed
-over v1.1.7 on Pixel; interactive verification is pending screen unlock.
+over v1.1.7 on Pixel; unlocked-device checks are recorded in docs/ANDROID_VALIDATION.md.
 
 - Settings is organized into Appearance, Playback, Automatic mix, Automatic ratings,
   Plex account, and About & updates. Larger displays keep categories beside details.

@@ -239,6 +239,23 @@ rendered and visually inspected. No physical TV tests were run, per owner reques
 The updated signed v1.1.8/code 65 candidate replaced the earlier candidate on Pixel
 with `adb install -r`. Signature continuity and APK metadata were verified. SHA-256:
 43fc79eb76048d04fddb1f0a7c9ec52a1a50a885d03e8bd7db019d9a416b282b.
-The Pixel remains locked; interactive acceptance and public release remain pending.
+At installation the Pixel was locked; the interactive checks below supersede that status.
 The earlier candidate hash above is superseded. No live Plex votes or completion
 scrobbles were issued as part of these checks.
+
+### Unlocked Pixel checks — 2026-09-09
+
+Verified the signed candidate on the unlocked Pixel 10 Pro. The six-category
+Settings hub renders with the existing Ember palette. Automatic mix shows the
+default 1-week replay window; changing it to 2 weeks and back to 1 week works,
+and the value persists after leaving and reopening the page. Rooms opens as a
+separate destination, and Android Back restores the Automatic mix detail page.
+The library shelves loaded successfully on returning to Home.
+
+Temporarily disabled automatic rating changes, resumed the existing paused song,
+observed the playing-state Pause control, and paused it again. Restored automatic
+rating changes to On and verified the paused-state Play control. The existing
+queued track was preserved. This checks playback state transitions, not audible
+output or live random-queue exclusion; exclusion is covered by the automated
+regressions above. No physical TV checks were performed. The owner subsequently authorized committing, pushing, and publishing v1.1.8.
+The release uses the same signed APK verified on the Pixel.

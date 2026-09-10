@@ -49,8 +49,7 @@ existing ratings. Turning the feature off does not undo past changes. Defaults
 preserve the earlier tuning. Preferences stay local to each device; during native
 transfer, the controlling host's preferences apply.
 
-These Settings changes are part of the v1.1.8 release candidate, pending device
-acceptance and publication.
+These Settings changes are included in v1.1.8.
 
 ## Share the app
 
