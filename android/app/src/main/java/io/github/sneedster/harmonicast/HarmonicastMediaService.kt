@@ -127,6 +127,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             .build()
         api = AppStorage(getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
         core = harmonicastCore(api)
+        AcquisitionRuntime.get(this).start()
 
         exoPlayer.addListener(object : Player.Listener {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -788,6 +789,7 @@ class HarmonicastMediaService : MediaLibraryService() {
 
     private fun enableGuestControl() {
         if (api.profile.personalSource?.canWriteToPlex != true) {
+            AcquisitionRuntime.get(this).apply { roomAllowed.value = false; roomId.value = "" }
             roomShareState.value = RoomShareState()
             return
         }
@@ -836,7 +838,9 @@ class HarmonicastMediaService : MediaLibraryService() {
             monitorGuestRoom(gateway)
             Log.d("HarmonicastMedia", "Guest room enabled: ${roomShareState.value.roomCode}")
         } catch (e: Exception) {
+            guestRoomGateway?.stop()
             guestRoomGateway = null
+            AcquisitionRuntime.get(this).apply { roomAllowed.value = false; roomId.value = "" }
             roomShareState.value = RoomShareState(error = "Could not start the same-Wi-Fi room controller")
             Log.e("HarmonicastMedia", "Could not enable guest room", e)
         }
@@ -856,6 +860,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun disableGuestControl(message: String = "") {
+        AcquisitionRuntime.get(this).apply { roomAllowed.value = false; roomId.value = "" }
         nativeRequestGeneration++
         roomPlayers.clear()
         roomPlaybackDevices.value = emptyMap()

@@ -52,6 +52,14 @@
     #message, .room, .eyebrow { color: var(--accent); }
     .progress span, .label { background: var(--accent); }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+    [hidden] { display: none !important; }
+    .acquisition-controls { padding: 1rem; display: flex; flex-wrap: wrap; gap: .7rem; }
+    .acquisition-panel { width: min(42rem, calc(100vw - 2rem)); max-height: 90vh; overflow-y: auto; padding: 1.25rem; border: 1px solid #635477; border-radius: 1.2rem; background: #16131f; color: #f1eafa; }
+    .acquisition-panel::backdrop { background: #000b; backdrop-filter: blur(3px); }
+    .acquisition-panel > button { margin: 0 .6rem .8rem 0; }
+    .acquisition-panel .card { margin: .8rem 0; padding: 1rem; border: 1px solid #51435f; border-radius: 1rem; }
+    .acquisition-panel p { margin: .5rem 0; line-height: 1.5; }
   </style>
 </head>
 <body>
@@ -219,7 +227,8 @@
     try {
       const songs = await api(`/v1/search?q=${encodeURIComponent(query)}`);
       showList(results, songs, true);
-      message.textContent = songs.length ? '' : 'No matching songs.';
+      acquisitionSearchDone(query, songs);
+      message.textContent = '';
     } catch (error) { message.textContent = error.message; }
   });
 
@@ -231,6 +240,69 @@
   }
   document.querySelector('#vote-up').addEventListener('click', () => vote('up'));
   document.querySelector('#vote-down').addEventListener('click', () => vote('down'));
+
+  // Room-scoped acquisition. All service calls run on the Android host.
+  const acquisitionControls = document.createElement('section');
+  acquisitionControls.className = 'acquisition-controls'; acquisitionControls.hidden = true;
+  document.querySelector('#search-form').parentElement.appendChild(acquisitionControls);
+  const acquisitionPanel = document.createElement('dialog'); acquisitionPanel.className = 'acquisition-panel'; acquisitionPanel.hidden = true;
+  acquisitionControls.parentElement.appendChild(acquisitionPanel);
+  const acquisitionHistory = document.createElement('div'); acquisitionHistory.setAttribute('aria-live','polite');
+  acquisitionControls.parentElement.appendChild(acquisitionHistory);
+  acquisitionPanel.addEventListener('cancel',event=>{event.preventDefault();++acquisitionGeneration;acquisitionPanel.close();acquisitionPanel.hidden=true;acquisitionOpen=false;});
+  let acquisitionGeneration = 0, acquisitionLocation = null, acquisitionBack = [], acquisitionBusy = false;
+  let acquisitionQuery = '', acquisitionMissing = false, acquisitionOpen = false, acquisitionWasAllowed = false;
+  function acqButton(label, action, parent) { const b = document.createElement('button'); b.type='button'; b.textContent=label; b.addEventListener('click',action); parent.appendChild(b); return b; }
+  function acqText(text, parent) { const p=document.createElement('p'); p.textContent=text; parent.appendChild(p); }
+  async function acquisitionSearchDone(query, songs) {
+    const generation = ++acquisitionGeneration; acquisitionControls.replaceChildren(); acquisitionControls.hidden=true;
+    acquisitionPanel.hidden=true; acquisitionPanel.close(); acquisitionOpen=false; acquisitionQuery=query; acquisitionMissing=!songs.length;
+    try {
+      const entry = await api('/v1/acquisition/entry?q='+encodeURIComponent(query));
+      if(generation!==acquisitionGeneration || document.querySelector('#search').value.trim()!==query || !entry.available)return;
+      acquisitionControls.hidden= !acquisitionMissing && !entry.artist;
+      if(acquisitionMissing) acqButton('Search connected music sources',()=>acqOpen(query,'search'),acquisitionControls);
+      if(entry.artist) acqButton('Find songs by this artist',()=>acqOpen(query,'artist'),acquisitionControls);
+    }catch(e){ /* Ordinary Plex results remain usable. */ }
+  }
+  document.querySelector('#search').addEventListener('input',()=>{++acquisitionGeneration; acquisitionControls.hidden=true; acquisitionPanel.hidden=true; acquisitionPanel.close(); acquisitionOpen=false;});
+  function acqOpen(query,mode){acquisitionOpen=true; acquisitionBack=[];acquisitionLocation={q:query,mode,parent:'',offset:0};acqLoad();}
+  async function acqLoad(){
+    const generation=++acquisitionGeneration; const current={...acquisitionLocation};
+    acquisitionPanel.hidden=false; if(!acquisitionPanel.open)acquisitionPanel.showModal(); acquisitionPanel.replaceChildren();
+    acqButton('Back',()=>{if(acquisitionBack.length){acquisitionLocation=acquisitionBack.pop();acqLoad();}else{++acquisitionGeneration;acquisitionPanel.hidden=true; acquisitionPanel.close();acquisitionOpen=false;}},acquisitionPanel);
+    acqButton('Close',()=>{++acquisitionGeneration;acquisitionPanel.hidden=true; acquisitionPanel.close();acquisitionOpen=false;},acquisitionPanel);
+    acqText('Finding music…',acquisitionPanel);
+    try{
+      const data=await api('/v1/acquisition/catalog?'+new URLSearchParams(current));
+      if(generation!==acquisitionGeneration||!acquisitionOpen)return;
+      acquisitionPanel.lastChild.remove();acqText(current.q,acquisitionPanel);
+      if(!data.items.length)acqText('No matching music found',acquisitionPanel);
+      for(const entry of data.items){
+        const row=document.createElement('div'); row.className='card';acquisitionPanel.appendChild(row);
+        acqText(entry.title,row);acqText([entry.artist,entry.album,entry.year,entry.detail].filter(Boolean).join(' · '),row);
+        acqButton(entry.kind==='recording'?'Acquire track':entry.kind==='artist'?'Browse releases':'View tracks',async event=>{
+          if(entry.kind!=='recording'){acquisitionBack.push(current);acquisitionLocation={q:entry.artist||entry.title,mode:entry.kind==='artist'?'albums':'tracks',parent:entry.id,offset:0};acqLoad();return;}
+          if(acquisitionBusy)return;acquisitionBusy=true; const buttons=acquisitionPanel.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
+          try{const result=await api('/v1/acquisition/requests',{method:'POST',body:JSON.stringify({recordingId:entry.id})});acqText(result.message||'Request accepted',row);await acqRefreshHistory();}
+          catch(e){acqText(e.message,row);}finally{acquisitionBusy=false;buttons.forEach(b=>b.disabled=false);}
+        },row);
+      }
+      if(data.more)acqButton('More results',()=>{acquisitionBack.push(current);acquisitionLocation={...current,offset:data.offset+data.items.length};acqLoad();},acquisitionPanel);
+    }catch(e){if(generation!==acquisitionGeneration)return;acqText(e.message,acquisitionPanel);acqButton('Retry lookup',acqLoad,acquisitionPanel);}
+  }
+  async function acqRefreshHistory(){
+    try{
+      const data=await api('/v1/acquisition/requests');acquisitionHistory.replaceChildren();
+      for(const r of data.items.slice(-5))acqText((r.recording.title||'Track')+' — '+r.message,acquisitionHistory);
+      const state=await api('/v1/status');
+      const enabled=!!state.acquisitionAllowed&&!!state.acquisitionAvailable;
+      if(enabled&&!acquisitionWasAllowed&&!acquisitionOpen&&acquisitionQuery) acquisitionSearchDone(acquisitionQuery,acquisitionMissing?[]:[{}]);
+      acquisitionWasAllowed=enabled;
+      if(!enabled){acquisitionControls.hidden=true;if(acquisitionOpen){++acquisitionGeneration;acquisitionPanel.replaceChildren();acqText('Music acquisition is disabled or unavailable. Accepted requests continue.',acquisitionPanel);acqButton('Close',()=>{acquisitionPanel.hidden=true; acquisitionPanel.close();acquisitionOpen=false;},acquisitionPanel);}}
+    }catch(e){acquisitionControls.hidden=true;}
+  }
+  setInterval(acqRefreshHistory,5000);
 
   refresh();
   setInterval(refresh, 4000);

@@ -1,5 +1,29 @@
 # Releases
 
+## v1.1.9 — optional MusicGrabber acquisition
+
+- Username/password connection with remembered login, session recovery, and API key
+  under Advanced settings. Credentials are protected with Android Keystore.
+- Pair a computer with the temporary setup page to enter credentials, then confirm
+  the tested connection on the Android device.
+- Restore missing-track acquisition search and artist/release browsing. Tracks enter
+  normal request order only after Plex verification.
+- Each room starts with acquisition off; the host may enable native, browser, and
+  display requests. Accepted work continues after the room closes.
+- Shared read-only Plex libraries cannot acquire or host.
+- Catalogue results are limited to official albums, EPs, and singles. Selection
+  submits only artist/title to MusicGrabber, which handles duplicate checking.
+
+Version code: **71**, superseding acquisition test candidates through code 70.
+
+- Acquisition polling is paced, connection checks are cached, and the visible
+  request status updates through Queued. Retry lookup is reserved for search failures.
+
+Validation: 152 unit tests, debug lint, signed APK checks, and live Pixel acquisition
+through MusicGrabber, Plex indexing, and queue insertion. Physical TV and live
+Tailscale routing were not tested. Details are recorded in
+[ANDROID_VALIDATION.md](docs/ANDROID_VALIDATION.md).
+
 ## v1.1.8 — organized Settings and music tuning
 
 Version code: **65**. Pixel Settings navigation, replay-window persistence, Rooms/Back navigation, and playback state checks passed. The owner authorized publication after Pixel checks; no physical TV tests were run, as requested.

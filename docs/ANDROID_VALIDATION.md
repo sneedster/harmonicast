@@ -259,3 +259,221 @@ queued track was preserved. This checks playback state transitions, not audible
 output or live random-queue exclusion; exclusion is covered by the automated
 regressions above. No physical TV checks were performed. The owner subsequently authorized committing, pushing, and publishing v1.1.8.
 The release uses the same signed APK verified on the Pixel.
+
+### MusicGrabber acquisition candidate — 2026-09-11
+
+The local signed test candidate is `android/releases/harmonicast-1.1.9-acquisition.apk`
+(version code 66). It has not been published. The next public build must use a
+higher version code for devices that install this candidate.
+
+Controlled-response validation covers account login and identity validation,
+remembered and token-only sessions, coordinated renewal, rejected credentials,
+advanced API-key and anonymous validation, disconnect, staged setup, pairing
+expiry/lockout, Host/Origin checks, guest-token rejection, and credential isolation.
+The setup gateway is exercised over localhost sockets. Robolectric covers the
+phone/TV Settings controls and setup-session survival across Activity recreation.
+
+Acquisition regressions cover failed completed imports, delayed Plex indexing,
+existing Plex matches, durable queue receipts and normal manual queue order,
+ambiguous submissions without replay, submission survival after picker closure,
+guest quota reservations, room permission and requester ownership, and fulfillment
+after room closure. Changing to a shared Plex library blocks new acquisition and
+pauses accepted tracking until the original account and owner library return.
+MusicBrainz fixtures cover pagination, singles, canonical recording selection,
+caching, and empty versus failed responses.
+
+The bundled computer setup, browser guest, and display pages passed the Playwright
+controlled-response smoke script at `scripts/acquisition-browser-test.cjs`, including
+credential clearing, artist browsing, immediate track submission, request feedback,
+and live room disablement. Guest and display modal screenshots were visually
+inspected. Screenshots are under `android/app/build/reports/acquisition-browser/`.
+
+Builds use the Java 21 wrapper with a writable local Gradle cache:
+
+```bash
+GRADLE_USER_HOME="$PWD/.gradle" ./android/build-debug.sh \
+  :app:testDebugUnitTest :app:lintDebug \
+  -I /tmp/harmonicast-test-init.gradle \
+  -Pkotlin.compiler.execution.strategy=in-process
+```
+
+The temporary Gradle init file selects the existing cached Robolectric SDK 35 jar
+in offline mode to avoid writes to the sandbox's read-only home cache. It is an
+environment workaround, not an application change.
+
+No Android device was attached for this run. Physical phone/TV installation,
+Bluetooth transport, playback transfer, and a real MusicGrabber/Plex/Tailscale
+acquisition remain unverified in this environment. Tests use controlled service
+responses and do not demonstrate live download or Plex indexing behavior.
+MusicGrabber's single-line import parser cannot safely represent a hyphenated
+artist name; those submissions display an error instead of silently changing the
+artist. No service installation instructions are included.
+
+Final debug assembly, all **140 tests** (zero failures/errors/skips), and full debug
+lint passed. Lint reports **0 errors and 35 warnings**. The signed release build
+uses `android/build-release.sh` with `VERSION_NAME=1.1.9-acquisition`,
+`VERSION_CODE=66`, and `HARMONICAST_SKIP_RELEASE_CHECKS=1` because the full debug
+checks above already passed; release vital lint still runs during assembly.
+
+Signed assembly and release vital lint passed. `apksigner verify --print-certs`
+confirms the same signing certificate as v1.1.8, and `aapt dump badging` confirms
+package `io.github.sneedster.harmonicast`, version `1.1.9-acquisition`, code 66.
+The candidate is eligible to update that signed installation; installation itself
+was not exercised. APK SHA-256:
+`ce9b05533a79c68e3537c5407d98b140c161e2b79cc070f6f5d3a7621e9fdd70`.
+
+### Connected Pixel follow-up — 2026-09-11
+
+The Pixel 10 Pro was connected after the candidate report above. Installed the
+signed APK successfully with `adb install -r`; the installed package reports
+`1.1.9-acquisition`, version code 66. Launched the app and verified the Settings
+hub and Music acquisition page on the unlocked device. The existing Plex session
+and paused playback state remained present.
+
+Computer-assisted setup opened with a private-network address, pairing code, and
+QR shortcut. The desktop fetched the bundled page directly from the Pixel over
+the LAN with HTTP 200. Closing setup restored the settings form, retained the
+unconfigured connection state, and closed the setup listener. No credentials
+were entered and no downloads or playback operations were triggered. This
+supersedes the earlier no-device limitation for installation, launch, Settings
+navigation, and setup gateway open/reachability/cancellation only. Live service
+login/acquisition, Bluetooth, playback transfer, and TV checks remain outstanding.
+
+### Connection recovery and official catalogue results — 2026-09-11
+
+Candidate `1.1.9-acquisition.2`, code 67, adds one bounded retry for transient
+MusicGrabber GET transport failures. POST transport remains single-attempt;
+uncertain submissions are never replayed by the HTTP client. MusicBrainz retains
+its own paced retry loop. Connection errors distinguish timeout, address lookup,
+TLS, and connection failures. A Plex duplicate-check failure identifies Plex and
+explicitly states that no download was submitted.
+
+MusicBrainz search and release-group browsing restrict eligibility to official
+albums, EPs, and singles. Track browsing verifies the release metadata, and every
+submission revalidates the canonical recording's official release membership,
+including selections previously cached by search. MusicGrabber still receives
+only one artist/title line, with playlist creation and placement disabled.
+The implementation follows the MusicBrainz recording/release-group search fields
+and lookup filters documented at https://musicbrainz.org/doc/MusicBrainz_API/Search
+and https://musicbrainz.org/doc/MusicBrainz_API.
+
+All 147 tests passed (zero failures/errors/skips), debug assembly passed, and lint
+reports zero errors and 35 warnings. New real-socket tests exercise dropped GET
+responses, bounded recovery, non-replayed POSTs, and 401 handling. Additional tests
+cover Plex preflight isolation and official-release filtering/revalidation. A live
+MusicBrainz lookup confirmed the original Andy Allder/DJ Choci recording has an
+Official Album release. That metadata check does not validate acquisition.
+
+On the Pixel, the saved MusicGrabber URL/account remained present. A read-only
+connection test succeeded, then a later idle read reproduced the old generic
+failure; the original exception was not logged, so a stale connection remains a
+hypothesis rather than a confirmed diagnosis. Wireless ADB connected using the
+existing authorization. No new debugging pairing was needed.
+
+Signed release assembly and signature verification passed. Installed code 67 over
+code 66 on the Pixel via the existing Wi-Fi ADB connection. The saved account
+survived the update, and initial connection validation and a subsequent explicit
+Test connection both showed Connected without re-entering credentials.
+Candidate SHA-256:
+`d18586ad72bde7791fed0acfb30d10972d9e880c86c0155dcd65ef780f6cfa4c`.
+
+### Direct submission correction — 2026-09-11
+
+The code 67 live retry reproduced the underlying acquisition failure: Plex timed
+out during the pre-submission duplicate check. MusicGrabber read-only validation
+succeeded and no download was submitted. The owner then explicitly removed the
+requirement for a Plex duplicate check, delegating duplicate handling to
+MusicGrabber.
+
+Code 68 (`1.1.9-acquisition.3`) supersedes that preflight behavior. Eligible
+recording selection submits artist/title directly to MusicGrabber without querying
+Plex. Plex is used only after completion to locate the playable track. Verification
+uses track-only search, stops at the first match, and falls back to recent tracks.
+A verification outage retains the accepted import ID and waiting-for-Plex state;
+it does not resubmit the download. Tests cover submission with unavailable Plex,
+the exact artist/title payload, durable normal queue insertion, and Plex recovery.
+
+Final direct-submission regression run: 148 tests passed, no failures/errors/skips;
+debug assembly and full debug lint passed. No pre-submission Plex lookup remains.
+
+Code 68 signed assembly and signature verification passed, and the APK installed
+successfully over Wi-Fi ADB. Retried the original Andy Allder/DJ Choci “Dead Can
+Dance” recording. MusicGrabber logged HTTP 200 for `/api/bulk-import-async` and
+subsequent status polling of import `9895399c`; the Pixel displayed “Acquiring
+track…”. This confirms live submission now proceeds without the Plex preflight.
+APK SHA-256:
+`eb7ef80c29aca1f1d678ce6c7724b7cde7885b8c2761854608f9c3e3fe48a368`.
+
+MusicGrabber's live queue showed the exact submitted artist/title and its own
+“Downloading · Checking for duplicates” stage. The Pixel continued status tracking
+after leaving the picker and showed Connected in settings, with the new request
+listed as Acquiring. Earlier failed attempts remain visible as history. Download
+completion, Plex verification, and final queue insertion for this live request
+were still pending at handoff. No release was published.
+
+## MusicGrabber polling reduction — 2026-09-11
+
+Candidate 1.1.9-acquisition.4 (69) reduces the acquisition polling cycle from five
+to thirty seconds, spaces account GET calls by five seconds, and caches automatic
+health checks for five minutes on success or one minute on failure. Concurrent
+explicit health checks share one request. Room controls no longer force a check
+on every opening. Submission POSTs remain unreplayed.
+
+Controlled-response validation: Java 21 debug assembly, 150 unit tests (zero
+failures/errors/skips), and lint passed (zero errors, 35 warnings). New tests cover
+health cache expiry, explicit retry after failure, and concurrent check coalescing.
+No additional live download was submitted for this change.
+
+Read-only MusicGrabber diagnosis: current Settings shows Skip duplicates enabled.
+The saved database and WAL were copied locally for read-only inspection; no saved
+skip_dupes override was found. This does not establish the historical UI value.
+Current container code defaults it to true, but the user recalls enabling it after
+reset. The local tag fallback scans the whole library into a memory-only cache,
+permits concurrent rebuilds, and timestamps the cache before the scan completes.
+This is a plausible upstream slowdown, not a measured proof of the active bottleneck.
+No MusicGrabber configuration or database was changed.
+
+The signed candidate installed successfully over wireless ADB on Pixel
+10.11.12.41:5555; package manager confirms version 1.1.9-acquisition.4 / code 69,
+and the activity accepted launch. APK signature verification passed. SHA-256:
+`c37f6bb30ed7e367cb1df5dd02d33bf5e83b01eac253e65c97ed1ad3103420ee`.
+Live download completion and subsequent Plex queue insertion remain unverified.
+
+## Acquisition status display — candidate 1.1.9-acquisition.5
+
+The native phone/TV acquisition picker now tracks the submitted request by ID and
+updates its visible header from the existing status poll. Search failures and
+submission messages are separate; only search failures offer Retry lookup.
+This also applies to the shared native nearby-room picker. No service polling
+interval or submission/retry policy changed.
+
+Controlled-response validation: Java 21 via android/build-debug.sh, debug and
+signed release assembly, all 152 unit tests passed (zero failures/errors/skips),
+lint zero errors and 37 warnings. Two new Compose regression tests exercise the
+Acquiring → Waiting for Plex → Queued transition without resubmission and ensure
+Retry lookup only appears for a lookup failure. A stale Kotlin incremental-cache
+failure was resolved by rebuilding with -Pkotlin.incremental=false.
+
+Installed over the existing signed app on the wireless Pixel; package manager
+confirms version 1.1.9-acquisition.5 / code 70. APK:
+android/releases/harmonicast-1.1.9-acquisition.5.apk
+SHA-256: 3a80ba7b46e268ef9b147ca3424cd1e88bb03aa4b048baaf70b9b67bdc5d55d5.
+
+Live Pixel/MusicGrabber validation: browsed Bowling for Soup → the official 1985
+single → 1985 and submitted once. The same pinned header visibly changed from
+1985 — Acquiring track… to 1985 — Queued without reopening the dialog. Retry lookup
+was absent. MusicGrabber completed at 2026-09-12 03:32:17.900 UTC with Already
+exists, using the previously verified FLAC; no additional download was needed.
+The previous fresh-download test and this status-display test are distinct.
+
+## Public release v1.1.9
+
+Version name 1.1.9 / code 71 supersedes the acquisition candidates. Final Java 21
+build through android/build-debug.sh completed debug and signed release assembly,
+152 unit tests (zero failures/errors/skips), and lint (zero errors, 37 warnings).
+The signed APK's package/version and existing Harmonicast certificate were checked.
+Installed successfully over the test candidate on the wireless Pixel.
+
+APK: android/releases/harmonicast-1.1.9.apk
+SHA-256: f5e57368033ea676a11cdf99871035d7473c5189a8c7a75484acbb7760746dfa.
+Stable GitHub release: https://github.com/sneedster/harmonicast/releases/tag/v1.1.9.

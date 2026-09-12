@@ -121,7 +121,8 @@ private val LocalTvRestoreScope = staticCompositionLocalOf<kotlinx.coroutines.Co
 @Composable internal fun RemoteTextField(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier,
     label: (@Composable () -> Unit)? = null, leadingIcon: (@Composable () -> Unit)? = null,
     singleLine: Boolean = true, shape: Shape = RoundedCornerShape(16.dp),
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default, keyboardActions: KeyboardActions = KeyboardActions.Default) {
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default, keyboardActions: KeyboardActions = KeyboardActions.Default,
+    allowVoice: Boolean = true, visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None) {
     val television = isTvDevice()
     var editing by remember { mutableStateOf(false) }
     var fieldFocused by remember { mutableStateOf(false) }
@@ -145,7 +146,7 @@ private val LocalTvRestoreScope = staticCompositionLocalOf<kotlinx.coroutines.Co
     val recognizer = remember { Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         .putExtra(RecognizerIntent.EXTRA_PROMPT, "Say a song, artist, or album") }
-    val hasVoice = remember(context, television) { if (television) android.speech.SpeechRecognizer.isRecognitionAvailable(context) else recognizer.resolveActivity(context.packageManager) != null }
+    val hasVoice = remember(context, television, allowVoice) { allowVoice && if (television) android.speech.SpeechRecognizer.isRecognitionAvailable(context) else recognizer.resolveActivity(context.packageManager) != null }
     val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(onValueChange)
         if (television) { editing = false; microphone.requestFocus() }
@@ -170,7 +171,7 @@ private val LocalTvRestoreScope = staticCompositionLocalOf<kotlinx.coroutines.Co
                 else -> false
             }
         }, readOnly = television && !editing, label = label, leadingIcon = leadingIcon,
-        singleLine = singleLine, shape = shape, keyboardOptions = keyboardOptions, keyboardActions = KeyboardActions(
+        singleLine = singleLine, shape = shape, visualTransformation = visualTransformation, keyboardOptions = keyboardOptions, keyboardActions = KeyboardActions(
             onSearch = { editing = false; keyboard?.hide(); keyboardActions.onSearch?.invoke(this) },
             onDone = keyboardActions.onDone, onGo = keyboardActions.onGo, onNext = keyboardActions.onNext,
             onPrevious = keyboardActions.onPrevious, onSend = keyboardActions.onSend),

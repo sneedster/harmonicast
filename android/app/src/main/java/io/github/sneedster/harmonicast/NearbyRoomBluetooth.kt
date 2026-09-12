@@ -28,6 +28,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -56,6 +57,7 @@ data class NearbyRoomState(
     val isPlaying: Boolean = false,
     val queue: List<Song> = emptyList(),
     val searchResults: List<Song> = emptyList(),
+    val searchQuery: String = "",
     val queueOffset: Int = 0,
     val searchOffset: Int = 0,
     val queueHasMore: Boolean = false,
@@ -64,6 +66,7 @@ data class NearbyRoomState(
     val message: String = "",
     val error: String = "",
     val vote: Int = 0,
+    val acquisitionAvailable: Boolean = false,
 )
 
 internal class NearbyRoomDiscovery<T> {
@@ -96,10 +99,11 @@ internal object NearbyRoomWire {
         ?.takeIf { it.length == 4 && it.all(Char::isLetter) }
         .orEmpty()
 
-    fun status(roomCode: String, snapshot: PlaybackSnapshot): ByteArray {
+    fun status(roomCode: String, snapshot: PlaybackSnapshot, acquisitionAvailable: Boolean = false): ByteArray {
         val song = snapshot.nowPlaying.song
         return JSONObject()
             .put("room", roomCode)
+            .put("acquisition", acquisitionAvailable)
             .put("art", artworkKey(song))
             .put("title", utf8Prefix(song?.title.orEmpty(), 96))
             .put("artist", utf8Prefix(song?.artist.orEmpty(), 72))
@@ -114,6 +118,7 @@ internal object NearbyRoomWire {
         val json = JSONObject(String(value, StandardCharsets.UTF_8))
         return NearbyRoomState(
             connected = true,
+            acquisitionAvailable = json.optBoolean("acquisition"),
             roomCode = json.optString("room"),
             artworkKey = json.optString("art"),
             title = json.optString("title"),
@@ -129,7 +134,7 @@ internal object NearbyRoomWire {
         .put("id", id)
         .put("action", action)
         .put("offset", offset.coerceAtLeast(0))
-        .put("value", value.take(160))
+        .put("value", value.take(if (action.startsWith("acq-")) 300 else 160))
         .toString().toByteArray(StandardCharsets.UTF_8)
 
     fun artworkKey(song: Song?): String {
@@ -166,7 +171,7 @@ internal object NearbyRoomWire {
         )
     }
 
-    private fun utf8Prefix(value: String, maxBytes: Int): String {
+    fun utf8Prefix(value: String, maxBytes: Int): String {
         var end = value.length
         while (end > 0 && value.substring(0, end).toByteArray(StandardCharsets.UTF_8).size > maxBytes) end--
         return value.substring(0, end)
@@ -204,6 +209,7 @@ class NearbyRoomHost(
     private val offerPlayer: suspend (String, String) -> Boolean = { _, _ -> false },
     private val removePlayer: (String) -> Unit = {},
 ) {
+    private val acquisition = AcquisitionRuntime.get(context)
     private val appContext = context.applicationContext
     private val manager = appContext.getSystemService(BluetoothManager::class.java)
     private val adapter get() = manager.adapter
@@ -265,7 +271,7 @@ class NearbyRoomHost(
                 return
             }
             val payload = if (characteristic.uuid == NearbyRoomWire.statusUuid) {
-                runCatching { NearbyRoomWire.status(roomCode, runBlocking { core.playback.snapshot() }) }
+                runCatching { NearbyRoomWire.status(roomCode, runBlocking { core.playback.snapshot() }, acquisition.roomAllowed.value && acquisition.account.state.value.available) }
                     .getOrElse { "{\"room\":\"$roomCode\"}".toByteArray(StandardCharsets.UTF_8) }
             } else responses[device.address]
                 ?: "{\"pending\":true}".toByteArray(StandardCharsets.UTF_8)
@@ -297,8 +303,13 @@ class NearbyRoomHost(
             scope.launch {
                 val participant = participantFor(device)
                 val response = handleCommand(command, participant)
-                if (participants[device.address] == participant) responses[device.address] = response
-                else removePlayer(participant)
+                if (participants[device.address] == participant) {
+                    // A timed-out command must not replace the response to a newer command.
+                    responses.computeIfPresent(device.address) { _, current ->
+                        val currentId = runCatching { JSONObject(String(current, StandardCharsets.UTF_8)).optInt("id") }.getOrNull()
+                        if (currentId == id) response else current
+                    }
+                } else removePlayer(participant)
             }
         }
     }
@@ -322,7 +333,14 @@ class NearbyRoomHost(
             val artwork = loadArtwork(value)
             return NearbyRoomWire.artworkResponse(id, value, artwork, offset)
         }
+        val acquisitionQuery = if (action == "acq-catalog") runCatching { JSONObject(value) }.getOrDefault(JSONObject()) else JSONObject()
         val request = when (action) {
+            "acq-entry" -> GuestApiRequest("GET", "/v1/acquisition/entry", null, mapOf("q" to value), participantId = participantId)
+            "acq-catalog" -> GuestApiRequest("GET", "/v1/acquisition/catalog", null, mapOf(
+                "q" to acquisitionQuery.optString("q"), "mode" to acquisitionQuery.optString("mode", "search"),
+                "parent" to acquisitionQuery.optString("parent"), "offset" to ((offset / 25) * 25).toString()), participantId = participantId)
+            "acq-submit" -> GuestApiRequest("POST", "/v1/acquisition/requests", null, body = JSONObject().put("recordingId", value).toString(), participantId = participantId)
+            "acq-status" -> GuestApiRequest("GET", "/v1/acquisition/requests", null, participantId = participantId)
             "queue" -> GuestApiRequest("GET", "/v1/queue", null, participantId = participantId)
             "search" -> GuestApiRequest("GET", "/v1/search", null, mapOf("q" to value), participantId = participantId)
             "request" -> GuestApiRequest("POST", "/v1/requests", null, body = JSONObject().put("songId", value).toString(), participantId = participantId)
@@ -333,6 +351,30 @@ class NearbyRoomHost(
         if (response.status !in 200..299) {
             val message = runCatching { JSONObject(response.body).optString("error") }.getOrDefault("Guest operation failed")
             return errorResponse(id, action, message)
+        }
+        if (action.startsWith("acq-")) {
+            val data = JSONObject(response.body)
+            if (action == "acq-catalog") {
+                val all = data.optJSONArray("items") ?: JSONArray()
+                val localOffset = offset % 25
+                val selected = all.optJSONObject(localOffset)
+                if (selected != null) {
+                    listOf("title", "artist", "album", "detail").forEach { field -> selected.put(field, NearbyRoomWire.utf8Prefix(selected.optString(field), 28)) }
+                }
+                data.put("items", JSONArray().apply { selected?.let { put(it) } }).put("offset", offset)
+                    .put("more", localOffset + 1 < all.length() || data.optBoolean("more"))
+            } else if (action == "acq-status") {
+                val all = data.optJSONArray("items") ?: JSONArray()
+                val selected = all.optJSONObject(all.length() - 1 - offset)
+                if (selected != null) {
+                    selected.put("recording", JSONObject().put("title", NearbyRoomWire.utf8Prefix(selected.optJSONObject("recording")?.optString("title").orEmpty(), 28)))
+                    selected.put("message", NearbyRoomWire.utf8Prefix(selected.optString("message"), 96))
+                }
+                data.put("items", JSONArray().apply { selected?.let { put(it) } }).put("more", offset + 1 < all.length())
+            } else if (action == "acq-submit") {
+                data.remove("recording"); data.put("message", NearbyRoomWire.utf8Prefix(data.optString("message"), 100))
+            }
+            return JSONObject().put("id", id).put("action", action).put("ok", true).put("data", data).toString().toByteArray(StandardCharsets.UTF_8)
         }
         return if (action in setOf("queue", "search")) {
             NearbyRoomWire.pagedResponse(id, action, response.body, offset)
@@ -470,6 +512,8 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
     private var loadQueueAfterArtwork = false
     private data class PendingCommand(val id: Int, val action: String, val offset: Int, val value: String)
     private var pendingCommand: PendingCommand? = null
+    private var acquisitionResponse: kotlinx.coroutines.CompletableDeferred<JSONObject>? = null
+    private val acquisitionMutex = kotlinx.coroutines.sync.Mutex()
 
     private val scanTimeout = Runnable {
         if (scanning) {
@@ -666,6 +710,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         publish(roomState.copy(
             connected = true,
             roomCode = state.roomCode,
+            acquisitionAvailable = state.acquisitionAvailable,
             availableRooms = emptyList(),
             artworkKey = state.artworkKey,
             artwork = if (songChanged) null else roomState.artwork,
@@ -715,8 +760,15 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         }
         pendingCommand = null
         if (!json.optBoolean("ok")) {
+            acquisitionResponse?.completeExceptionally(IllegalArgumentException(json.optString("error", "Room operation failed")))
+            acquisitionResponse = null
             publish(roomState.copy(busy = false, error = json.optString("error", "Guest operation failed")))
             return
+        }
+        if (pending.action.startsWith("acq-")) {
+            acquisitionResponse?.complete(json.optJSONObject("data") ?: JSONObject())
+            acquisitionResponse = null
+            publish(roomState.copy(busy = false, error = ""))
         }
         when (pending.action) {
             "offer-player", "withdraw-player" -> publish(roomState.copy(busy = false, error = "",
@@ -730,6 +782,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             ))
             "search" -> publish(roomState.copy(
                 searchResults = NearbyRoomWire.decodeSongs(json.optJSONArray("items") ?: JSONArray()),
+                searchQuery = pending.value.trim(),
                 searchOffset = json.optInt("offset"),
                 searchHasMore = json.optBoolean("more"),
                 busy = false,
@@ -787,6 +840,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
 
     private fun failCommand(message: String) {
         handler.removeCallbacks(pollResponse)
+        acquisitionResponse?.completeExceptionally(IllegalArgumentException(message)); acquisitionResponse = null
         val artworkFailed = pendingCommand?.action == "art"
         pendingCommand = null
         artworkBuffer = null
@@ -798,6 +852,19 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
         }
         handler.postDelayed(refreshStatus, STATUS_REFRESH_MS)
     }
+
+    internal suspend fun acquisitionCall(action: String, value: String = "", offset: Int = 0): JSONObject = acquisitionMutex.withLock { kotlinx.coroutines.withContext(Dispatchers.Main) {
+        require(value.toByteArray(StandardCharsets.UTF_8).size <= 300) { "Shorten the search for a nearby room" }
+        require(gatt != null) { "Room disconnected" }
+        val deadline = System.currentTimeMillis() + 10_000
+        while (pendingCommand != null && System.currentTimeMillis() < deadline) kotlinx.coroutines.delay(100)
+        require(pendingCommand == null) { "Room is busy. Try again" }
+        val response = kotlinx.coroutines.CompletableDeferred<JSONObject>()
+        acquisitionResponse = response
+        sendCommand(action, offset, value)
+        try { kotlinx.coroutines.withTimeout(60_000) { response.await() } }
+        finally { if (acquisitionResponse === response) { acquisitionResponse = null; failCommand("Room request interrupted. Check acquisition status before retrying") } }
+    } }
 
     fun offerPlayback(address: String, code: String) = sendCommand("offer-player", value = JSONObject()
         .put("address", address).put("code", code).put("name", android.os.Build.MODEL.take(40)).toString())
@@ -838,6 +905,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
     }
 
     fun close() {
+        acquisitionResponse?.completeExceptionally(IllegalArgumentException("Room disconnected")); acquisitionResponse = null
         stopScan()
         handler.removeCallbacks(refreshStatus)
         handler.removeCallbacks(pollResponse)

@@ -36,6 +36,12 @@ interface MusicQueue {
     suspend fun songs(): List<Song>
     suspend fun dequeue(): QueueSelection
     suspend fun add(song: Song)
+    suspend fun addOnce(requestId: String, song: Song) = add(song)
+    suspend fun addGuest(song: Song, pending: () -> Int = { 0 }) {
+        if (songs().count { it.isManual && it.addedByEmail == song.addedByEmail } + pending() >= 5)
+            throw AcquisitionFailure(429, "You already have 5 songs queued or being acquired")
+        add(song)
+    }
     suspend fun addAll(songs: List<Song>, next: Boolean = false) {
         songs.forEach { add(it) }
     }

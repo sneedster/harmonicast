@@ -7,6 +7,8 @@ import org.json.JSONObject
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.roundToInt
 
+internal object QueueTransactions { val mutex = Mutex() }
+
 private object LocalCoreEvents {
     val ratingMutex = Mutex()
     val listeners = CopyOnWriteArrayList<(CoreEvent) -> Unit>()
@@ -70,9 +72,13 @@ class LocalHarmonicastCore(
                 }
                 // A request may have arrived while Plex metadata was loading. Respect
                 // the new queue head and never overwrite newly added requests.
-                val latest = songs()
-                if (latest.firstOrNull() != candidate) continue
-                writeSongs("local.queue", latest.drop(1))
+                val removed = QueueTransactions.mutex.withLock {
+                    val latest = songs()
+                    if (latest.firstOrNull() != candidate) false else {
+                        writeSongs("local.queue", latest.drop(1)); true
+                    }
+                }
+                if (!removed) continue
                 if (selected == null) removedAutomatic = true
                 LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
                 if (selected != null) {
@@ -81,28 +87,44 @@ class LocalHarmonicastCore(
                 }
             }
         }
-        override suspend fun add(song: Song) {
+        override suspend fun add(song: Song) = QueueTransactions.mutex.withLock {
             val current = songs()
             val requested = song.copy(isManual = true)
             val updated = fairManualQueue(current + requested)
             writeSongs("local.queue", updated)
             LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
         }
-        override suspend fun addAll(songs: List<Song>, next: Boolean) {
+        override suspend fun addGuest(song: Song, pending: () -> Int) = QueueTransactions.mutex.withLock {
+            val current = songs()
+            if (current.count { it.isManual && it.addedByEmail == song.addedByEmail } + pending() >= 5)
+                throw AcquisitionFailure(429, "You already have 5 songs queued or being acquired")
+            writeSongs("local.queue", fairManualQueue(current + song.copy(isManual = true)))
+            LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
+        }
+        override suspend fun addOnce(requestId: String, song: Song) = QueueTransactions.mutex.withLock {
+            val fulfilled = JSONArray(storage.read("acquisition.fulfilled") ?: "[]")
+            if ((0 until fulfilled.length()).any { fulfilled.getString(it) == requestId }) return@withLock
+            val updated = fairManualQueue(songs() + song.copy(isManual = true))
+            fulfilled.put(requestId)
+            storage.write(mapOf("local.queue" to JSONArray().apply { updated.forEach { put(encodeSong(it)) } }.toString(),
+                "acquisition.fulfilled" to fulfilled.toString()))
+            LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
+        }
+        override suspend fun addAll(songs: List<Song>, next: Boolean) = QueueTransactions.mutex.withLock {
             val current = songs()
             writeSongs("local.queue", if (next) songs + current else current + songs)
             if (songs.isNotEmpty()) LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
         }
-        override suspend fun remove(id: String) {
+        override suspend fun remove(id: String) = QueueTransactions.mutex.withLock {
             writeSongs("local.queue", songs().filterNot { it.id == id })
             LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
         }
-        override suspend fun clear() {
+        override suspend fun clear() = QueueTransactions.mutex.withLock {
             writeSongs("local.queue", emptyList())
             LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
         }
-        override suspend fun radio(): Int {
-            val current = playback.snapshot().nowPlaying.song ?: return 0
+        override suspend fun radio(): Int = QueueTransactions.mutex.withLock {
+            val current = playback.snapshot().nowPlaying.song ?: return@withLock 0
             val existing = songs().mapTo(mutableSetOf(), Song::id)
             val additions = plex.related(source, current.id).filter { existing.add(it.id) }
                 .map { it.copy(isManual = false, isRadio = true) }
@@ -110,7 +132,7 @@ class LocalHarmonicastCore(
                 writeSongs("local.queue", songs() + additions)
                 LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
             }
-            return additions.size
+            return@withLock additions.size
         }
         override suspend fun enableAutomaticPlayback() {
             if (songs().isEmpty()) {
@@ -121,11 +143,13 @@ class LocalHarmonicastCore(
                 val start = storage.read("local.jukeboxMixIndex")?.toIntOrNull()?.coerceAtLeast(0) ?: 0
                 val selection = chooseJukeboxTracks(pools, 5, share, start, MusicTuningStore(storage).read())
                 // Preserve requests added during candidate loading.
+                QueueTransactions.mutex.withLock {
                 writeSongs("local.queue", songs() + selection.songs.map { it.copy(isManual = false) })
                 storage.write(mapOf(ReplayWindow.STATUS_KEY to if (selection.songs.isEmpty() && songs().isEmpty())
                     ReplayWindow.EMPTY_MESSAGE else ""))
                 storage.write(mapOf("local.jukeboxMixIndex" to selection.nextMixIndex.toString()))
                 LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
+                }
             }
         }
         override suspend fun ratedTrackShare() = storage.read("local.ratedTrackShare")?.toIntOrNull()?.coerceIn(0, 10) ?: 8

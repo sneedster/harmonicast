@@ -161,6 +161,7 @@ class HarmonicastViewModel : ViewModel() {
         automaticPlexRatings = AutomaticPlexRatings(api.storage).enabled
         plex = LocalPlexClient(api.storage)
         core = harmonicastCore(api)
+        AcquisitionRuntime.get(context).start()
         ready = api.profile.homeReady
         if (ready) {
             connectPlaybackService()
@@ -504,6 +505,8 @@ class HarmonicastViewModel : ViewModel() {
 
     fun loadNearbyQueue(offset: Int = 0) = nearbyRoomClient?.loadQueue(offset)
     fun searchNearbyRoom(query: String, offset: Int = 0) = nearbyRoomClient?.search(query, offset)
+    internal suspend fun acquisitionNearby(action: String, value: String = "", offset: Int = 0): org.json.JSONObject =
+        (nearbyRoomClient ?: throw IllegalArgumentException("Room disconnected")).acquisitionCall(action, value, offset)
     fun requestNearbySong(song: Song) = nearbyRoomClient?.request(song)
     fun voteNearby(up: Boolean) = nearbyRoomClient?.vote(up)
 
@@ -978,6 +981,7 @@ class MainActivity : ComponentActivity() {
                 Text("Search host library")
             }
         }
+        NearbyAcquisitionEntry(vm, search)
         room.searchResults.forEach { song ->
             GuestSongCard(song, actionLabel = "Request", enabled = !room.busy) { vm.requestNearbySong(song) }
         }
@@ -1879,6 +1883,7 @@ internal fun bluetoothPermissions(advertise: Boolean): Array<String> = when {
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { vm.search() }), modifier = Modifier.weight(1f))
             IconButton(onClick = { vm.search() }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Search, "Search") }
         }
+        PersonalAcquisitionEntry(vm)
         LazyColumn {
             if (vm.searchAlbums.isNotEmpty()) item { Text("Albums", Modifier.padding(horizontal = 24.dp, vertical = 12.dp), style = MaterialTheme.typography.titleLarge) }
             items(vm.searchAlbums, key = { "album:${it.id}" }) { album ->

@@ -192,6 +192,10 @@ class LocalPlexClient(
         return id.removePrefix(prefix).also { require(it.matches(Regex("\\d+"))) { "Invalid collection" } }
     }
 
+    suspend fun recentTracks(source: PersonalPlexSource): List<Song> = songs(source,
+        serverContainer(source.baseUrl, source.token,
+            "/library/sections/${source.libraryKey}/all?type=10&sort=addedAt:desc&X-Plex-Container-Size=100"))
+
     suspend fun search(source: PersonalPlexSource, query: String, expandAlbums: Boolean = true, expandArtists: Boolean = true): List<Song> {
         val term = query.trim()
         if (term.isBlank()) return emptyList()

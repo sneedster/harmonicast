@@ -66,6 +66,54 @@ class SettingsScreenTest {
         }
     }
 
+    @Test fun acquisitionUsesAccountLoginAndKeepsApiKeyInAdvancedSettings() {
+        setup()
+        open("Music acquisition")
+        compose.onNodeWithText("Set up from another device").assertExists()
+        compose.onNodeWithText("Username").assertExists()
+        compose.onNodeWithText("Password").assertExists()
+        compose.onNodeWithText("Use API key instead").assertDoesNotExist()
+        screenshot("phone-acquisition")
+        compose.onNodeWithText("Advanced settings").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Use API key instead").performScrollTo().performClick()
+        compose.onNodeWithText("API key", substring = false).assertExists()
+        compose.onNodeWithText("Password", substring = false).assertDoesNotExist()
+        compose.onNodeWithText("Paste API key").assertExists()
+    }
+
+    @Test fun computerSetupSurvivesActivityRecreation() {
+        setup()
+        open("Music acquisition")
+        compose.onNodeWithText("Set up from another device").performClick()
+        val model = androidx.lifecycle.ViewModelProvider(compose.activity).get("acquisition-settings", AcquisitionSettingsModel::class.java)
+        compose.waitUntil(5000) { model.gateway != null }
+        val gateway = model.gateway!!
+        val address = gateway.state.value.url
+        compose.activityRule.scenario.recreate()
+        val recreated = androidx.lifecycle.ViewModelProvider(compose.activity).get("acquisition-settings", AcquisitionSettingsModel::class.java)
+        assertSame(model, recreated)
+        assertSame(gateway, recreated.gateway)
+        assertEquals(address, gateway.state.value.url)
+        kotlinx.coroutines.runBlocking { gateway.close() }
+    }
+
+    @Test fun sharedPlexLibraryCannotConfigureAcquisition() {
+        setup(readOnly = true)
+        open("Music acquisition")
+        compose.onNodeWithText("Music acquisition requires an owner Plex library. Shared libraries support listening only.").assertExists()
+        compose.onNodeWithText("Connect", substring = false).assertDoesNotExist()
+        compose.onNodeWithText("Set up from another device").assertDoesNotExist()
+    }
+
+    @Test @Config(qualifiers = "w1280dp-h720dp-mdpi")
+    fun acquisitionComputerSetupIsReachableOnTv() {
+        setup(tv = true)
+        open("Music acquisition")
+        compose.onNodeWithText("Set up from another device").assertIsDisplayed()
+        screenshot("tv-acquisition")
+        compose.onNodeWithText("Connect", substring = false).performScrollTo().assertExists()
+    }
+
     @Test fun phoneHubAndConsentGatedTuning() {
         setup()
         SettingsCategory.entries.forEach { compose.onNodeWithText(it.title).assertExists() }

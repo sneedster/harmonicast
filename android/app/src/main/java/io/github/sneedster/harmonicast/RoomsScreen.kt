@@ -71,6 +71,7 @@ internal fun shareText(context: Context, text: String, title: String) {
                 room.enabled -> {
                     Text("Room ${room.roomCode}", style = MaterialTheme.typography.headlineSmall)
                     SettingsDescription(if (room.nearbyAvailable) "Bluetooth room is ready" else "Bluetooth is unavailable; same-Wi-Fi access still works")
+                    RoomAcquisitionToggle(vm)
                     Text("Room playback", style = MaterialTheme.typography.titleMedium)
                     if (HarmonicastMediaService.nativeOutputActive.value) {
                         Button(onClick = vm::takeBackPlayback, modifier = Modifier.tvFocusFeedback()) { Text("Play on this device") }
@@ -99,6 +100,7 @@ internal fun shareText(context: Context, text: String, title: String) {
                     Text("Host a room", style = MaterialTheme.typography.titleLarge)
                     if (vm.isPersonalMode && vm.canWriteToPlex) {
                         SettingsDescription("Play your Plex music together. Nearby phones can browse, request, vote, and follow the queue without an account.")
+                        RoomAcquisitionToggle(vm)
                         Button(onClick = { if (granted(hostPermissions)) vm.setGuestControl(true) else hostPermissionLauncher.launch(hostPermissions) }, modifier = Modifier.tvFocusFeedback()) { Text(if (television) "Open room on this TV" else "Open room") }
                     } else SettingsDescription("Only the Plex server owner can host a room. Shared read-only libraries can still be used for personal listening.")
                 }

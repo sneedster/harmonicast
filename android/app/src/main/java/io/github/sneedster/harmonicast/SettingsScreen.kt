@@ -35,6 +35,7 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
     PLAYBACK("Playback", Icons.Default.PlayCircle),
     MIX("Automatic mix", Icons.Default.Shuffle),
     RATINGS("Automatic ratings", Icons.Default.Star),
+    ACQUISITION("Music acquisition", Icons.Default.CloudDownload),
     PLEX("Plex account", Icons.Default.AccountCircle),
     ABOUT("About & updates", Icons.Default.Info),
 }
@@ -95,6 +96,7 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
                                 SettingsCategory.PLAYBACK -> if (television) "Playback on this TV" else if (vm.keepScreenOnWhileCharging) "Stay awake while charging" else "Screen & background playback"
                                 SettingsCategory.MIX -> "${vm.ratedTrackShare} rated / ${10 - vm.ratedTrackShare} unrated · ${selectionLabels[vm.musicTuning.selection]}"
                                 SettingsCategory.RATINGS -> if (!vm.automaticPlexRatings) "Off" else if (vm.musicTuning.defaultRatings) "On · Default tuning" else "On · Custom tuning"
+                                SettingsCategory.ACQUISITION -> "Connect an existing MusicGrabber service"
                                 SettingsCategory.PLEX -> vm.plexSourceLabel.ifBlank { "Connect your music library" }
                                 SettingsCategory.ABOUT -> "Version ${BuildConfig.VERSION_NAME}" + if (updates.release != null) " · Update available" else ""
                             }
@@ -150,6 +152,7 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
                                 SettingsCategory.PLAYBACK -> PlaybackSettings(vm)
                                 SettingsCategory.MIX -> MixSettings(vm)
                                 SettingsCategory.RATINGS -> RatingSettings(vm)
+                                SettingsCategory.ACQUISITION -> AcquisitionSettings(vm, isActive)
                                 SettingsCategory.PLEX -> PlexAccountSettings(vm)
                                 SettingsCategory.ABOUT -> AboutSettings()
                             }

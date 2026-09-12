@@ -35,5 +35,33 @@ Harmonicast does not store voice recordings; recognized text becomes a search or
 filter query sent to the selected Plex server. Listening stops on completion,
 cancellation, leaving the app, or after a short timeout.
 
+Music acquisition is optional. When configured, Harmonicast connects to the user's
+MusicGrabber service with account credentials or an explicitly selected API key.
+Passwords, API keys, and session tokens are encrypted locally with Android
+Keystore. Remember login is enabled by default; disabling it retains only the
+session token and requires another sign-in after expiration. Disconnect removes
+local credentials and attempts to revoke the app's session.
+
+External music searches send the chosen search text and catalogue identifiers to
+MusicBrainz. Acquisition sends the selected artist/title to MusicGrabber. The app
+stores request metadata and import identifiers to recover progress and avoid
+submitting or queuing a request twice. Plex remains the playback source; acquired
+tracks must appear in the selected library before they enter the queue. Changing
+the account, service, or library suspends incompatible pending requests.
+
+Computer-assisted setup temporarily opens a separate HTTP page on the device's
+private Wi-Fi/Ethernet address. It uses a pairing code and a short-lived capability,
+requires confirmation on Android before saving, and closes after completion,
+cancellation, or five minutes. This page uses the private network's transport
+security; its code and browser session must be treated as temporary credentials.
+Login values are sent in request bodies, never URLs, and are not saved to browser
+storage or returned by the setup API. No public relay or hosted setup service is used.
+
+Room acquisition starts disabled for each new room. When the host enables it,
+guest requests use the host's configured MusicGrabber account and are attributed
+to the requesting participant. Guests never receive service credentials. Accepted
+requests may finish and enter the host's queue after room acquisition is disabled
+or the room closes. Shared read-only Plex users cannot host or acquire music.
+
 Questions: [GitHub issues](https://github.com/sneedster/harmonicast/issues).
 Harmonicast is not affiliated with or endorsed by Plex.
