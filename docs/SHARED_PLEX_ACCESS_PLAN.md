@@ -3,7 +3,7 @@
 Status: implementation started 2026-09-12; room capabilities, live-access guards,
 the sharing proof kit, and the owner library-preparation flow are implemented
 locally. Approved-account reads and same-token revocation passed the live API
-experiment. Automated Android validation passes (198 tests). Live preparation
+experiment. Automated Android validation passes (200 tests). Live preparation
 mutations, remaining cross-account controls, real credential publication,
 recipient acquisition, and physical-device acceptance remain outstanding.
 No release date assigned.

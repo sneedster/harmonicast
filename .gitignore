@@ -42,3 +42,8 @@ android/gradlew.bat
 !android/gradle/wrapper/**
 !android/gradlew
 !android/gradlew.bat
+
+# Separate local projects and generated audit output
+/marketing-site/
+/contributions/
+/premium-audit.json

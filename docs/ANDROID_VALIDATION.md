@@ -551,15 +551,16 @@ the kit directs users to keep test media out of the playback library.
 ## Shared Plex owner preparation — 2026-09-12
 
 `android/build-debug.sh :app:testDebugUnitTest :app:lintDebug` completed successfully:
-198 tests, zero failures/errors/skips; debug APK assembled. Lint has zero errors
+200 tests, zero failures/errors/skips; debug APK assembled. Lint has zero errors
 and 37 warnings. The setup tests cover live-owner gating, stale source/guest
 rejection, empty-record review, reuse without another write, uncertain creation
 recovery, conflicting metadata, failed read-back, duplicate libraries, overlapping
 music folders, strict disabled records, bounded responses, and blocked redirects.
 Compose tests cover folder validation, disabled fields/actions while busy,
 cancellation, sanitized retry errors, and the distinction between Library ready
-and enabled acquisition. The isolated staged snapshot was verified separately from the uncommitted
-display-entry work.
+and enabled acquisition. The display entry network test expectation was corrected
+to match the existing router's 404 for display-inaccessible operations; the router
+authorization policy was not changed by this preparation work.
 
 Inspected the rendered phone readiness state at
 `android/app/build/reports/settings-layout/shared-plex-ready.png`. The existing
