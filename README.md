@@ -17,6 +17,7 @@ owner-only Plex writes and room hosting require owner access.
 - Albums, singles, EPs, artists, biographies, live search, and paged Plex playlists.
 - Voice input through Android speech recognition and remote-friendly TV focus.
 - Request-first queues, configurable automatic mix, adaptive ratings, and Track Radio.
+- Optional MusicGrabber integration to acquire missing tracks and queue them once available in Plex.
 - Android Auto library browsing, artwork grids, and playback.
 - Temporary nearby rooms, requests/votes, and bundled browser guest/display pages.
 - Owner-controlled native room playback transfer and take-back.
@@ -28,8 +29,8 @@ retains playback authority until disconnected. Track Radio depends on Plex suppo
 
 ## Settings and music tuning
 
-Settings has six categories: **Appearance**, **Playback**, **Automatic mix**,
-**Automatic ratings**, **Plex account**, and **About & updates**. Phones open a page
+Settings has seven categories: **Appearance**, **Playback**, **Automatic mix**,
+**Automatic ratings**, **Music acquisition**, **Plex account**, and **About & updates**. Phones open a page
 per category; larger displays keep the category list beside the selected page.
 The mini-player remains available.
 
@@ -67,7 +68,34 @@ repeat-play controls can be adjusted.
 Preferences stay local to each device. During native transfer, the controlling
 host's preferences apply.
 
-These Settings changes are included in v1.1.8.
+Music tuning and the Settings layout were introduced in v1.1.8; Music acquisition
+was added in v1.1.9.
+
+## Optional MusicGrabber integration
+
+[MusicGrabber](https://gitlab.com/g33kphr33k/musicgrabber) is a separate, self-hosted
+service that Harmonicast can use to acquire music missing from your library.
+It is optional; Plex remains the playback source. Requested tracks enter normal
+queue order only after Harmonicast verifies them in the selected Plex Music library.
+
+To install a server, follow MusicGrabber's
+[Quick Start](https://gitlab.com/g33kphr33k/musicgrabber/-/blob/main/README.md#quick-start).
+Configure it to save music into your Plex library and follow its
+[Plex auto-rescan instructions](https://gitlab.com/g33kphr33k/musicgrabber/-/blob/main/README.md#plex-auto-rescan)
+so new tracks become available. For server installation, configuration, and
+troubleshooting, use the [MusicGrabber documentation](https://gitlab.com/g33kphr33k/musicgrabber/-/blob/main/README.md)
+and project support resources. Harmonicast support covers the app's integration.
+
+Once your server is running, open **Settings → Music acquisition**, enter its
+reachable URL and your MusicGrabber username/password, then tap **Connect**.
+You can also use **Set up from another device** to enter credentials on a computer
+and confirm the connection on Android. API-key connections are available under
+**Advanced settings**. Acquisition requires owner access to the selected Plex
+library; shared read-only libraries support listening only.
+
+Acquisition starts disabled in each room. The host can enable **Allow music acquisition**
+for guest requests using the host device's MusicGrabber connection. Accepted requests
+continue even after the room closes.
 
 ## Share the app
 
