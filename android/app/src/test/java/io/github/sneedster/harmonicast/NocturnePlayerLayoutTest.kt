@@ -45,13 +45,15 @@ class NocturnePlayerLayoutTest {
         }
         if (frame) {
             compose.onNodeWithText("A Very Long Song Title for Landscape").performClick()
-            compose.onNodeWithContentDescription("Queue").assertIsDisplayed()
+            if (name.startsWith("portrait")) compose.onNodeWithText("Queue").assertIsDisplayed()
+            else compose.onNodeWithContentDescription("Queue").assertIsDisplayed()
         }
         compose.onNodeWithContentDescription("Play").assertIsDisplayed()
         compose.onNodeWithContentDescription("Vote up").assertIsDisplayed()
         compose.onNodeWithContentDescription("Vote down").assertIsDisplayed()
-        if (name == "portrait") compose.onNodeWithText(" Discover").assertIsDisplayed()
+        if (name.startsWith("portrait")) compose.onNodeWithText(" Discover").assertIsDisplayed()
         else compose.onNodeWithContentDescription("Discover").assertIsDisplayed()
+        if (frame && name.startsWith("portrait")) compose.onNodeWithText("7.0 / 10").performScrollTo()
         compose.onNodeWithText("7.0 / 10").assertIsDisplayed()
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
         listOf("Play", "Vote up", "Vote down", "Next").forEach { description ->
@@ -59,6 +61,29 @@ class NocturnePlayerLayoutTest {
             check(bounds.left >= root.left && bounds.right <= root.right && bounds.bottom <= root.bottom) {
                 "$description is clipped: $bounds outside $root"
             }
+        }
+        if (name.startsWith("portrait")) {
+            val descriptions = listOf("Play", "Vote up", "Vote down", "Next", "Previous track or restart")
+            val controlBounds = descriptions.associateWith {
+                compose.onNodeWithContentDescription(it).getUnclippedBoundsInRoot()
+            }
+            val discoveryBounds = compose.onNodeWithText(" Discover").getUnclippedBoundsInRoot()
+            val viewport = compose.onRoot().getUnclippedBoundsInRoot()
+            check(discoveryBounds.bottom <= viewport.bottom) { "Discovery is below viewport" }
+            if (frame) {
+                val navigationTop = compose.onNodeWithText("Home", useUnmergedTree = true)
+                    .getUnclippedBoundsInRoot().top
+                check(discoveryBounds.bottom < navigationTop) { "Discovery overlaps navigation" }
+            }
+            compose.runOnIdle {
+                vm.nowPlaying = vm.nowPlaying.copy(song = vm.nowPlaying.song!!.copy(title = "Short title"))
+            }
+            controlBounds.forEach { (description, bounds) ->
+                check(compose.onNodeWithContentDescription(description).getUnclippedBoundsInRoot() == bounds) {
+                    "$description moved when the title changed length"
+                }
+            }
+            check(compose.onNodeWithText(" Discover").getUnclippedBoundsInRoot() == discoveryBounds)
         }
         val output = File("build/reports/player-layout/$name.png").apply { parentFile?.mkdirs() }
         compose.runOnIdle {
@@ -82,4 +107,10 @@ class NocturnePlayerLayoutTest {
 
     @Test @Config(qualifiers = "w390dp-h760dp-mdpi")
     fun portraitControlsAndRatingFit() = render("portrait")
+
+    @Test @Config(qualifiers = "w390dp-h760dp-mdpi")
+    fun portraitWithNavigationKeepsControlsFixed() = render("portrait-with-navigation", frame = true)
+
+    @Test @Config(qualifiers = "w360dp-h640dp-mdpi")
+    fun shortPortraitWithNavigationKeepsControlsFixed() = render("portrait-short", frame = true)
 }

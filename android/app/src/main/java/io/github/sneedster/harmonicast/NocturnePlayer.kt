@@ -5,7 +5,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
         return
     }
     val colors = MaterialTheme.colorScheme
+    TrackSwipePage(song.id, vm.isHost, vm.isActivePlayer, vm::nextSong, vm::previousSong) {
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         val wide = maxWidth >= 480.dp && maxWidth > maxHeight
         val compact = wide && maxHeight < 380.dp
@@ -53,12 +54,11 @@ import androidx.compose.ui.unit.sp
                 Box(Modifier.shadow(28.dp, RoundedCornerShape(24.dp), spotColor = colors.primary.copy(alpha = .4f))
                     .background(colors.surfaceVariant, RoundedCornerShape(24.dp))
                     .pointerInput(track.id, vm.isHost) {
-                        var dx = 0f; var dy = 0f
-                        detectDragGestures(onDragStart = { dx = 0f; dy = 0f }, onDrag = { change, amount ->
-                            dx += amount.x; dy += amount.y; change.consume()
+                        var upward = 0f
+                        detectVerticalDragGestures(onDragStart = { upward = 0f }, onVerticalDrag = { change, amount ->
+                            upward -= amount; change.consume()
                         }, onDragEnd = {
-                            if (dy < -80.dp.toPx() && -dy > kotlin.math.abs(dx)) { details = true; vm.loadArtistDiscovery(track) }
-                            else if (dx < -80.dp.toPx() && vm.isHost) vm.nextSong()
+                            if (upward > 80.dp.toPx()) { details = true; vm.loadArtistDiscovery(track) }
                         })
                     }) { Cover(vm, track, artSize) }
             }
@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.sp
                 Text(song.title, fontFamily = FontFamily.Serif,
                     fontSize = if (compact) 24.sp else if (wide) 36.sp else 27.sp,
                     lineHeight = if (compact) 28.sp else if (wide) 40.sp else 31.sp,
+                    minLines = if (compact) 1 else 2,
                     maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
                 Text(song.artist, fontSize = if (compact) 16.sp else 18.sp,
                     color = colors.primary, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -108,11 +109,19 @@ import androidx.compose.ui.unit.sp
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.Center) { information() }
                 controls()
             }
-        } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            artwork()
-            information()
+        } else Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Transport and discovery actions own their space. Artwork and metadata
+            // can scroll on shorter screens without pushing buttons below navigation.
+            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                artwork()
+                information()
+            }
             controls()
         }
+    }
     }
 }
 

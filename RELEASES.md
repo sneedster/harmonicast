@@ -1,5 +1,20 @@
 # Releases
 
+## v1.1.10 — smooth player swipes and stable controls
+
+Version code: **72**.
+
+- Swipe left for next or right for the same previous/restart action as the transport button.
+- The player follows your finger, completes on release beyond halfway or with enough
+  flick momentum, and springs back for shorter or cancelled drags.
+- Two-line titles reserve their space. Portrait playback and discovery controls stay
+  above navigation while artwork and metadata can scroll independently.
+
+Pixel verification confirmed right swipes restart playback and return to the previous
+track. Layout regression tests cover short portrait screens, the full navigation frame,
+landscape, and stable button positions across title lengths. All 161 unit tests and
+full debug lint passed.
+
 ## v1.1.9 — optional MusicGrabber acquisition
 
 - Username/password connection with remembered login, session recovery, and API key

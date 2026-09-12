@@ -10,7 +10,6 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -19,14 +18,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.clickable
@@ -50,13 +46,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -1518,20 +1512,10 @@ class MainActivity : ComponentActivity() {
     val song = vm.nowPlaying.song
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 8.dp)) {
         val artworkSize = minOf((maxWidth - 20.dp).coerceAtLeast(180.dp), maxHeight * 0.43f)
-        val density = LocalDensity.current
-        val throwDistance = with(density) { (maxWidth + artworkSize).toPx() }
-        val skipThreshold = throwDistance * 0.35f
-        var swipeOffset by remember(song?.id) { mutableFloatStateOf(0f) }
-        var swipeStartedAt by remember(song?.id) { mutableLongStateOf(0L) }
         var detailsOpen by remember(song?.id) { mutableStateOf(false) }
-        val animatedSwipeOffset by animateFloatAsState(
-            targetValue = swipeOffset,
-            animationSpec = spring(),
-            label = "artwork swipe",
-        )
         if (detailsOpen && song != null) {
             ArtistDiscoveryPage(vm, song) { detailsOpen = false }
-        } else Column(
+        } else TrackSwipePage(song?.id, vm.isHost, vm.isActivePlayer, vm::nextSong, vm::previousSong) { Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1548,27 +1532,6 @@ class MainActivity : ComponentActivity() {
                             if (upward > 90f) { detailsOpen = true; vm.loadArtistDiscovery(song) }
                             upward = 0f
                         })
-                    }
-                    .pointerInput(song.id, vm.isHost) {
-                        detectHorizontalDragGestures(
-                            onDragStart = { swipeOffset = 0f; swipeStartedAt = SystemClock.uptimeMillis() },
-                            onHorizontalDrag = { change, amount ->
-                                if (vm.isHost && amount < 0f) {
-                                    change.consume()
-                                    swipeOffset = (swipeOffset + amount).coerceAtLeast(-throwDistance * 0.8f)
-                                }
-                            },
-                            onDragEnd = {
-                                // A deliberate flick should feel immediate even when it
-                                // travels less than the long-drag distance.
-                                val fastFlick = swipeOffset < -72f && SystemClock.uptimeMillis() - swipeStartedAt < 180L
-                                if (swipeOffset <= -skipThreshold || fastFlick) vm.nextSong()
-                                // A swipe is a command, not a card-dismissal UI.
-                                // Keep the artwork visible until the next song is ready.
-                                swipeOffset = 0f
-                            },
-                            onDragCancel = { swipeOffset = 0f },
-                        )
                     },
                 contentAlignment = Alignment.Center,
             ) {
@@ -1576,11 +1539,6 @@ class MainActivity : ComponentActivity() {
                     vm,
                     song,
                     artworkSize,
-                    Modifier.graphicsLayer {
-                        translationX = animatedSwipeOffset
-                        rotationZ = (animatedSwipeOffset / throwDistance * 14f).coerceAtLeast(-14f)
-                        alpha = (1f + animatedSwipeOffset / throwDistance * 0.55f).coerceIn(0.45f, 1f)
-                    },
                 )
             }
             Column(
@@ -1618,6 +1576,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         }
+    }
     }
 }
 
