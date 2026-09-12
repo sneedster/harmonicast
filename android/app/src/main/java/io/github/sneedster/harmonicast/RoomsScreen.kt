@@ -115,7 +115,15 @@ internal fun shareText(context: Context, text: String, title: String) {
         val title = if (display) "Open room display" else "Invite guests"
         FocusRestoringAlertDialog(onDismissRequest = { sharing = null }, title = { Text(title) },
             text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SettingsDescription(if (display) "Scan on a tablet or living-room screen for a full-screen view with browsing, queue, and playback controls." else "Guests on the same Wi-Fi can scan this code to browse, request, and vote in a browser. Installing the app is optional.")
+                if (display) {
+                    SettingsDescription("On the other device, connect to the same Wi-Fi and type this address in its browser:")
+                    Text(room.displayEntryUrl, style = MaterialTheme.typography.titleMedium)
+                    SettingsDescription("Then enter this display code:")
+                    Text(room.displayEntryCode, style = MaterialTheme.typography.headlineMedium)
+                    SettingsDescription("Keep this code private: it grants browsing, queue, and playback controls until the room closes.")
+                    HorizontalDivider()
+                }
+                SettingsDescription(if (display) "Or scan this QR code to open the display." else "Guests on the same Wi-Fi can scan this code to browse, request, and vote in a browser. Installing the app is optional.")
                 Box(Modifier.widthIn(max = 260.dp).align(Alignment.CenterHorizontally)) { RoomQrCode(url, "$title for room ${room.roomCode}") }
                 SettingsDescription("Plex credentials and app settings are not shared.")
             } },

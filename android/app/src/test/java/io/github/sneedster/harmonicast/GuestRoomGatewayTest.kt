@@ -9,6 +9,24 @@ import java.nio.charset.StandardCharsets
 import java.util.Base64
 
 class GuestRoomGatewayTest {
+    @Test fun displayEntryCodeIsPrivateRateLimitedAndExpiresWithRoom() {
+        val room = RoomCapability.create(nowMillis = 1000, idleTimeoutMillis = 120000)
+        assertTrue(room.displayEntryCode.matches(Regex("[0-9]{4}")))
+        assertEquals(401, room.exchangeDisplayCode(room.roomCode, 1001).status)
+        repeat(4) { assertEquals(401, room.exchangeDisplayCode("wrong", 1002).status) }
+        assertEquals(429, room.exchangeDisplayCode(room.displayEntryCode, 1003).status)
+        val accepted = room.exchangeDisplayCode(room.displayEntryCode.chunked(4).joinToString(" "), 61000)
+        assertEquals(200, accepted.status)
+        assertEquals(room.displayBearer, JSONObject(accepted.body).getString("capability"))
+        assertFalse(accepted.body.contains(room.bearer))
+        assertEquals(401, room.exchangeDisplayCode(room.displayEntryCode, 181000).status)
+        val revoked = RoomCapability.create(nowMillis = 1000)
+        revoked.revoke()
+        assertEquals(401, revoked.exchangeDisplayCode(revoked.displayEntryCode, 1001).status)
+        val expired = RoomCapability.create(nowMillis = 1000, lifetimeMillis = 100)
+        assertEquals(401, expired.exchangeDisplayCode(expired.displayEntryCode, 1100).status)
+    }
+
     @Test fun sharedPlexCoreSupportsGuestBrowseQueueAndVotesWithoutAcquisitionGrant() = runBlocking {
         val fixture = AcquisitionFixture()
         fixture.source = fixture.source!!.copy(canWriteToPlex = false)

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open room display · Harmonicast</title>
+<style>
+:root { color-scheme: dark; --accent: #bfa7f5; scrollbar-color: #857399 #121421; scrollbar-width: auto; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px; background: #090b14; color: #f1eef8; font: 18px/1.5 system-ui, sans-serif; }
+main { max-width: 440px; margin: 8vh auto; padding: 28px; background: #121421; border: 1px solid #bfa7f530; border-radius: 20px; }
+.brand { color: var(--accent); margin-top: 0; }
+h1 { font: 34px/1.15 Georgia, serif; }
+p { color: #c8c1d4; }
+label { display: block; margin-bottom: 8px; }
+input { width: 100%; font: 26px/1.5 ui-monospace, monospace; padding: 10px; border: 1px solid #857399; border-radius: 8px; background: #090b14; color: #f1eef8; }
+button { cursor: pointer; min-height: 48px; border: 0; border-radius: 8px; padding: 10px 16px; font: inherit; background: var(--accent); color: #1d1430; }
+button:hover { filter: brightness(1.12); }
+button:active { filter: brightness(.9); }
+button:disabled { cursor: wait; opacity: .6; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+#visibility { margin-top: 8px; background: transparent; color: var(--accent); border: 1px solid #857399; }
+#submit { width: 100%; }
+#message { min-height: 3em; color: #f6b590; }
+@media (max-width: 400px) { body { padding: 16px; } main { padding: 20px; margin: 2vh auto; } }
+@media (forced-colors: active) { :root { scrollbar-color: auto; } }
+</style>
+</head>
+<body>
+<main>
+<p class="brand">Harmonicast</p>
+<h1>Open room display</h1>
+<p>On the host, open <strong>Rooms → Open room display</strong> and enter the four-digit display code shown there.</p>
+<form novalidate>
+<label for="code">Display code</label>
+<input id="code" name="code" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="24" aria-describedby="message">
+<button id="visibility" type="button" aria-controls="code" aria-pressed="false">Show code</button>
+<p id="message" role="status" aria-live="polite"></p>
+<button id="submit" type="submit">Open display</button>
+</form>
+<p>Keep both devices on the same Wi-Fi. The code works only while the host’s room is open.</p>
+</main>
+<script>
+(function () {
+  var form = document.querySelector('form');
+  var code = document.querySelector('#code');
+  var visibility = document.querySelector('#visibility');
+  var message = document.querySelector('#message');
+  var submit = document.querySelector('#submit');
+  visibility.addEventListener('click', function () {
+    var show = code.type === 'password';
+    code.type = show ? 'text' : 'password';
+    visibility.textContent = show ? 'Hide code' : 'Show code';
+    visibility.setAttribute('aria-pressed', String(show));
+  });
+  code.addEventListener('input', function () { code.removeAttribute('aria-invalid'); message.textContent = ''; });
+  form.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    if (submit.disabled) return;
+    var value = code.value.trim().replace(/[ -]/g, '');
+    if (!/^[0-9]{4}$/.test(value)) {
+      message.textContent = 'Enter the four-digit display code from the host.';
+      code.setAttribute('aria-invalid', 'true');
+      code.focus();
+      return;
+    }
+    submit.disabled = true;
+    message.textContent = 'Opening display…';
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 10000);
+    try {
+      var response = await fetch('/v1/display/open', {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: value, signal: controller.signal
+      });
+      var result = await response.json();
+      if (!response.ok) {
+        message.textContent = result.error || 'Could not open the display. Try again.';
+        if (response.status === 401) { code.setAttribute('aria-invalid', 'true'); code.focus(); }
+        return;
+      }
+      // Use the existing display bootstrap; replace keeps the entry page out of Back history.
+      location.replace('/display#cap=' + encodeURIComponent(result.capability));
+    } catch (_) {
+      message.textContent = 'Could not reach the host. Check that the room is open and both devices are on the same Wi-Fi, then try again.';
+    } finally {
+      clearTimeout(timer);
+      submit.disabled = false;
+    }
+  });
+}());
+</script>
+</body>
+</html>

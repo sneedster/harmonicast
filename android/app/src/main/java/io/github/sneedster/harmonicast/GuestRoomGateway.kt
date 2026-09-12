@@ -33,6 +33,8 @@ data class RoomShareState(
     val expiresAtMillis: Long = 0,
     val error: String = "",
     val checkingAccess: Boolean = false,
+    val displayEntryUrl: String = "",
+    val displayEntryCode: String = "",
 )
 
 enum class RoomTransportKind(val wireName: String) {
@@ -133,11 +135,29 @@ class RoomCapability private constructor(
     val roomCode: String,
     val bearer: String,
     val displayBearer: String,
+    val displayEntryCode: String,
     val expiresAtMillis: Long,
     private val idleTimeoutMillis: Long,
     private var lastUsedAtMillis: Long,
 ) {
     @Volatile private var revoked = false
+    private var entryAttempts = 0
+    private var entryWindowAtMillis = lastUsedAtMillis
+
+    /** Short codes are separate from the publicly advertised room name. */
+    @Synchronized fun exchangeDisplayCode(candidate: String, nowMillis: Long): GuestApiResponse {
+        fun error(status: Int, message: String) = GuestApiResponse(status, JSONObject().put("error", message).toString())
+        if (!activeAt(nowMillis)) return error(401, "Room closed. Open a new room on the host.")
+        if (nowMillis - entryWindowAtMillis >= 60_000) {
+            entryAttempts = 0
+            entryWindowAtMillis = nowMillis
+        }
+        if (entryAttempts >= 5) return error(429, "Too many attempts. Wait one minute and try again.")
+        entryAttempts++
+        val normalized = candidate.trim().replace(" ", "").replace("-", "")
+        if (!authorize(normalized, displayEntryCode, nowMillis)) return error(401, "Code does not match. Check the display code on the host.")
+        return GuestApiResponse(200, JSONObject().put("capability", displayBearer).toString())
+    }
 
     @Synchronized fun authorize(candidate: String?, nowMillis: Long): Boolean {
         return authorize(candidate, bearer, nowMillis)
@@ -184,6 +204,7 @@ class RoomCapability private constructor(
                 code,
                 secret(),
                 secret(),
+                buildString { repeat(4) { append(random.nextInt(10)) } },
                 nowMillis + lifetimeMillis,
                 idleTimeoutMillis,
                 nowMillis,
@@ -371,6 +392,8 @@ class GuestRoomGateway(
         .bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
     private val displayPageTemplate = context.assets.open("display/index.html")
         .bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+    private val displayEntryTemplate = context.assets.open("display/open.html")
+        .bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
     private val workers = ThreadPoolExecutor(
         2,
         4,
@@ -456,6 +479,8 @@ class GuestRoomGateway(
             roomCode = room.roomCode,
             joinUrl = browserJoin,
             displayUrl = displayJoin,
+            displayEntryUrl = "$base/open",
+            displayEntryCode = room.displayEntryCode,
             appJoinUrl = appJoin,
             port = port,
             expiresAtMillis = room.expiresAtMillis,
@@ -486,8 +511,12 @@ class GuestRoomGateway(
             }
         }.concatToString()
         val uri = URI(first[1])
-        if (first[0] == "GET" && uri.path in setOf("", "/", "/join", "/display")) {
-            val template = if (uri.path == "/display") displayPageTemplate else guestPageTemplate
+        if (first[0] == "GET" && uri.path in setOf("", "/", "/join", "/display", "/open")) {
+            val template = when (uri.path) {
+                "/open" -> displayEntryTemplate
+                "/display" -> displayPageTemplate
+                else -> guestPageTemplate
+            }
             writeResponse(
                 client,
                 GuestApiResponse(
@@ -496,6 +525,15 @@ class GuestRoomGateway(
                     "text/html; charset=utf-8",
                 ),
             )
+            return
+        }
+        if (first[0] == "POST" && uri.path == "/v1/display/open") {
+            val response = when {
+                !accessAllowed() -> GuestApiResponse(403, "{\"error\":\"Room source is no longer available\"}")
+                else -> capability?.exchangeDisplayCode(body.take(64), System.currentTimeMillis())
+                    ?: GuestApiResponse(401, "{\"error\":\"Room closed\"}")
+            }
+            writeResponse(client, response)
             return
         }
         val bearer = headers["authorization"]?.takeIf { it.startsWith("Bearer ", true) }?.substring(7)?.trim()

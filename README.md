@@ -40,6 +40,10 @@ The mini-player remains available.
 Use **Rooms** to join or host a room, share guest/display QR codes, or transfer and
 take back playback. The Settings hub also links to Rooms.
 
+For a screen without a camera, choose **Open room display** on the host. Connect
+the other device to the same Wi-Fi, type the short local address shown in its
+browser, and enter the four-digit display code. QR scanning remains optional.
+
 ### Automatic mix
 
 **Automatic mix** sets the rated/unrated balance and preference for higher ratings.

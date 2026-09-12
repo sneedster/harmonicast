@@ -94,3 +94,17 @@ polite live region; progress uses Material LinearProgressIndicator in a fixed
 height slot; file export uses Android's document picker; scrolling remains with
 SettingsScreen. Service regression tests cover authorization/conflict/recovery;
 Compose tests cover input gating, busy state, cancellation, and honest readiness.
+
+## Manual display entry
+
+RoomsScreen's existing display dialog puts the typed local /open address and
+four-digit display code before the optional QR code. Use MaterialTheme titleMedium
+for the address, headlineMedium for the four-digit code, and SettingsDescription for
+same-Wi-Fi instructions. The shared dialog continues to own scrolling and focus.
+
+The standalone display/open.html entry form uses the display's Nocturne colors,
+Georgia heading and system body text. It owns inline validation, pending status,
+timeout recovery and keyboard focus. Display codes are separate secrets from the
+advertised room name; RoomCapability owns expiry and the shared attempt limit.
+Successful entry uses the existing display capability bootstrap and permission
+allowlist. No new public service or persistent credentials are introduced.
