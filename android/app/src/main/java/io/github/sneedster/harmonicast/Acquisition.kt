@@ -293,13 +293,13 @@ internal class AcquisitionCoordinator(val account: MusicGrabberAccount, val cata
     fun pending(participant: String) = requests.value.count { it.participant == participant && it.status !in setOf("failed", "fulfilled") }
     fun visible(participant: String?, room: String? = null) = requests.value.filter { (participant == null || it.participant == participant) && (room == null || it.room == room) }.takeLast(50)
     suspend fun setRoomAllowed(value: Boolean) {
-        if (value) require(source()?.canWriteToPlex == true && account.check()) { "MusicGrabber must be connected and available" }
+        if (value) require(PlexAccessPolicy.forSource(source()).canSubmitAcquisition && account.check()) { "MusicGrabber must be connected and available" }
         roomAllowed.value = value
     }
     suspend fun submit(recordingId: String, participant: String = "Owner", room: String = ""): AcquisitionRequestState =
         scope.async { submitAccepted(recordingId, participant, room) }.await()
     private suspend fun submitAccepted(recordingId: String, participant: String, room: String): AcquisitionRequestState = submission.withLock {
-        require(source()?.canWriteToPlex == true) { "Acquisition requires an owner Plex library" }
+        require(PlexAccessPolicy.forSource(source()).canSubmitAcquisition) { "Acquisition requires an owner Plex library" }
         if (room.isNotBlank()) require(roomId.value == room && roomAllowed.value) { "Music acquisition is disabled in this room" }
         require(account.check()) { account.state.value.message }
         val conn = account.connection() ?: throw IllegalArgumentException("Connect MusicGrabber first")
@@ -319,7 +319,7 @@ internal class AcquisitionCoordinator(val account: MusicGrabberAccount, val cata
         }
         var submissionStarted = false
         try {
-            require(plexIdentity(source()) == lib && account.connection()?.identity == conn.identity) { "Connection changed; request is paused" }
+            require(PlexAccessPolicy.forSource(source()).canSubmitAcquisition && plexIdentity(source()) == lib && account.connection()?.identity == conn.identity) { "Connection changed; request is paused" }
             submissionStarted = true
             val result = account.call("/api/bulk-import-async", "POST", JSONObject().put("songs", line).put("create_playlist", false).put("use_playlists_dir", false), conn.identity)
             val importId = result.optString("import_id")
@@ -339,14 +339,14 @@ internal class AcquisitionCoordinator(val account: MusicGrabberAccount, val cata
         return recent().firstOrNull { acquisitionMatches(it, recording) }
     }
     private suspend fun fulfill(request: AcquisitionRequestState, song: Song) {
-        require(request.library == plexIdentity(source()) && request.connection == account.connection()?.identity && source()?.canWriteToPlex == true) { "Connection changed; request is paused" }
+        require(request.library == plexIdentity(source()) && request.connection == account.connection()?.identity && PlexAccessPolicy.forSource(source()).canSubmitAcquisition) { "Connection changed; request is paused" }
         core().queue.addOnce(request.id, song.copy(isManual = true, addedByEmail = request.participant))
         update(request.copy(status = "fulfilled", message = "Queued"))
     }
     suspend fun advance() = advanceLock.withLock {
         for (saved in requests.value) {
             if (saved.status !in setOf("acquiring", "waiting_for_plex", "submitting", "unconfirmed")) continue
-            if (saved.library != plexIdentity(source()) || saved.connection != account.connection()?.identity || source()?.canWriteToPlex != true) {
+            if (saved.library != plexIdentity(source()) || saved.connection != account.connection()?.identity || !PlexAccessPolicy.forSource(source()).canSubmitAcquisition) {
                 if (!saved.message.startsWith("Paused")) update(saved.copy(message = "Paused — reconnect the original account and owner Plex library"))
                 continue
             }

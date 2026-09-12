@@ -93,3 +93,42 @@ GET calls at least five seconds apart. Automatic connection checks cache success
 for five minutes and failure for one minute; concurrent checks share one result.
 Opening room controls uses that cache. Explicit Test connection can refresh it.
 The polling loop backs off to at most five minutes when a cycle throws.
+
+## Shared Plex capability foundation (development)
+
+`PlexAccessPolicy` separates hosting, native playback offering, Plex writes, manual
+acquisition management, and submission. Shared source ownership is never upgraded.
+The UI, media service, native receiver, and acquisition coordinator reuse this
+policy. `NearbyGuestParticipation` tracks live client participation in process and
+prevents nested hosting and personal acquisition while joined; it is not persisted.
+Receiver pairing remains explicit and retains the existing local-network and lease
+checks. Receiver source replacement stops output; profile reload tears down hosted
+rooms, and the room monitor checks source/participation changes every ten seconds.
+
+`GuestControl.roomVote` preserves owner voting and allows shared-host guest reactions
+without Plex writes. Shared down votes can skip automatic tracks, while manual
+requests remain queued. The room router retains deduplication and sanitized DTOs.
+Delegated configuration discovery, credentials, and live revocation enforcement are
+still pending the proof described in `SHARED_PLEX_ACCESS_PLAN.md`.
+
+### Verified room lifetime
+
+`LocalPlexClient.canAccessMusicLibrary` checks the actual server machine identifier
+and selected music section with the saved source token. `PlexRequestFailure`
+retains HTTP status without response bodies or URLs. `PlexRoomAccessGuard` binds
+verification to a source and serializes checks with a timeout. A pending startup
+cannot be reused after teardown, source replacement, or joining a nearby room.
+
+The media service verifies before opening its gateway, reports pending access in
+the existing room summary, and rechecks roughly every minute. A confirmed denial
+or missing selected section revokes access and stops playback/output; transient
+failures preserve an existing room but cannot create a newly authorized room.
+Source/guest changes are also checked locally at ten-second lifecycle intervals
+and on each routed request. GuestRoomRouter guards both LAN and nearby operations,
+rechecks before queue admission and after suspended responses, and native host
+transfer uses the same room guard. This does not bypass server-side restrictions
+or upgrade shared sources to owner authority. Real-device propagation remains an
+acceptance check; automated tests use synthetic responses and real loopback sockets.
+
+The developer-only `scripts/plex_sharing_probe.py` collects phase 1 evidence. It is
+not part of Android's production delegated-acquisition path and publishes nothing.

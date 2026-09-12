@@ -92,6 +92,7 @@ data class GuestPolicy(
 interface GuestControl {
     suspend fun policy(): GuestPolicy
     suspend fun vote(up: Boolean)
+    suspend fun roomVote(up: Boolean) = vote(up)
 }
 
 enum class CoreEvent { QUEUE_CHANGED, FORCE_SKIP, PLAYER_SESSION_CHANGED, CHANGED }

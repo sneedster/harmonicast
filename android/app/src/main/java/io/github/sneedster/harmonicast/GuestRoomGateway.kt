@@ -32,6 +32,7 @@ data class RoomShareState(
     val port: Int = 0,
     val expiresAtMillis: Long = 0,
     val error: String = "",
+    val checkingAccess: Boolean = false,
 )
 
 enum class RoomTransportKind(val wireName: String) {
@@ -198,6 +199,7 @@ class GuestRoomRouter internal constructor(
     private val displayToggle: () -> Unit = {},
     private val displaySkip: () -> Unit = {},
     private val acquisition: AcquisitionCoordinator? = null,
+    private val accessAllowed: () -> Boolean = { true },
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
     private val votes = mutableSetOf<Pair<String, String>>()
@@ -209,13 +211,14 @@ class GuestRoomRouter internal constructor(
             capability.authorizeDisplay(request.bearer, now) -> true
             else -> return json(401, JSONObject().put("error", "Room capability is invalid or expired"))
         }
+        if (!accessAllowed()) return json(403, JSONObject().put("error", "Room source is no longer available"))
         if (displayOnly && (request.method to request.path) !in DISPLAY_OPERATIONS) {
             return json(404, JSONObject().put("error", "Display operation is not available"))
         }
         if (!displayOnly && request.path.startsWith("/v1/display/")) {
             return json(404, JSONObject().put("error", "Guest operation is not available"))
         }
-        return try {
+        val response = try {
             when (request.method to request.path) {
                 "GET" to "/v1/status" -> json(200, JSONObject()
                     .put("roomCode", capability.roomCode)
@@ -264,6 +267,7 @@ class GuestRoomRouter internal constructor(
                     val id = JSONObject(request.body.ifBlank { "{}" }).optString("songId")
                     val song = id.takeIf { it.isNotBlank() }?.let { core.library.track(it) }
                         ?: return json(404, JSONObject().put("error", "Track was not found"))
+                    if (!accessAllowed()) return json(403, JSONObject().put("error", "Room source is no longer available"))
                     core.queue.addGuest(song.copy(isManual = true, addedByEmail = "Room display")) { acquisition?.pending("Room display") ?: 0 }
                     json(202, JSONObject().put("accepted", true).put("song", guestSong(song)))
                 }
@@ -284,6 +288,7 @@ class GuestRoomRouter internal constructor(
                     val id = JSONObject(request.body.ifBlank { "{}" }).optString("songId")
                     val song = id.takeIf { it.isNotBlank() }?.let { core.library.track(it) }
                         ?: return json(404, JSONObject().put("error", "Track was not found"))
+                    if (!accessAllowed()) return json(403, JSONObject().put("error", "Room source is no longer available"))
                     core.queue.addGuest(song.copy(isManual = true, addedByEmail = participant)) { acquisition?.pending(participant) ?: 0 }
                     json(202, JSONObject().put("accepted", true).put("song", guestSong(song)))
                 }
@@ -297,7 +302,8 @@ class GuestRoomRouter internal constructor(
                         val accepted = synchronized(votes) { votes.add(voteKey) }
                         if (!accepted) json(409, JSONObject().put("error", "You already voted on this track"))
                         else try {
-                            core.guests.vote(direction == "up")
+                            if (!accessAllowed()) return json(403, JSONObject().put("error", "Room source is no longer available"))
+                            core.guests.roomVote(direction == "up")
                             json(202, JSONObject().put("accepted", true))
                         } catch (error: Exception) {
                             synchronized(votes) { votes.remove(voteKey) }
@@ -314,6 +320,8 @@ class GuestRoomRouter internal constructor(
         } catch (e: Exception) {
             json(502, JSONObject().put("error", "Guest operation failed"))
         }
+        return if (accessAllowed()) response
+        else json(403, JSONObject().put("error", "Room source is no longer available"))
     }
 
     private fun json(status: Int, body: Any) = GuestApiResponse(status, body.toString())
@@ -356,6 +364,7 @@ class GuestRoomGateway(
     private val bindAddress: String? = null,
     private val displayToggle: () -> Unit = {},
     private val displaySkip: () -> Unit = {},
+    private val accessAllowed: () -> Boolean = { true },
 ) {
     private val acquisition = AcquisitionRuntime.get(context)
     private val guestPageTemplate = context.assets.open("guest/index.html")
@@ -375,6 +384,7 @@ class GuestRoomGateway(
     private var router: GuestRoomRouter? = null
 
     fun start(): RoomShareState {
+        check(accessAllowed()) { "Room source is no longer available" }
         if (running) return snapshot()
         val room = RoomCapability.create()
         // The LAN adapter is a development bridge. Bind only the selected local/loopback
@@ -385,7 +395,7 @@ class GuestRoomGateway(
         }
         capability = room
         acquisition.roomId.value = "${room.roomCode}:${room.expiresAtMillis}"
-        router = GuestRoomRouter(core, room, displayToggle = displayToggle, displaySkip = displaySkip, acquisition = acquisition)
+        router = GuestRoomRouter(core, room, displayToggle = displayToggle, displaySkip = displaySkip, acquisition = acquisition, accessAllowed = accessAllowed)
         server = socket
         running = true
         thread(name = "harmonicast-room", isDaemon = true) {

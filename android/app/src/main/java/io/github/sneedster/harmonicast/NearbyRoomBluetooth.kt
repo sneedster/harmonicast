@@ -735,6 +735,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
     }
 
     private fun publish(state: NearbyRoomState) {
+        NearbyGuestParticipation.update(this, state.connected)
         roomState = state
         handler.post { onState(state) }
     }
@@ -905,6 +906,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
     }
 
     fun close() {
+        NearbyGuestParticipation.update(this, false)
         acquisitionResponse?.completeExceptionally(IllegalArgumentException("Room disconnected")); acquisitionResponse = null
         stopScan()
         handler.removeCallbacks(refreshStatus)

@@ -4,18 +4,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativePlaybackProtocolTest {
-    @Test fun onlyPersonalOwnerProfilesAreEligible() {
+    @Test fun configuredOwnerAndSharedProfilesAreEligible() {
         val values = mutableMapOf<String, String>()
         val profile = HomeProfileStore(object : ProfileStorage {
             override fun read(key: String) = values[key]
             override fun write(next: Map<String, String>) { values.putAll(next) }
         })
-        assertFalse(NativePlaybackProtocol.ownerEligible(profile))
+        assertFalse(NativePlaybackProtocol.playbackEligible(profile))
         val source = PersonalPlexSource("test-token", "http://plex", "machine", "Test", "1", "Music", canWriteToPlex = false)
         profile.savePersonalSource(source)
-        assertFalse(NativePlaybackProtocol.ownerEligible(profile))
+        assertTrue(NativePlaybackProtocol.playbackEligible(profile))
         profile.savePersonalSource(source.copy(canWriteToPlex = true))
-        assertTrue(NativePlaybackProtocol.ownerEligible(profile))
+        assertTrue(NativePlaybackProtocol.playbackEligible(profile))
+        profile.clearPersonalSource()
+        assertFalse(NativePlaybackProtocol.playbackEligible(profile))
     }
     @Test fun roomSecretsAreOneUseAndRevocable() {
         val secret = NativePlaybackProtocol.secret()

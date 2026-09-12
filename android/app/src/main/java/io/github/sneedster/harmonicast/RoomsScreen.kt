@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
 internal fun roomSummary(vm: HarmonicastViewModel): String = when {
+    HarmonicastMediaService.roomShareState.value.checkingAccess -> "Checking Plex access…"
     vm.nearbyRoomState.connected -> "Joined room ${vm.nearbyRoomState.roomCode}"
     HarmonicastMediaService.roomShareState.value.enabled -> "Hosting room ${HarmonicastMediaService.roomShareState.value.roomCode}"
     else -> "Join or host a listening room"
@@ -57,7 +58,7 @@ internal fun shareText(context: Context, text: String, title: String) {
             when {
                 joined.connected -> {
                     Text("Room ${joined.roomCode}", style = MaterialTheme.typography.titleLarge)
-                    if (vm.isPersonalMode && vm.canWriteToPlex) {
+                    if (vm.plexAccess.canOfferPlayback) {
                         if (vm.offeringRoomPlayback) {
                             SettingsDescription(NativePlaybackReceiver.state.value.message)
                             OutlinedButton(onClick = vm::stopOfferingRoomPlayback, enabled = !joined.busy, modifier = Modifier.tvFocusFeedback()) { Text("Stop playing here") }
@@ -77,14 +78,14 @@ internal fun shareText(context: Context, text: String, title: String) {
                         Button(onClick = vm::takeBackPlayback, modifier = Modifier.tvFocusFeedback()) { Text("Play on this device") }
                     } else {
                         val devices = HarmonicastMediaService.roomPlaybackDevices.value
-                        if (devices.isEmpty()) SettingsDescription("An owner-signed-in app can join this room and offer to play the music.")
+                        if (devices.isEmpty()) SettingsDescription("An app signed in to a Plex music library can join this room and offer to play the music.")
                         devices.forEach { (id, name) -> OutlinedButton(onClick = { vm.transferPlayback(id) }, modifier = Modifier.tvFocusFeedback()) { Text("Play on $name") } }
                     }
                     if (HarmonicastMediaService.nativeOutputStatus.value.isNotBlank()) SettingsDescription(HarmonicastMediaService.nativeOutputStatus.value)
                     HorizontalDivider()
                     Button(onClick = { sharing = "guests" }, modifier = Modifier.tvFocusFeedback()) { Text("Invite guests") }
                     OutlinedButton(onClick = { sharing = "display" }, modifier = Modifier.tvFocusFeedback()) { Text("Open room display") }
-                    SettingsDescription("Guests can search, request tracks, follow the queue, and vote. Plex credentials and owner controls stay on this device.")
+                    SettingsDescription("Guests can search, request tracks, follow the queue, and vote. Plex credentials and host controls stay on this device.")
                     SettingsDescription("Closes after 30 minutes without guest activity, or after 4 hours total. Leaving this page keeps the room open.")
                     OutlinedButton(onClick = { vm.setGuestControl(false) }, modifier = Modifier.tvFocusFeedback()) { Text("End room") }
                 }
@@ -98,11 +99,11 @@ internal fun shareText(context: Context, text: String, title: String) {
                     if (joined.error.isNotBlank()) Text(joined.error, color = MaterialTheme.colorScheme.error)
                     HorizontalDivider()
                     Text("Host a room", style = MaterialTheme.typography.titleLarge)
-                    if (vm.isPersonalMode && vm.canWriteToPlex) {
+                    if (vm.plexAccess.canHostRoom) {
                         SettingsDescription("Play your Plex music together. Nearby phones can browse, request, vote, and follow the queue without an account.")
                         RoomAcquisitionToggle(vm)
-                        Button(onClick = { if (granted(hostPermissions)) vm.setGuestControl(true) else hostPermissionLauncher.launch(hostPermissions) }, modifier = Modifier.tvFocusFeedback()) { Text(if (television) "Open room on this TV" else "Open room") }
-                    } else SettingsDescription("Only the Plex server owner can host a room. Shared read-only libraries can still be used for personal listening.")
+                        Button(onClick = { if (granted(hostPermissions)) vm.setGuestControl(true) else hostPermissionLauncher.launch(hostPermissions) }, enabled = !room.checkingAccess, modifier = Modifier.tvFocusFeedback()) { Text(if (television) "Open room on this TV" else "Open room") }
+                    } else SettingsDescription("Sign in to Plex and choose a music library to host a room. Shared libraries can host too.")
                 }
             }
             if (room.error.isNotBlank()) Text(room.error, color = MaterialTheme.colorScheme.error)

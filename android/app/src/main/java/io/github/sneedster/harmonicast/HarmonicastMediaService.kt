@@ -73,6 +73,9 @@ class HarmonicastMediaService : MediaLibraryService() {
     private var nativeRequestGeneration = 0
     private var guestRoomGateway: GuestRoomGateway? = null
     private var nearbyRoomHost: NearbyRoomHost? = null
+    private var roomStartJob: kotlinx.coroutines.Job? = null
+    private var roomAccessGuard: PlexRoomAccessGuard? = null
+    private var roomStartGeneration = 0
     private var guestRoomLifecycleJob: kotlinx.coroutines.Job? = null
     private val idleRecovery = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -690,8 +693,8 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun transferNativePlayback(participant: String, address: String, code: String) {
-        if (!NativePlaybackProtocol.ownerEligible(this)) {
-            nativeOutputStatus.value = "Playback transfer requires owner Plex access on both devices"
+        if (roomAccessGuard?.permitsRequests() != true) {
+            nativeOutputStatus.value = "Playback transfer requires a configured Plex music library on both devices"
             return
         }
         if (hasAndroidAutoAuthority()) {
@@ -711,7 +714,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 require(player.currentMediaItem != null) { "Choose a track before transferring" }
                 val output = NativePlaybackHost.pair(this@HarmonicastMediaService, address.trim(), code.trim())
                 candidate = output
-                if (generation != nativeRequestGeneration || participant !in roomPlayers || !NativePlaybackProtocol.ownerEligible(this@HarmonicastMediaService)) {
+                if (generation != nativeRequestGeneration || participant !in roomPlayers || roomAccessGuard?.permitsRequests() != true) {
                     output.close(); return@launch
                 }
                 val current = player.currentMediaItem ?: run { output.close(); return@launch }
@@ -730,7 +733,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 nativeOutputStatus.value = "Playing on ${roomPlayers[participant]?.name ?: "room device"}"
                 output.monitor(scope, update = { ended ->
                     if (nativeOutput === output) {
-                        if (!NativePlaybackProtocol.ownerEligible(this@HarmonicastMediaService)) {
+                        if (roomAccessGuard?.permitsRequests() != true) {
                             scope.launch { takeBackNativePlayback(false) }
                         } else {
                             publishNativePlayback(output)
@@ -788,12 +791,33 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun enableGuestControl() {
-        if (api.profile.personalSource?.canWriteToPlex != true) {
-            AcquisitionRuntime.get(this).apply { roomAllowed.value = false; roomId.value = "" }
-            roomShareState.value = RoomShareState()
+        val source = api.profile.personalSource
+        if (source == null || !PlexAccessPolicy.forSource(source).canHostRoom) {
+            disableGuestControl("Choose a Plex music library and leave the joined room before hosting")
             return
         }
-        if (roomShareState.value.enabled) return
+        if (roomShareState.value.enabled || roomStartJob?.isActive == true) return
+        val generation = ++roomStartGeneration
+        val guard = PlexRoomAccessGuard(source, { api.profile.personalSource }, LocalPlexClient(api.storage)::canAccessMusicLibrary)
+        roomAccessGuard = guard
+        roomShareState.value = RoomShareState(checkingAccess = true)
+        roomStartJob = scope.launch {
+            val access = guard.refresh()
+            if (generation != roomStartGeneration || roomAccessGuard !== guard) return@launch
+            if (access != PlexRoomAccess.AVAILABLE) {
+                disableGuestControl(when (access) {
+                    PlexRoomAccess.DENIED -> "Plex access is unavailable for this music library. Choose an accessible library before hosting."
+                    PlexRoomAccess.SOURCE_CHANGED -> "Plex source or room participation changed. Open the room again."
+                    else -> "Could not verify Plex access. Check the connection and open the room again."
+                })
+                return@launch
+            }
+            startVerifiedGuestRoom(guard)
+        }
+    }
+
+    private fun startVerifiedGuestRoom(guard: PlexRoomAccessGuard) {
+        if (!guard.permitsRequests()) return
         try {
             val gateway = GuestRoomGateway(
                 this,
@@ -801,12 +825,14 @@ class HarmonicastMediaService : MediaLibraryService() {
                 bindAddress = runCatching { NativePlaybackProtocol.localAddress(this) }.getOrDefault("127.0.0.1"),
                 displayToggle = {
                     scope.launch {
+                        if (!guard.permitsRequests()) return@launch
                         if (player.currentMediaItem == null) advance("skip")
                         else if (nativeOutput != null) nativeOutput?.play(nativeOutput?.playing != true)
                         else if (player.isPlaying) player.pause() else player.play()
                     }
                 },
-                displaySkip = { advance("skip") },
+                displaySkip = { if (guard.permitsRequests()) advance("skip") },
+                accessAllowed = guard::permitsRequests,
             )
             guestRoomGateway = gateway
             val room = gateway.start()
@@ -816,7 +842,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                         val data = runCatching { org.json.JSONObject(value) }.getOrNull()
                         val address = data?.optString("address").orEmpty()
                         val code = data?.optString("code").orEmpty()
-                        if (guestRoomGateway !== gateway || !NativePlaybackProtocol.isLocalAddress(address) || code.length != 43) false
+                        if (!guard.permitsRequests() || guestRoomGateway !== gateway || !NativePlaybackProtocol.isLocalAddress(address) || code.length != 43) false
                         else {
                             roomPlayers[id] = RoomPlayer(address, code, data?.optString("name")?.take(40).orEmpty().ifBlank { id })
                             roomPlaybackDevices.value = roomPlayers.mapValues { it.value.name }
@@ -835,7 +861,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             )
             nearbyRoomHost = nearby
             roomShareState.value = room.copy(nearbyAvailable = nearby.start())
-            monitorGuestRoom(gateway)
+            monitorGuestRoom(gateway, guard)
             Log.d("HarmonicastMedia", "Guest room enabled: ${roomShareState.value.roomCode}")
         } catch (e: Exception) {
             guestRoomGateway?.stop()
@@ -846,11 +872,29 @@ class HarmonicastMediaService : MediaLibraryService() {
         }
     }
 
-    private fun monitorGuestRoom(gateway: GuestRoomGateway) {
+    private fun monitorGuestRoom(gateway: GuestRoomGateway, guard: PlexRoomAccessGuard) {
         guestRoomLifecycleJob?.cancel()
         guestRoomLifecycleJob = scope.launch {
+            var checksUntilRefresh = 6
             while (guestRoomGateway === gateway) {
                 delay(10_000)
+                if (!guard.permitsRequests()) {
+                    disableGuestControl("Room ended because the Plex source or room participation changed")
+                    return@launch
+                }
+                if (--checksUntilRefresh == 0) {
+                    checksUntilRefresh = 6
+                    val access = guard.refresh()
+                    if (guestRoomGateway !== gateway) return@launch
+                    if (access in setOf(PlexRoomAccess.DENIED, PlexRoomAccess.SOURCE_CHANGED)) {
+                        disableGuestControl("Room ended because Plex access to this music library changed")
+                        player.stop()
+                        player.clearMediaItems()
+                        stopPositionSaving()
+                        syncCurrentPlaybackState(false)
+                        return@launch
+                    }
+                }
                 if (!gateway.isActive()) {
                     disableGuestControl("Guest room expired after being idle or reaching its four-hour limit")
                     return@launch
@@ -860,6 +904,11 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun disableGuestControl(message: String = "") {
+        roomStartGeneration++
+        roomStartJob?.cancel()
+        roomStartJob = null
+        roomAccessGuard?.close()
+        roomAccessGuard = null
         AcquisitionRuntime.get(this).apply { roomAllowed.value = false; roomId.value = "" }
         nativeRequestGeneration++
         roomPlayers.clear()

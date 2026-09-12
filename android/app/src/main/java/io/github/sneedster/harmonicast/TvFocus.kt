@@ -122,7 +122,8 @@ private val LocalTvRestoreScope = staticCompositionLocalOf<kotlinx.coroutines.Co
     label: (@Composable () -> Unit)? = null, leadingIcon: (@Composable () -> Unit)? = null,
     singleLine: Boolean = true, shape: Shape = RoundedCornerShape(16.dp),
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default, keyboardActions: KeyboardActions = KeyboardActions.Default,
-    allowVoice: Boolean = true, visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None) {
+    allowVoice: Boolean = true, visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+    enabled: Boolean = true) {
     val television = isTvDevice()
     var editing by remember { mutableStateOf(false) }
     var fieldFocused by remember { mutableStateOf(false) }
@@ -135,6 +136,7 @@ private val LocalTvRestoreScope = staticCompositionLocalOf<kotlinx.coroutines.Co
     val focusManager = LocalFocusManager.current
     val field = remember { FocusRequester() }
     val microphone = remember { FocusRequester() }
+    LaunchedEffect(enabled) { if (!enabled) { editing = false; showVoice = false; if (fieldFocused) keyboard?.hide() } }
     LaunchedEffect(keyboardVisible) {
         if (television && keyboardWasVisible && !keyboardVisible && editing) {
             editing = false
@@ -148,18 +150,18 @@ private val LocalTvRestoreScope = staticCompositionLocalOf<kotlinx.coroutines.Co
         .putExtra(RecognizerIntent.EXTRA_PROMPT, "Say a song, artist, or album") }
     val hasVoice = remember(context, television, allowVoice) { allowVoice && if (television) android.speech.SpeechRecognizer.isRecognitionAvailable(context) else recognizer.resolveActivity(context.packageManager) != null }
     val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(onValueChange)
+        result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { if (enabled) onValueChange(it) }
         if (television) { editing = false; microphone.requestFocus() }
     }
     LaunchedEffect(editing) { if (television && editing) { withFrameNanos { }; field.requestFocus(); keyboard?.show() } }
     BackHandler(television && editing) { editing = false; keyboard?.hide() }
-    if (showVoice) TvVoiceInput(onResult = onValueChange, onDismiss = { showVoice = false })
+    if (showVoice && enabled) TvVoiceInput(onResult = { if (enabled) onValueChange(it) }, onDismiss = { showVoice = false })
     // Keep the microphone outside the editor so D-pad events cannot be consumed by it.
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-    OutlinedTextField(value, onValueChange, modifier = Modifier.weight(1f).tvFocusFeedback().focusRequester(field)
+    OutlinedTextField(value, { if (enabled) onValueChange(it) }, enabled = enabled, modifier = Modifier.weight(1f).tvFocusFeedback().focusRequester(field)
         .onFocusChanged { fieldFocused = it.isFocused; if (!it.isFocused) editing = false }
         .onPreviewKeyEvent { event ->
-            if (!television || editing || !fieldFocused) false
+            if (!enabled || !television || editing || !fieldFocused) false
             else when (event.key) {
                 Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { if (event.type == KeyEventType.KeyUp) editing = true; true }
                 Key.DirectionDown, Key.DirectionUp, Key.DirectionLeft, Key.DirectionRight -> {
@@ -176,7 +178,7 @@ private val LocalTvRestoreScope = staticCompositionLocalOf<kotlinx.coroutines.Co
             onDone = keyboardActions.onDone, onGo = keyboardActions.onGo, onNext = keyboardActions.onNext,
             onPrevious = keyboardActions.onPrevious, onSend = keyboardActions.onSend),
         supportingText = if (voiceError != null) ({ Text(voiceError!!, Modifier.padding(bottom = 6.dp)) }) else if (television) ({ Text("Press OK to type" + if (hasVoice) " · microphone for voice" else "", Modifier.padding(bottom = 6.dp)) }) else null)
-    if (hasVoice) IconButton(onClick = {
+    if (hasVoice) IconButton(enabled = enabled, onClick = {
         keyboard?.hide(); editing = false; voiceError = null
         try { if (television) showVoice = true else voice.launch(recognizer) }
         catch (_: Exception) { voiceError = "Voice input is unavailable. Select the field to type." }

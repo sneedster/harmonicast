@@ -287,6 +287,8 @@ private fun decimal(value: Double) = String.format(Locale.getDefault(), "%.1f", 
         SettingsDescription("Connect a Plex account to play from your own music library on this device.")
         Button(onClick = { vm.beginPersonalSetup { CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(it)) } }, enabled = !vm.loading, modifier = Modifier.tvFocusFeedback()) { Text("Connect Plex") }
     } else {
+        PlexAccountIdentity(vm)
+        HorizontalDivider()
         Text(vm.plexSourceLabel.ifBlank { "Personal Plex library" }, style = MaterialTheme.typography.titleMedium)
         if (!vm.canWriteToPlex) SettingsDescription("Shared read-only server · playback and local queues are available; Plex ratings and guest hosting are disabled.")
         Button(onClick = vm::beginPersonalSourceChange, enabled = !vm.loading, modifier = Modifier.tvFocusFeedback()) { Text("Change Plex server or library") }
@@ -297,6 +299,29 @@ private fun decimal(value: Double) = String.format(Locale.getDefault(), "%.1f", 
         text = { Text("This removes the Plex account and source from this device and clears its saved queue and playback history.") },
         confirmButton = { TextButton(onClick = { signOut = false; vm.signOutPersonalPlex() }, modifier = Modifier.tvFocusFeedback()) { Text("Sign out", color = MaterialTheme.colorScheme.error) } },
         dismissButton = { TextButton(onClick = { signOut = false }, modifier = Modifier.tvFocusFeedback()) { Text("Cancel") } })
+}
+
+@Composable private fun PlexAccountIdentity(vm: HarmonicastViewModel) {
+    var account by remember(vm) { mutableStateOf<PlexAccount?>(null) }
+    var failed by remember(vm) { mutableStateOf(false) }
+    var attempt by remember(vm) { mutableIntStateOf(0) }
+    LaunchedEffect(vm, attempt) {
+        failed = false
+        try { account = vm.currentPlexAccount() }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { failed = true }
+    }
+    Text("Signed-in account", style = MaterialTheme.typography.labelMedium)
+    val identity = account
+    if (identity != null) {
+        Text(identity.username, style = MaterialTheme.typography.titleMedium)
+        if (identity.email.isNotBlank() && identity.email != identity.username) SettingsDescription(identity.email)
+    } else if (failed) {
+        SettingsDescription("Could not load account details. Check your connection and try again.")
+        TextButton(onClick = { attempt++ }, modifier = Modifier.tvFocusFeedback()) { Text("Retry account details") }
+    } else {
+        SettingsDescription("Loading account details…")
+    }
 }
 
 @Composable private fun AboutSettings() {

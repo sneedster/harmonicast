@@ -89,7 +89,7 @@ internal class AcquisitionSettingsModel : ViewModel() {
     val state by account.state.collectAsState()
     val model: AcquisitionSettingsModel = viewModel(key = "acquisition-settings")
     var advanced by rememberSaveable { mutableStateOf(false) }
-    val canConfigure = vm.isPersonalMode && vm.canWriteToPlex
+    val canConfigure = vm.plexAccess.canManageAcquisition
     LaunchedEffect(Unit) {
         account.connection()?.let { model.url = it.url; model.username = if (it.apiKeyMode) "" else it.username; model.keyMode = it.apiKeyMode; model.rememberLogin = it.password.isNotBlank() }
         account.check()
@@ -98,7 +98,7 @@ internal class AcquisitionSettingsModel : ViewModel() {
     DisposableEffect(Unit) { onDispose { if ((context as? android.app.Activity)?.isChangingConfigurations != true) { model.closeSetup(); model.clearSecrets() } } }
     SettingsDescription("Connect your existing MusicGrabber service. Its URL must be reachable from this app, including through a VPN such as Tailscale.")
     if (!canConfigure) {
-        SettingsDescription("Music acquisition requires an owner Plex library. Shared libraries support listening only.")
+        SettingsDescription("Music acquisition currently requires a Plex server owner. Shared libraries can play music and host rooms.")
         return
     }
     SettingsDescription(state.message)
@@ -139,11 +139,13 @@ internal class AcquisitionSettingsModel : ViewModel() {
         }
         Button(onClick = { model.run {
             val candidate = account.validate(AcquisitionLogin(model.url, model.username, model.password, model.rememberLogin, model.keyMode, model.key))
-            try { require(vm.isPersonalMode && vm.canWriteToPlex) { "An owner Plex library is required" }; account.save(candidate); model.clearSecrets() } catch (e: Exception) { account.revoke(candidate); throw e }
+            try { require(vm.plexAccess.canManageAcquisition) { "An owner Plex library is required" }; account.save(candidate); model.clearSecrets() } catch (e: Exception) { account.revoke(candidate); throw e }
         } }, enabled = !model.busy && model.url.isNotBlank(), modifier = Modifier.tvFocusFeedback()) { Text("Connect") }
     }
     if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     if (model.message.isNotBlank()) Text(model.message, color = MaterialTheme.colorScheme.error)
+    HorizontalDivider()
+    SharedPlexSetupSettings(vm, isActive)
     AcquisitionRequestList(acquisition)
 }
 

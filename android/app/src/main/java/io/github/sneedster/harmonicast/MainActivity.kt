@@ -133,6 +133,7 @@ class HarmonicastViewModel : ViewModel() {
     var personalSetupActive by mutableStateOf(false); private set
     val isPersonalMode: Boolean get() = ::api.isInitialized && api.profile.mode == HomeMode.PERSONAL_PLEX
     val canWriteToPlex: Boolean get() = api.profile.personalSource?.canWriteToPlex == true
+    internal val plexAccess: PlexAccessPolicy get() = PlexAccessPolicy.forSource(if (::api.isInitialized) api.profile.personalSource else null)
     val personalSetupCanCancel: Boolean get() = ::api.isInitialized && api.profile.homeReady
     private var personalPin: PlexPin? = null
     private var personalAuthJob: kotlinx.coroutines.Job? = null
@@ -206,6 +207,14 @@ class HarmonicastViewModel : ViewModel() {
                 loading = false
             }
         }
+    }
+
+    internal fun sharedSetupSource(): PersonalPlexSource? = api.profile.personalSource
+    internal fun sharedSetupService() = SharedPlexSetup(api.storage, { api.profile.personalSource })
+
+    suspend fun currentPlexAccount(): PlexAccount {
+        val source = api.profile.personalSource ?: error("Connect Plex first")
+        return plex.account(source.accountToken)
     }
 
     fun beginPersonalSourceChange() {
@@ -386,7 +395,9 @@ class HarmonicastViewModel : ViewModel() {
             try {
                 personalServerToken = server.accessToken ?: personalToken
                 personalServerBase = plex.connect(personalServerToken, server)
-                plexLibraries = plex.musicLibraries(personalServerBase, personalServerToken)
+                plexLibraries = plex.musicLibraries(personalServerBase, personalServerToken).filterNot {
+                    it.key == api.storage.read(SharedPlexSetup.libraryStorageKey(server.machineIdentifier))
+                }
                 if (plexLibraries.isEmpty()) error = "This Plex server has no Music libraries."
             } catch (e: Exception) {
                 error = e.message ?: "Could not reach that Plex server"
@@ -429,7 +440,7 @@ class HarmonicastViewModel : ViewModel() {
     }
 
     fun offerRoomPlayback() {
-        if (!NativePlaybackProtocol.ownerEligible(context) || !nearbyRoomState.connected || nearbyRoomState.busy) return
+        if (!NativePlaybackProtocol.playbackEligible(context) || !nearbyRoomState.connected || nearbyRoomState.busy) return
         offeringRoomPlayback = true
         controller?.let { MediaController.releaseFuture(com.google.common.util.concurrent.Futures.immediateFuture(it)) }
         controller = null
@@ -458,7 +469,7 @@ class HarmonicastViewModel : ViewModel() {
     }
 
     fun transferPlayback(participant: String) {
-        if (!NativePlaybackProtocol.ownerEligible(context)) return
+        if (!plexAccess.canHostRoom) return
         context.startService(Intent(context, HarmonicastMediaService::class.java)
             .setAction(HarmonicastMediaService.TRANSFER_PLAYBACK_ACTION).putExtra("participant", participant))
     }
@@ -468,6 +479,7 @@ class HarmonicastViewModel : ViewModel() {
     }
 
     fun setGuestControl(enabled: Boolean) {
+        if (enabled && !plexAccess.canHostRoom) return
         val action = if (enabled) HarmonicastMediaService.ENABLE_GUEST_CONTROL_ACTION
         else HarmonicastMediaService.DISABLE_GUEST_CONTROL_ACTION
         context.startService(Intent(context, HarmonicastMediaService::class.java).setAction(action))
@@ -478,7 +490,10 @@ class HarmonicastViewModel : ViewModel() {
         val generation = nearbyRoomGeneration
         val client = nearbyRoomClient ?: NearbyRoomClient(context) { state ->
             if (generation != nearbyRoomGeneration) return@NearbyRoomClient
-            if (state.connected && !nearbyRoomState.connected) controller?.pause()
+            if (state.connected && !nearbyRoomState.connected) {
+                controller?.pause()
+                setGuestControl(false)
+            }
             nearbyRoomState = state
             if (!state.connected && offeringRoomPlayback) stopOfferingRoomPlayback()
         }
@@ -870,7 +885,7 @@ class MainActivity : ComponentActivity() {
                 Text("Leave")
             }
         }
-        if (vm.isPersonalMode && vm.canWriteToPlex) {
+        if (vm.plexAccess.canOfferPlayback) {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Room playback", style = MaterialTheme.typography.titleMedium)

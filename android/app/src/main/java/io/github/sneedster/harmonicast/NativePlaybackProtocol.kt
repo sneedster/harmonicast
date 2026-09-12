@@ -8,11 +8,11 @@ import java.security.SecureRandom
 import java.util.Base64
 
 internal object NativePlaybackProtocol {
-    fun ownerEligible(context: android.content.Context): Boolean {
+    fun playbackEligible(context: android.content.Context): Boolean {
         val profile = AppStorage(context.getSharedPreferences("harmonicast", android.content.Context.MODE_PRIVATE)).profile
-        return ownerEligible(profile)
+        return playbackEligible(profile)
     }
-    fun ownerEligible(profile: HomeProfileStore) = profile.mode == HomeMode.PERSONAL_PLEX && profile.personalSource?.canWriteToPlex == true
+    fun playbackEligible(profile: HomeProfileStore) = PlexAccessPolicy.forSource(profile.personalSource).canOfferPlayback
     const val PORT = 8790
     const val LEASE_MS = 5_000L
     fun secret() = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also(SecureRandom()::nextBytes))

@@ -22,6 +22,30 @@ playback sources and a general plugin installer remain outside scope.
 - Settings now includes a Music acquisition category alongside the existing adaptive categories; Rooms is a separate destination. See [implementation plan](docs/SETTINGS_REDESIGN_PLAN.md).
 - The opt-in decision and v1.1.6 release were synchronized to Project Memory on 2026-09-08.
 
+## Shared-user access — implementation started
+
+- Allow shared Plex users with a usable music library to host nearby rooms and use
+  native playback transfer, independently of Plex write permissions.
+- Let owners distribute a dedicated non-admin MusicGrabber username/password and
+  endpoint through a privately shared Plex configuration item. Approved users can
+  acquire music without manual MusicGrabber setup; room acquisition remains an
+  explicit per-room choice within the owner's delegated configuration.
+- Use existing Plex and MusicGrabber installations; no separate server app or
+  MusicGrabber modification. Dedicated-library API discovery, approved reads,
+  and same-token revocation have passed the live proof; further acceptance remains.
+  See [implementation plan](docs/SHARED_PLEX_ACCESS_PLAN.md).
+- Owner-only **Set up shared access** preparation is implemented locally: reuse or
+  create the dedicated library, scan its media, publish and lock an inactive
+  placeholder, and verify the result. Ask
+  for initial server-side file placement only when needed; resume existing setup
+  without duplicates. No copied tokens, JSON, or manual metadata editing in the
+  normal setup flow. Live creation/write acceptance and real credential publication
+  remain outstanding; the screen does not enable shared acquisition yet.
+- Local implementation covers room/playback capabilities, shared-host reactions,
+  live room-access guards, and a prepared Plex sharing proof kit. Delegated
+  acquisition and deployed acceptance remain outstanding; no target release or
+  delivery date assigned.
+
 ## Ongoing quality
 
 - Keep phone and TV browsing responsive, with bounded queries, pagination and retained scroll position.

@@ -86,6 +86,20 @@ internal class AcquisitionFixture {
 }
 
 class AcquisitionTest {
+    @Test fun joinedOwnerCannotSubmitOrEnablePersonalAcquisition() = runBlocking {
+        val f = AcquisitionFixture(); f.connect(); val c = f.coordinator()
+        val guest = Any()
+        try {
+            NearbyGuestParticipation.update(guest, true)
+            assertTrue(runCatching { c.submit(f.recordingId) }.isFailure)
+            assertTrue(runCatching { c.setRoomAllowed(true) }.isFailure)
+            assertEquals(0, f.network.submissions.get())
+            assertTrue(c.requests.value.isEmpty())
+        } finally { NearbyGuestParticipation.update(guest, false) }
+        assertEquals("acquiring", c.submit(f.recordingId).status)
+        assertEquals(1, f.network.submissions.get())
+    }
+
     @Test fun healthChecksCacheSuccessAndFailureButAllowExplicitRetry() = runBlocking {
         var clock = 0L
         var reads = 0

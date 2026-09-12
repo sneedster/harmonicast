@@ -195,6 +195,30 @@ class LocalHarmonicastCoreTest {
         assertTrue(policy.configured)
     }
 
+    @Test fun sharedRoomVotesSkipOnlyAutomaticTracksWithoutPlexRequests() = runBlocking {
+        val storage = MemoryStorage()
+        val core = LocalHarmonicastCore(source.copy(canWriteToPlex = false), storage,
+            LocalPlexClient(storage, object : PlexHttp {
+                override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String =
+                    throw AssertionError("Shared room vote must not call Plex")
+            }))
+        val events = mutableListOf<CoreEvent>()
+        val subscription = core.observe({ events += it }) {}
+        try {
+            core.playback.publish(song("shared"), true, false)
+            events.clear()
+            core.guests.roomVote(false)
+            assertFalse(events.contains(CoreEvent.FORCE_SKIP))
+            core.playback.publish(song("shared"), true, true)
+            events.clear()
+            core.guests.roomVote(true)
+            assertFalse(events.contains(CoreEvent.FORCE_SKIP))
+            core.guests.roomVote(false)
+            assertEquals(1, events.count { it == CoreEvent.FORCE_SKIP })
+            assertNull(core.playback.snapshot().nowPlaying.song?.rating)
+        } finally { subscription.close() }
+    }
+
     @Test fun sharedReadOnlyCoreKeepsLocalPlaybackButSuppressesPlexWrites() = runBlocking {
         val storage = MemoryStorage()
         val readOnly = LocalHarmonicastCore(source.copy(canWriteToPlex = false), storage)

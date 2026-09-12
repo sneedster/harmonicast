@@ -8,8 +8,9 @@ Plex and access to a Plex Music library are required. Android 8.0 (API 26) or la
 Download the signed APK from the [latest release](https://github.com/sneedster/harmonicast/releases/latest).
 Install over the existing signed app to retain personal-mode settings and data.
 Choose **Sign in with Plex**, then your server and Music library. TV setup shows
-a QR code for Plex sign-in on your phone. Shared libraries support listening;
-owner-only Plex writes and room hosting require owner access.
+a QR code for Plex sign-in on your phone. Shared libraries support listening.
+The current development build also supports shared-library room hosting and paired
+native playback; Plex rating/history writes still require server owner access.
 
 ## Features
 
@@ -91,7 +92,8 @@ reachable URL and your MusicGrabber username/password, then tap **Connect**.
 You can also use **Set up from another device** to enter credentials on a computer
 and confirm the connection on Android. API-key connections are available under
 **Advanced settings**. Acquisition requires owner access to the selected Plex
-library; shared read-only libraries support listening only.
+library. Shared-library room hosting does not require acquisition access; delegated
+MusicGrabber connections are still planned.
 
 Acquisition starts disabled in each room. The host can enable **Allow music acquisition**
 for guest requests using the host device's MusicGrabber connection. Accepted requests
@@ -137,3 +139,16 @@ Releases use vX.Y.Z tags from main.
 [Privacy](PRIVACY.md) · [Releases](RELEASES.md) · [Roadmap](ROADMAP.md)
 
 Harmonicast is not affiliated with Plex. Licensed under AGPL-3.0-or-later.
+
+
+## Shared Plex access development
+
+The current development build verifies Plex server/library access before opening a
+room and periodically while hosting. Confirmed access loss closes the room;
+transient network failures do not authorize a new room. Shared sources retain their
+existing Plex write restrictions. Delegated MusicGrabber acquisition remains pending.
+
+To prepare the required cross-account experiment, use the
+[Plex sharing proof kit](docs/plex-sharing-test-kit/README.md). It includes synthetic
+silent media, dummy-record generation, a read-only evidence probe, and the manual
+acceptance checklist. No real MusicGrabber credentials are needed for that proof.

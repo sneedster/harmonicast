@@ -21,6 +21,60 @@ class LocalPlexClientTest {
         }
     }
 
+    @Test fun roomAccessProbeChecksServerAndExactMusicSectionUsingSharedToken() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"machineIdentifier":"machine"}}"""
+            responses += """{"MediaContainer":{"Directory":[{"key":"7","type":"artist"}]}}"""
+        }
+        val source = PersonalPlexSource("shared-token", "https://plex", "machine", "Server", "7", "Music", canWriteToPlex = false)
+        assertTrue(LocalPlexClient(MemoryStorage(), http).canAccessMusicLibrary(source))
+        assertEquals(listOf("https://plex/", "https://plex/library/sections"), http.calls.map { it.url })
+        assertTrue(http.calls.all { it.method == "GET" && it.headers["X-Plex-Token"] == "shared-token" })
+    }
+
+    @Test fun roomAccessProbeRejectsMissingLibraryWrongTypeAndWrongServer() = runBlocking {
+        val source = PersonalPlexSource("shared-token", "https://plex", "machine", "Server", "7", "Music", canWriteToPlex = false)
+        for (sections in listOf("""{"Directory":[]}""", """{"size":0}""",
+            """{"Directory":[{"key":"8","type":"artist"}]}""", """{"Directory":[{"key":"7","type":"movie"}]}""")) {
+            val http = FakeHttp().apply {
+                responses += """{"MediaContainer":{"machineIdentifier":"machine"}}"""
+                responses += """{"MediaContainer":$sections}"""
+            }
+            assertFalse(LocalPlexClient(MemoryStorage(), http).canAccessMusicLibrary(source))
+        }
+        val http = FakeHttp().apply { responses += """{"MediaContainer":{"machineIdentifier":"other"}}""" }
+        assertFalse(LocalPlexClient(MemoryStorage(), http).canAccessMusicLibrary(source))
+        assertEquals(1, http.calls.size)
+    }
+
+    @Test fun incompleteLibraryResponseIsNotAnAccessRevocation() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"machineIdentifier":"machine"}}"""
+            responses += """{"MediaContainer":{}}"""
+        }
+        val source = PersonalPlexSource("shared-token", "https://plex", "machine", "Server", "7", "Music", canWriteToPlex = false)
+        assertTrue(runCatching { LocalPlexClient(MemoryStorage(), http).canAccessMusicLibrary(source) }.isFailure)
+    }
+
+    @Test fun accountUsesAccountTokenAndParsesIdentity() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"username":"listener","email":"listener@example.com","title":"Display name"}"""
+            responses += """{"username":null,"title":"Home listener","email":null}"""
+            responses += """{"email":"listener@example.com"}"""
+        }
+        val client = LocalPlexClient(MemoryStorage(), http)
+        assertEquals(PlexAccount("listener", "listener@example.com"), client.account("account-token"))
+        assertEquals("https://plex.tv/api/v2/user", http.calls.first().url)
+        assertEquals("account-token", http.calls.first().headers["X-Plex-Token"])
+        assertEquals(PlexAccount("Home listener", ""), client.account("account-token"))
+        assertEquals(PlexAccount("listener@example.com", "listener@example.com"), client.account("account-token"))
+    }
+
+    @Test fun accountRejectsMissingIdentity() = runBlocking {
+        val http = FakeHttp().apply { responses += """{"username":null,"email":null}""" }
+        assertTrue(runCatching { LocalPlexClient(MemoryStorage(), http).account("account-token") }.isFailure)
+    }
+
     @Test fun pinFlowUsesStableClientIdentityAndNativeReturnUrl() = runBlocking {
         val storage = MemoryStorage()
         val http = FakeHttp().apply {

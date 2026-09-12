@@ -70,6 +70,7 @@ class SettingsScreenTest {
         setup()
         open("Music acquisition")
         compose.onNodeWithText("Set up from another device").assertExists()
+        compose.onNodeWithText("Set up shared access").assertExists()
         compose.onNodeWithText("Username").assertExists()
         compose.onNodeWithText("Password").assertExists()
         compose.onNodeWithText("Use API key instead").assertDoesNotExist()
@@ -100,7 +101,7 @@ class SettingsScreenTest {
     @Test fun sharedPlexLibraryCannotConfigureAcquisition() {
         setup(readOnly = true)
         open("Music acquisition")
-        compose.onNodeWithText("Music acquisition requires an owner Plex library. Shared libraries support listening only.").assertExists()
+        compose.onNodeWithText("Music acquisition currently requires a Plex server owner. Shared libraries can play music and host rooms.").assertExists()
         compose.onNodeWithText("Connect", substring = false).assertDoesNotExist()
         compose.onNodeWithText("Set up from another device").assertDoesNotExist()
     }
@@ -138,6 +139,28 @@ class SettingsScreenTest {
         compose.onNodeWithText("Restore selection preference").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(2, vm.musicTuning.selection); assertEquals(8, vm.ratedTrackShare) }
         screenshot("phone-mix")
+    }
+
+    @Test fun roomAccessCheckShowsPendingStateAndPreventsDuplicateOpen() {
+        setup(readOnly = true)
+        open("Rooms")
+        try {
+            compose.runOnIdle { HarmonicastMediaService.roomShareState.value = RoomShareState(checkingAccess = true) }
+            compose.onNodeWithText("Checking Plex access…").assertExists()
+            compose.onNodeWithText("Open room").assertIsNotEnabled()
+            screenshot("phone-room-access-check")
+        } finally {
+            compose.runOnIdle { HarmonicastMediaService.roomShareState.value = RoomShareState() }
+        }
+        compose.onNodeWithText("Open room").assertIsEnabled()
+    }
+
+    @Test fun sharedLibraryCanOpenRoomControls() {
+        setup(readOnly = true)
+        open("Rooms")
+        compose.onNodeWithText("Open room").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Only the Plex server owner can host a room.", substring = true).assertDoesNotExist()
+        screenshot("phone-shared-rooms")
     }
 
     @Test fun settingsLinkOpensRoomsAndBackRestoresHub() {

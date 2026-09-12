@@ -106,16 +106,16 @@ internal data class CatalogLocation(val query: String, val mode: String = "searc
     var artist by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf<String?>(null) }
     val term = vm.query.trim()
-    LaunchedEffect(term, vm.searchLoading, vm.canWriteToPlex) {
+    LaunchedEffect(term, vm.searchLoading, vm.plexAccess.canSubmitAcquisition) {
         artist = false; picker = null
-        if (term.isNotBlank() && !vm.searchLoading && vm.canWriteToPlex) {
+        if (term.isNotBlank() && !vm.searchLoading && vm.plexAccess.canSubmitAcquisition) {
             if (acquisition.account.check()) {
                 artist = try { vm.searchLibrary.artist(term)?.name?.equals(term, true) == true }
                 catch (e: CancellationException) { throw e } catch (_: Exception) { false }
             }
         }
     }
-    if (vm.canWriteToPlex && state.available && term.isNotBlank() && !vm.searchLoading) {
+    if (vm.plexAccess.canSubmitAcquisition && state.available && term.isNotBlank() && !vm.searchLoading) {
         Column(Modifier.padding(horizontal = 24.dp)) {
             if (vm.results.isEmpty()) OutlinedButton(onClick = { picker = "search" }, modifier = Modifier.tvFocusFeedback()) { Text("Search connected music sources") }
             if (artist) OutlinedButton(onClick = { picker = "artist" }, modifier = Modifier.tvFocusFeedback()) { Text("Find songs by this artist") }
@@ -134,7 +134,7 @@ internal data class CatalogLocation(val query: String, val mode: String = "searc
     val allowed by acquisition.roomAllowed.collectAsState()
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { acquisition.account.check() }
-    if (vm.isPersonalMode && vm.canWriteToPlex && state.configured) {
+    if (vm.isPersonalMode && vm.plexAccess.canSubmitAcquisition && state.configured) {
         SettingsToggle("Allow music acquisition", "Let guests acquire missing tracks using this device's MusicGrabber connection. Accepted requests finish even if the room ends.", allowed, state.available || allowed) {
             scope.launch { try { acquisition.setRoomAllowed(it) } catch (e: Exception) { vm.error = safeAcquisitionError(e) } }
         }

@@ -38,9 +38,15 @@ class NativePlaybackReceiver : MediaSessionService() {
     private var revision = -1L
     private var failure = false
     private var stopped = false
+    private var pairedSource: PersonalPlexSource? = null
+    private fun currentSource() = AppStorage(getSharedPreferences("harmonicast", android.content.Context.MODE_PRIVATE)).profile.personalSource
     private val watchdog = object : Runnable {
         override fun run() {
             if (stopped) return
+            if (currentSource() != pairedSource || !NativePlaybackProtocol.playbackEligible(this@NativePlaybackReceiver)) {
+                disconnect("Plex source changed. Stop playing here to offer again.")
+                return
+            }
             if (lastSeen != 0L && SystemClock.elapsedRealtime() - lastSeen > NativePlaybackProtocol.LEASE_MS) {
                 disconnect("Host disconnected. Stop playing here to offer again.")
             }
@@ -49,11 +55,12 @@ class NativePlaybackReceiver : MediaSessionService() {
     }
     override fun onCreate() {
         super.onCreate()
-        if (!NativePlaybackProtocol.ownerEligible(this)) {
-            state.value = NativeReceiverState(message = "Playback transfer requires an owner Plex sign-in on both devices.")
+        if (!NativePlaybackProtocol.playbackEligible(this)) {
+            state.value = NativeReceiverState(message = "Playback transfer requires a configured Plex music library on both devices.")
             stopSelf()
             return
         }
+        pairedSource = currentSource()
         val code = NativePlaybackProtocol.secret()
         pairing = NativePairing(code)
         player = ExoPlayer.Builder(this).setAudioAttributes(AudioAttributes.Builder()
@@ -83,7 +90,7 @@ class NativePlaybackReceiver : MediaSessionService() {
     }
     private fun serve(socket: java.net.Socket) {
         val request = NativePlaybackProtocol.read(socket) ?: return
-        if (!NativePlaybackProtocol.ownerEligible(this)) { NativePlaybackProtocol.reply(socket, 403); main.post { disconnect("Owner access is required") }; return }
+        if (currentSource() != pairedSource || !NativePlaybackProtocol.playbackEligible(this)) { NativePlaybackProtocol.reply(socket, 403); main.post { disconnect("A configured Plex music library is required") }; return }
         // No CORS/preflight support, and no requests originating in a browser.
         if (request.method != "POST" || "origin" in request.headers || "sec-fetch-mode" in request.headers) {
             NativePlaybackProtocol.reply(socket, 403); return

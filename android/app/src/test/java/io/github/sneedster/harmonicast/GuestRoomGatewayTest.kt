@@ -9,6 +9,28 @@ import java.nio.charset.StandardCharsets
 import java.util.Base64
 
 class GuestRoomGatewayTest {
+    @Test fun sharedPlexCoreSupportsGuestBrowseQueueAndVotesWithoutAcquisitionGrant() = runBlocking {
+        val fixture = AcquisitionFixture()
+        fixture.source = fixture.source!!.copy(canWriteToPlex = false)
+        fixture.inPlex = true
+        val core = fixture.core()
+        assertTrue(PlexAccessPolicy.forSource(fixture.source, false).canHostRoom)
+        val capability = RoomCapability.create(nowMillis = 1_000, lifetimeMillis = 10_000, idleTimeoutMillis = 5_000)
+        val router = GuestRoomRouter(core, capability) { 2_000 }
+        val search = router.route(GuestApiRequest("GET", "/v1/search", capability.bearer, mapOf("q" to "Track")))
+        assertEquals(200, search.status)
+        assertFalse(search.body.contains("plex-secret"))
+        val id = JSONArray(search.body).getJSONObject(0).getString("id")
+        val request = router.route(GuestApiRequest("POST", "/v1/requests", capability.bearer,
+            body = JSONObject().put("songId", id).toString()))
+        assertEquals(202, request.status)
+        assertEquals(id, core.queue.songs().single().id)
+        core.playback.publish(core.queue.songs().single(), true, false)
+        assertEquals(202, router.route(GuestApiRequest("POST", "/v1/votes", capability.bearer, body = "{\"direction\":\"up\"}")).status)
+        assertEquals(409, router.route(GuestApiRequest("POST", "/v1/votes", capability.bearer, body = "{\"direction\":\"up\"}")).status)
+        assertEquals(0, fixture.network.submissions.get())
+    }
+
     private class FakeCore : HarmonicastCore {
         val track = Song(
             id = "plex:server:42",
@@ -53,6 +75,21 @@ class GuestRoomGatewayTest {
             override suspend fun policy() = GuestPolicy(true, true, true, false, true)
             override suspend fun vote(up: Boolean) { votes += up }
         }
+    }
+
+    @Test fun sourceReplacementRejectsGuestAndDisplayRequestsWithExistingCapabilities() = runBlocking {
+        val core = FakeCore()
+        val capability = RoomCapability.create()
+        var allowed = true
+        val router = GuestRoomRouter(core, capability, accessAllowed = { allowed })
+        assertEquals(200, router.route(GuestApiRequest("GET", "/v1/queue", capability.bearer)).status)
+        allowed = false
+        for (token in listOf(capability.bearer, capability.displayBearer)) {
+            assertEquals(403, router.route(GuestApiRequest("GET", "/v1/queue", token)).status)
+            assertEquals(403, router.route(GuestApiRequest("POST", "/v1/requests", token,
+                body = JSONObject().put("songId", core.track.id).toString())).status)
+        }
+        assertTrue(core.queued.isEmpty())
     }
 
     @Test fun validCapabilityAllowsOnlyGuestSafeOperationsWithoutPlexCredentials() = runBlocking {

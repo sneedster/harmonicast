@@ -10,6 +10,8 @@ import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.UUID
 
+data class PlexAccount(val username: String, val email: String)
+
 data class PlexPin(val id: Long, val code: String, val authToken: String?, val expiresAt: String?)
 data class PlexJukeboxPools(val rated: List<Song>, val unrated: List<Song>, val fallback: List<Song>)
 
@@ -22,7 +24,12 @@ interface PlexHttp {
     ): String
 }
 
-class OkHttpPlexHttp(private val client: OkHttpClient = OkHttpClient()) : PlexHttp {
+class PlexRequestFailure(val status: Int) : IllegalStateException("Plex request failed ($status)")
+
+class OkHttpPlexHttp(
+    private val client: OkHttpClient = OkHttpClient(),
+    private val maxResponseBytes: Long? = null,
+) : PlexHttp {
     override suspend fun request(
         url: String,
         method: String,
@@ -36,9 +43,15 @@ class OkHttpPlexHttp(private val client: OkHttpClient = OkHttpClient()) : PlexHt
             builder.method(method, body)
         }
         client.newCall(builder.build()).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw IllegalStateException("Plex request failed (${response.code})")
-            body
+            if (!response.isSuccessful) throw PlexRequestFailure(response.code)
+            if (maxResponseBytes == null) response.body?.string().orEmpty()
+            else {
+                val source = response.body?.source()
+                source?.request(maxResponseBytes + 1)
+                val bytes = source?.buffer?.readByteArray() ?: byteArrayOf()
+                check(bytes.size <= maxResponseBytes) { "Plex response is too large" }
+                bytes.toString(Charsets.UTF_8)
+            }
         }
     }
 }
@@ -83,6 +96,15 @@ class LocalPlexClient(
         return "https://app.plex.tv/auth#?$query"
     }
 
+    suspend fun account(token: String): PlexAccount {
+        val user = JSONObject(http.request("https://plex.tv/api/v2/user", headers = headers(token)))
+        fun field(name: String) = user.opt(name)?.takeIf { it != JSONObject.NULL }?.toString()?.trim().orEmpty()
+        val email = field("email")
+        val username = field("username").ifBlank { field("title") }.ifBlank { email }
+        check(username.isNotBlank()) { "Plex account details are unavailable" }
+        return PlexAccount(username, email)
+    }
+
     suspend fun accessibleServers(token: String): List<PlexServer> {
         val resources = JSONArray(http.request(
             "https://plex.tv/api/v2/resources?includeHttps=1&includeRelay=1",
@@ -116,6 +138,26 @@ class LocalPlexClient(
             if (identity.optString("machineIdentifier") == server.machineIdentifier) return candidate.uri
         }
         throw IllegalStateException("Could not reach that Plex server")
+    }
+
+    /** Confirm the selected server and section with this source's token, never an owner fallback. */
+    suspend fun canAccessMusicLibrary(source: PersonalPlexSource): Boolean {
+        val identity = serverContainer(source.baseUrl, source.token, "/")
+        val machine = identity.optString("machineIdentifier")
+        check(machine.isNotBlank()) { "Plex identity response is incomplete" }
+        if (machine != source.machineIdentifier) return false
+        val sections = serverContainer(source.baseUrl, source.token, "/library/sections")
+        val directories = sections.optJSONArray("Directory")
+            ?: if (sections.has("size") && sections.optInt("size", -1) == 0) JSONArray()
+            else throw IllegalStateException("Plex library response is incomplete")
+        for (index in 0 until directories.length()) {
+            val section = directories.getJSONObject(index)
+            check(section.optString("key").isNotBlank() && section.has("type")) { "Plex library response is incomplete" }
+        }
+        return (0 until directories.length()).any { index ->
+            val section = directories.getJSONObject(index)
+            section.optString("key") == source.libraryKey && section.opt("type") in listOf("artist", 8)
+        }
     }
 
     suspend fun musicLibraries(baseUrl: String, token: String): List<PlexLibrary> {

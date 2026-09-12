@@ -247,6 +247,14 @@ class LocalHarmonicastCore(
             needsPlexSetup = false,
             isSetupOwner = true,
         )
+        override suspend fun roomVote(up: Boolean) {
+            if (source.canWriteToPlex) return vote(up)
+            // Shared room reactions never change Plex ratings. Keep the existing
+            // automatic-track down-vote skip; manual queue selections remain intact.
+            val state = playback.snapshot()
+            checkNotNull(state.nowPlaying.song) { "No song is currently playing" }
+            if (shouldSkipAfterVote(up, state.isAutoQueue)) LocalCoreEvents.publish(CoreEvent.FORCE_SKIP)
+        }
         override suspend fun vote(up: Boolean) = LocalCoreEvents.ratingMutex.withLock {
             check(source.canWriteToPlex) { "Ratings are unavailable on a shared read-only Plex server" }
             val state = playback.snapshot()

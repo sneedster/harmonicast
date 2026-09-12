@@ -477,3 +477,95 @@ Installed successfully over the test candidate on the wireless Pixel.
 APK: android/releases/harmonicast-1.1.9.apk
 SHA-256: f5e57368033ea676a11cdf99871035d7473c5189a8c7a75484acbb7760746dfa.
 Stable GitHub release: https://github.com/sneedster/harmonicast/releases/tag/v1.1.9.
+
+
+## Shared Plex capability slice — 2026-09-12
+
+Command: `android/build-debug.sh :app:testDebugUnitTest :app:lintDebug`.
+Final steady-source run: BUILD SUCCESSFUL in 51 seconds. 172 tests passed,
+zero failures/errors/skips. Lint completed with zero errors; existing warning-level
+findings remain in the generated report. The initial sandbox run could not write
+the Gradle cache; validation used authorized access to the existing local cache.
+An intermediate run overlapped a source edit and produced stale-position lint
+errors; the final unchanged-source run above passed.
+
+Coverage added: owner/shared/missing/invalid-source capability matrix; joined-guest
+exclusion and overlapping client lifecycle; acquisition coordinator rejects joined
+owners without posting; shared LocalHarmonicastCore with GuestRoomRouter supports
+browse/request/vote and duplicate rejection; shared votes suppress Plex requests
+and skip only automatic tracks; native eligibility accepts shared profiles and
+rejects cleared profiles; Compose shared Rooms controls are enabled.
+
+Visually inspected `android/app/build/reports/settings-layout/phone-shared-rooms.png`:
+390 x 760 phone layout, readable copy and reachable Open room control, matching
+existing Material/Settings primitives. Full existing Compose tests also passed.
+The frontend strict static audit returned no findings (artifact in
+`/tmp/harmonicast-shared-ui-audit.json`); it is not runtime accessibility evidence.
+
+Runnable debug candidate: `android/app/build/outputs/apk/debug/app-debug.apk`.
+No release published. Live owner/approved/unapproved Plex sharing proof, delegated
+MusicGrabber access, definitive library-revocation teardown, actual service/network
+startup on a shared account, cross-device Bluetooth/native transfer, and Android
+Auto acceptance remain outstanding. No physical TV testing performed.
+
+
+## Shared Plex continuation — live room guard and proof kit, 2026-09-12
+
+Final command: `android/build-debug.sh :app:testDebugUnitTest :app:lintDebug`.
+BUILD SUCCESSFUL in 32 seconds; 185 tests, zero failures/errors/skips. Lint completed
+with zero errors and 37 warnings. APK: `android/app/build/outputs/apk/debug/app-debug.apk`.
+No release or version bump was performed.
+
+Added coverage verifies selected-user token use, server identity and exact music
+section checks, wrong server/type/missing section, malformed-response distinction,
+401/403 versus transient failures, initial failure versus an established room's
+outage tolerance, cancellation/timeouts, stale source responses and teardown, guest
+mode transitions, old guest/display capability rejection, and pending UI state.
+A Robolectric test opens a real loopback GuestRoomGateway socket with a synthetic
+shared source, verifies both LAN and nearby-router paths before/after denial, then
+closes the listener. Another real HTTP test confirms Plex 403 status survives as a
+typed error without exposing response-body details. These are not physical-device
+or deployed Plex acceptance results.
+
+Inspected `phone-room-access-check.png` in `android/app/build/reports/settings-layout/`:
+existing 390 x 760 phone layout, readable pending summary, unchanged Open room label,
+and disabled opening action. The complete Compose suite passes. The frontend strict
+static audit reports zero findings in `/tmp/harmonicast-shared-phase2-ui-audit.json`.
+
+Proof kit verification: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s
+scripts/tests -p 'test_plex_sharing_probe.py' -v`: 12 tests pass. They cover transport
+redirect refusal/response bounds, hidden-token CLI output, disabled-only dummy
+contract, URL/path validation, explicit account control, exact item binding, malformed
+and oversized records, duplicate JSON fields, bounded/paged discovery, repeated and
+truncated pages, resource-token selection, and exclusive sanitized report writing.
+A complete CLI run is exercised with synthetic responses. FFprobe verifies the
+packaged synthetic FLAC is exactly two seconds and has the expected album tags.
+
+The user confirmed that the test library/accounts are not yet prepared. The kit and
+manual evidence worksheet are ready; live single-item discovery, direct-read
+isolation, provenance, share removal with valid reused tokens, library fallback,
+managed Home accounts, physical Bluetooth/native transfer, and Android Auto remain
+outstanding. Production delegated MusicGrabber discovery/publication/login is not
+implemented. Config-library exclusion from Android source selection remains pending;
+the kit directs users to keep test media out of the playback library.
+## Shared Plex owner preparation — 2026-09-12
+
+`android/build-debug.sh :app:testDebugUnitTest :app:lintDebug` completed successfully:
+198 tests, zero failures/errors/skips; debug APK assembled. Lint has zero errors
+and 37 warnings. The setup tests cover live-owner gating, stale source/guest
+rejection, empty-record review, reuse without another write, uncertain creation
+recovery, conflicting metadata, failed read-back, duplicate libraries, overlapping
+music folders, strict disabled records, bounded responses, and blocked redirects.
+Compose tests cover folder validation, disabled fields/actions while busy,
+cancellation, sanitized retry errors, and the distinction between Library ready
+and enabled acquisition. The isolated staged snapshot was verified separately from the uncommitted
+display-entry work.
+
+Inspected the rendered phone readiness state at
+`android/app/build/reports/settings-layout/shared-plex-ready.png`. The existing
+Settings suite also passed with the new action in the acquisition category.
+The premium static UI audit reported no findings; it does not establish physical
+device accessibility or live-server behavior. Bundled FLAC bytes match the tested
+media asset. No live Plex library creation or Android metadata write was performed
+during this implementation; these mutations need acceptance against the server.
+Real MusicGrabber credential publication and recipient integration remain pending.
