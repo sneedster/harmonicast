@@ -28,26 +28,44 @@ retains playback authority until disconnected. Track Radio depends on Plex suppo
 
 ## Settings and music tuning
 
-Settings has six categories: Appearance, Playback, Automatic mix, Automatic ratings,
-Plex account, and About & updates. Phones open a page per category; larger displays
-keep the category list beside the selected page. The mini-player remains available.
+Settings has six categories: **Appearance**, **Playback**, **Automatic mix**,
+**Automatic ratings**, **Plex account**, and **About & updates**. Phones open a page
+per category; larger displays keep the category list beside the selected page.
+The mini-player remains available.
+
+### Rooms
 
 Use **Rooms** to join or host a room, share guest/display QR codes, or transfer and
 take back playback. The Settings hub also links to Rooms.
 
+### Automatic mix
+
 **Automatic mix** sets the rated/unrated balance and preference for higher ratings.
-Selection-strength changes apply to new automatic batches. **Avoid recent repeats**
-defaults to **1 week**, with Off, 1 day, 3 days, 1 week, 2 weeks, and 30 days options.
-Automatic tracks are excluded using the newer of Plex last-played time and local
-play/skip history, including tracks already queued when they come up. Skips count
-even with automatic ratings off. Explicit requests, Track Radio, and Previous remain
-available. If no eligible tracks are found, the mix stops instead of relaxing the
-window. Skips on other devices or in other apps are only known when Plex records them.
+Selection-strength changes apply to new automatic batches.
+
+**Avoid recent repeats** defaults to **1 week**. Available options are Off, 1 day,
+3 days, 1 week, 2 weeks, and 30 days.
+
+- **Play and skip history:** Automatic tracks are excluded using the newer of Plex
+  last-played time and local play/skip history, including tracks already queued
+  when they come up. Skips count even with automatic ratings off.
+- **Explicit selections:** Explicit requests, Track Radio, and Previous remain available.
+- **No eligible tracks:** The mix stops instead of relaxing the repeat-avoidance window.
+- **Other devices and apps:** Skips are only known when Plex records them.
+
+### Automatic ratings
+
 **Automatic ratings** requires explicit opt-in before its completion, skip, and
-repeat-play controls can be adjusted. Changes are saved to Plex and can replace
-existing ratings. Turning the feature off does not undo past changes. Defaults
-preserve the earlier tuning. Preferences stay local to each device; during native
-transfer, the controlling host's preferences apply.
+repeat-play controls can be adjusted.
+
+- Changes are saved to Plex and can replace existing ratings.
+- Turning the feature off does not undo past changes.
+- Defaults preserve the earlier tuning.
+
+### Device preferences
+
+Preferences stay local to each device. During native transfer, the controlling
+host's preferences apply.
 
 These Settings changes are included in v1.1.8.
 
