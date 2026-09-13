@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prepare your Plex library · Harmonicast</title>
+<style>
+:root { color-scheme: dark; --accent: #bfa7f5; --bg: #090b14; --surface: #121421; --text: #f1eef8; --muted: #c8c1d4; --border: #857399; scrollbar-color: var(--border) var(--surface); scrollbar-width: auto; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px; background: var(--bg); color: var(--text); font: 17px/1.6 system-ui, sans-serif; }
+main { max-width: 760px; margin: 3vh auto; }
+.brand, a { color: var(--accent); }
+h1 { font: 36px/1.2 Georgia, serif; margin: 12px 0; }
+h2 { font-size: 21px; margin: 0 0 10px; }
+p { color: var(--muted); }
+section { padding: 24px 0; border-top: 1px solid var(--border); }
+.download { display: inline-block; min-height: 48px; padding: 12px 20px; border-radius: 8px; background: var(--accent); color: #1d1430; text-decoration: none; font-weight: 650; }
+a, summary { cursor: pointer; }
+a:hover, summary:hover { filter: brightness(1.15); }
+a:active, summary:active { filter: brightness(.9); }
+a[aria-disabled="true"] { pointer-events: none; opacity: .6; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+pre { padding: 18px; border-radius: 8px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font: 15px/1.7 ui-monospace, monospace; }
+code { overflow-wrap: anywhere; }
+details { margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
+summary { font-weight: 650; }
+li { margin: 10px 0; color: var(--muted); }
+#message { min-height: 3.2em; }
+.small { font-size: 15px; }
+@media (max-width: 440px) { body { padding: 18px; } h1 { font-size: 30px; } pre { padding: 12px; font-size: 14px; } }
+@media (forced-colors: active) { :root { scrollbar-color: auto; } .download { border: 1px solid ButtonText; } }
+</style>
+</head>
+<body>
+<main>
+<p class="brand">Harmonicast · Shared access setup</p>
+<h1>Prepare your Plex library</h1>
+<p>Download the setup ZIP onto this computer, then extract it onto your server or network share. The audio tags are already filled in. No shell script or MusicGrabber changes are needed.</p>
+<a class="download" id="download" href="/harmonicast-plex-setup.zip" download="harmonicast-plex-setup.zip">Download setup ZIP</a>
+<p id="message" role="status" aria-live="polite">Keep the setup screen open in Harmonicast. This local page is available for five minutes after you open it in the app.</p>
+<section>
+<h2>1. Extract into a dedicated folder</h2>
+<p>Create a folder named <strong>Harmonicast</strong> alongside your existing library folders, outside your music folders. Extract the <strong>contents</strong> of the ZIP into it. Use Explorer, Finder, or your file manager for NAS and Windows/SMB shares.</p>
+<pre>Harmonicast/             ← library folder
+  README.txt
+  Harmonicast/           ← artist folder
+    Shared Access Setup/
+      01-setup.flac</pre>
+<p class="small">The two Harmonicast folders are intentional. Point Plex at the outer one. If your extractor adds a folder named <code>harmonicast-plex-setup</code>, move its contents into the dedicated folder. Plex needs the extracted audio file, not the ZIP.</p>
+</section>
+<section>
+<h2>2. Make the folder visible to Plex</h2>
+<details open><summary>Docker and Unraid</summary>
+<p>If the parent media folder is already mapped, the new folder is visible through that mapping. If you map each library separately, add a mapping for the new folder.</p>
+<pre>Example with a mapped media parent:
+Host:  /mnt/user/media/Harmonicast
+Plex:  /media/Harmonicast
+
+Example with a dedicated mapping:
+Host:  /mnt/user/media/Harmonicast
+Plex:  /harmonicast</pre>
+<p>Enter the <strong>Plex container path</strong> in the app. These are examples; use your own mapping.</p>
+</details>
+<details><summary>Local disks, NAS, and Windows/SMB shares</summary>
+<p>For native Plex, use the full folder path accessible to its server process. A share opened as <code>\\NAS\Media\Harmonicast</code> on your computer may appear as <code>/media/Harmonicast</code> inside Plex. The app needs the path Plex sees.</p>
+<p>The NAS does not need to run anything. The account Plex uses must be able to list the folders and read the audio file; your computer's access alone is not enough.</p>
+</details>
+<details><summary>Permissions</summary>
+<p>Plex needs to list and traverse the folders and read the file. On Unix filesystems, <code>755</code> directories and a <code>644</code> audio file are suitable. Parent folders must allow access too. ZIP tools may ignore stored permissions.</p>
+<p>For SMB or NAS storage, check share permissions and filesystem ACLs for the account Plex uses. No <code>777</code> permissions or recursive changes to your existing media are needed.</p>
+</details>
+</section>
+<section>
+<h2>3. Finish in Harmonicast</h2>
+<p>Return to <strong>Settings → Music acquisition → Set up shared access</strong>. Enter the outer folder's path as Plex sees it, then choose <strong>Create setup library</strong> (or <strong>Use this folder</strong>).</p>
+<p>After the scan finds <strong>Shared Access Setup</strong>, choose <strong>Prepare library</strong>. Harmonicast fills in and verifies the installation-specific, inactive record. You do not need to edit Plex's Summary/Review field.</p>
+<p>Shared acquisition remains off. After Library ready, choose Connect dedicated account in Harmonicast to test and review publication. This ZIP contains no passwords, tokens, or server IDs.</p>
+<details><summary>Already set up, or something missing?</summary>
+<p>If you have a working <strong>Harmonicast Sharing Proof</strong> album from the test kit, keep it. Do not add this album alongside it: the setup library must contain only one setup album.</p>
+<p>If Plex cannot find the album, check extraction, the folder mapping, and Plex's read permissions, then choose <strong>Scan for setup file</strong>. Restore a deleted audio file from the ZIP. If the inactive record was cleared, run setup again to review and restore it. Existing unrelated metadata is preserved.</p>
+</details>
+</section>
+</main>
+<script>
+(() => {
+  const link = document.getElementById('download');
+  const message = document.getElementById('message');
+  let busy = false;
+  link.addEventListener('click', async event => {
+    event.preventDefault();
+    if (busy) return;
+    busy = true;
+    link.setAttribute('aria-disabled', 'true');
+    link.setAttribute('aria-busy', 'true');
+    message.textContent = 'Downloading the setup ZIP from Harmonicast…';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(link.href, {cache: 'no-store', signal: controller.signal});
+      if (!response.ok || !response.headers.get('content-type')?.startsWith('application/zip')) throw new Error('Unavailable');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const save = document.createElement('a');
+      save.href = url; save.download = 'harmonicast-plex-setup.zip';
+      document.body.appendChild(save); save.click(); save.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      message.textContent = 'ZIP sent to your browser for saving. Find harmonicast-plex-setup.zip in your downloads, then extract it using the steps below.';
+    } catch (_) {
+      message.textContent = 'Download unavailable. In Harmonicast, close and reopen Download from a computer, then open the address it shows. Keep both devices on the same private network.';
+    } finally {
+      clearTimeout(timeout); busy = false;
+      link.removeAttribute('aria-disabled'); link.removeAttribute('aria-busy');
+    }
+  });
+})();
+</script>
+</body>
+</html>

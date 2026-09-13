@@ -17,15 +17,38 @@ internal class AutoLibraryBrowser(private val library: MusicLibrary) {
     private fun route(kind: BrowseKind, order: BrowseOrder, offset: Int = 0, parent: String = "") =
         "${PREFIX}browse/${kind.name}/${order.name}/$offset/${encode(parent)}"
 
+    private fun node(entry: LibraryEntry) = AutoLibraryNode(
+        if (entry.kind == BrowseKind.ARTISTS) route(BrowseKind.ALBUMS, BrowseOrder.TITLE, parent = entry.id)
+        else "${PREFIX}album/${encode(entry.id)}", entry.title, entry.subtitle, entry.artwork)
+
     suspend fun children(id: String): List<AutoLibraryNode> {
         if (id == ROOT) return listOf(
             AutoLibraryNode(route(BrowseKind.ALBUMS, BrowseOrder.RECENT), "Recently added"),
-            AutoLibraryNode(route(BrowseKind.ALBUMS, BrowseOrder.TITLE), "Albums"),
-            AutoLibraryNode(route(BrowseKind.ARTISTS, BrowseOrder.TITLE), "Artists"),
+            AutoLibraryNode("${PREFIX}letters/ALBUMS", "Albums"),
+            AutoLibraryNode("${PREFIX}letters/ARTISTS", "Artists"),
             AutoLibraryNode(route(BrowseKind.ALBUMS, BrowseOrder.PLAYED), "Recently played"),
         )
         require(id.startsWith(PREFIX))
         val pieces = id.removePrefix(PREFIX).split('/')
+        if (pieces.first() == "letters") {
+            require(pieces.size == 2)
+            val kind = BrowseKind.valueOf(pieces[1])
+            return library.letterIndex(kind).map { letter ->
+                AutoLibraryNode("${PREFIX}letter/${kind.name}/${letter.offset}/${Math.addExact(letter.offset, letter.count)}",
+                    letter.title, "${letter.count} ${if (kind == BrowseKind.ARTISTS) "artists" else "albums"}")
+            }
+        }
+        if (pieces.first() == "letter") {
+            require(pieces.size == 4)
+            val kind = BrowseKind.valueOf(pieces[1])
+            val offset = pieces[2].toInt(); val end = pieces[3].toInt()
+            require(offset >= 0 && end > offset)
+            val page = library.browse(kind, BrowseOrder.TITLE, offset)
+            val nodes = page.entries.take(end - offset).map { entry -> node(entry) }
+            return nodes + listOfNotNull(page.nextOffset?.takeIf { it > offset && it < end }?.let {
+                AutoLibraryNode("${PREFIX}letter/${kind.name}/$it/$end", "More…", "Continue this letter")
+            })
+        }
         if (pieces.first() == "album") {
             require(pieces.size == 2)
             return library.albumTracks(decode(pieces[1])).filter { it.streamUri != null }.map { AutoLibraryNode(it.id, it.title, it.artist, song = it) }
@@ -35,10 +58,7 @@ internal class AutoLibraryBrowser(private val library: MusicLibrary) {
         val offset = pieces[3].toInt().also { require(it >= 0) }
         val parent = decode(pieces[4]).ifEmpty { null }
         val page = library.browse(kind, order, offset, parent)
-        val nodes = page.entries.map { entry ->
-            AutoLibraryNode(if (entry.kind == BrowseKind.ARTISTS) route(BrowseKind.ALBUMS, BrowseOrder.TITLE, parent = entry.id)
-                else "${PREFIX}album/${encode(entry.id)}", entry.title, entry.subtitle, entry.artwork)
-        }
+        val nodes = page.entries.map { node(it) }
         return nodes + listOfNotNull(page.nextOffset?.takeIf { it > offset }?.let {
             AutoLibraryNode(route(kind, order, it, parent.orEmpty()), "More…", "Continue browsing")
         })

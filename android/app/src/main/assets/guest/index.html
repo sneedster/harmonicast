@@ -281,7 +281,8 @@
       for(const entry of data.items){
         const row=document.createElement('div'); row.className='card';acquisitionPanel.appendChild(row);
         acqText(entry.title,row);acqText([entry.artist,entry.album,entry.year,entry.detail].filter(Boolean).join(' · '),row);
-        acqButton(entry.kind==='recording'?'Acquire track':entry.kind==='artist'?'Browse releases':'View tracks',async event=>{
+        if(entry.inLibrary)acqText('In your library',row);
+        acqButton(entry.kind==='recording'?(entry.inLibrary?'Queue existing track':'Acquire track'):entry.kind==='artist'?'Browse releases':'View tracks',async event=>{
           if(entry.kind!=='recording'){acquisitionBack.push(current);acquisitionLocation={q:entry.artist||entry.title,mode:entry.kind==='artist'?'albums':'tracks',parent:entry.id,offset:0};acqLoad();return;}
           if(acquisitionBusy)return;acquisitionBusy=true; const buttons=acquisitionPanel.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
           try{const result=await api('/v1/acquisition/requests',{method:'POST',body:JSON.stringify({recordingId:entry.id})});acqText(result.message||'Request accepted',row);await acqRefreshHistory();}

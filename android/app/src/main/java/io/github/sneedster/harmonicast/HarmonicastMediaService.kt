@@ -607,9 +607,9 @@ class HarmonicastMediaService : MediaLibraryService() {
                 Log.d("HarmonicastMedia", "onSearch for: $query")
                 scope.launch {
                     try {
-                        val results = core.library.search(query)
-                        Log.d("HarmonicastMedia", "Search results found: ${results.size}")
-                        session.notifySearchResultChanged(browser, query, results.size, params)
+                        val results = core.library.searchPage(query, 0, 1)
+                        Log.d("HarmonicastMedia", "Search results found: ${results.total}")
+                        session.notifySearchResultChanged(browser, query, results.total, params)
                     } catch (e: Exception) {
                         Log.e("HarmonicastMedia", "Search failed", e)
                         session.notifySearchResultChanged(browser, query, 0, params)
@@ -629,7 +629,9 @@ class HarmonicastMediaService : MediaLibraryService() {
                 Log.d("HarmonicastMedia", "onGetSearchResult for: $query")
                 return scope.future {
                     try {
-                        val items = core.library.search(query).map(::createMediaItem)
+                        require(page >= 0 && pageSize > 0)
+                        val offset = Math.multiplyExact(page, pageSize)
+                        val items = core.library.searchPage(query, offset, pageSize).songs.map(::createMediaItem)
                         Log.d("HarmonicastMedia", "Returning ${items.size} search items")
                         LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                     } catch (e: Exception) {

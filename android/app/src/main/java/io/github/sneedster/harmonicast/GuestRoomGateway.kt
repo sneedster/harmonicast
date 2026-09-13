@@ -245,20 +245,20 @@ class GuestRoomRouter internal constructor(
                     .put("roomCode", capability.roomCode)
                     .put("expiresAt", capability.expiresAtMillis)
                     .put("acquisitionAllowed", acquisition?.roomAllowed?.value == true)
-                    .put("acquisitionAvailable", acquisition?.account?.check() == true))
+                    .put("acquisitionAvailable", acquisition?.checkAccess() == true))
                 "GET" to "/v1/acquisition/catalog" -> {
                     val service = acquisition ?: return json(403, JSONObject().put("error", "Acquisition unavailable"))
-                    if (!service.roomAllowed.value || !service.account.check()) return json(403, JSONObject().put("error", "Acquisition is disabled or unavailable"))
+                    if (!service.roomAllowed.value || !service.checkAccess()) return json(403, JSONObject().put("error", "Acquisition is disabled or unavailable"))
                     val mode = request.query["mode"] ?: "search"
                     val query = request.query["q"].orEmpty()
                     // The artist entry point applies to recognized local artists.
                     if (mode == "artist" && core.library.artist(query)?.name?.equals(query, true) != true)
                         return json(200, CatalogPage(emptyList()).json())
-                    json(200, service.catalog.browse(query, mode, request.query["parent"].orEmpty(), request.query["offset"]?.toIntOrNull() ?: 0).json())
+                    json(200, service.browseCatalog(query, mode, request.query["parent"].orEmpty(), request.query["offset"]?.toIntOrNull() ?: 0).json())
                 }
                 "GET" to "/v1/acquisition/entry" -> {
                     val service = acquisition
-                    val available = service?.roomAllowed?.value == true && service.account.check()
+                    val available = service?.roomAllowed?.value == true && service.checkAccess()
                     val query = request.query["q"].orEmpty().take(200)
                     json(200, JSONObject().put("available", available)
                         .put("artist", available && query.isNotBlank() && core.library.artist(query)?.name?.equals(query, true) == true))

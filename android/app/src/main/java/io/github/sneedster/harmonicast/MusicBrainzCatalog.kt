@@ -8,11 +8,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal data class CatalogEntry(val id: String, val title: String, val artist: String = "", val kind: String = "recording",
-    val album: String = "", val year: String = "", val durationMs: Int = 0, val detail: String = "") {
+    val album: String = "", val year: String = "", val durationMs: Int = 0, val detail: String = "", val inLibrary: Boolean = false) {
     fun json() = JSONObject().put("id", id).put("title", title).put("artist", artist).put("kind", kind)
-        .put("album", album).put("year", year).put("durationMs", durationMs).put("detail", detail)
+        .put("album", album).put("year", year).put("durationMs", durationMs).put("detail", detail).put("inLibrary", inLibrary)
     companion object { fun decode(j: JSONObject) = CatalogEntry(j.getString("id"), j.getString("title"), j.optString("artist"),
-        j.optString("kind", "recording"), j.optString("album"), j.optString("year"), j.optInt("durationMs"), j.optString("detail")) }
+        j.optString("kind", "recording"), j.optString("album"), j.optString("year"), j.optInt("durationMs"), j.optString("detail"), j.optBoolean("inLibrary")) }
 }
 internal data class CatalogPage(val entries: List<CatalogEntry>, val more: Boolean = false, val offset: Int = 0) {
     fun json() = JSONObject().put("items", JSONArray().apply { entries.forEach { put(it.json()) } }).put("more", more).put("offset", offset)

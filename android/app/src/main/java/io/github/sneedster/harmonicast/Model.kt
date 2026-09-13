@@ -48,3 +48,7 @@ class AppStorage(prefs: android.content.SharedPreferences) {
     val storage = SharedPreferencesProfileStorage(prefs)
     val profile = HomeProfileStore(storage)
 }
+
+data class LibraryLetter(val title: String, val offset: Int, val count: Int)
+
+data class TrackSearchPage(val songs: List<Song>, val total: Int)

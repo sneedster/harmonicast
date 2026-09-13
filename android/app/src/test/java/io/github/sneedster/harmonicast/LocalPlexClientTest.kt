@@ -5,6 +5,40 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LocalPlexClientTest {
+    @Test fun alphabetIndexIncludesLettersBeyondFirstBrowsePageWithoutLoadingMedia() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"Directory":[{"title":"A","size":400},{"title":"Z","size":12}]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val index = LocalPlexClient(MemoryStorage(), http).letterIndex(source, BrowseKind.ARTISTS)
+        assertEquals(listOf(LibraryLetter("A", 0, 400), LibraryLetter("Z", 400, 12)), index)
+        assertEquals(1, http.calls.size)
+        assertTrue(http.calls.single().url.contains("/7/firstCharacter?type=8"))
+    }
+
+    @Test fun autoSearchUsesServerOffsetAndReportedTotal() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"totalSize":150,"Metadata":[{"type":"track","ratingKey":"90","title":"Later match","grandparentTitle":"Artist"}]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val page = LocalPlexClient(MemoryStorage(), http).searchPage(source, "Artist", 90, 1)
+        assertEquals(150, page.total); assertEquals("Later match", page.songs.single().title)
+        assertTrue(http.calls.single().url.contains("X-Plex-Container-Start=90"))
+        assertTrue(http.calls.single().url.contains("artist.title=Artist"))
+    }
+
+    @Test fun punctuationFallbackFindsHyphenatedTitleWithoutChangingSpelling() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"totalSize":0,"size":0}}"""
+            responses += """{"MediaContainer":{"totalSize":2,"Metadata":[{"type":"track","ratingKey":"90","title":"Franco Un-American","grandparentTitle":"NOFX"},{"type":"track","ratingKey":"91","title":"Franco Elsewhere","grandparentTitle":"Other"}]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val page = LocalPlexClient(MemoryStorage(), http).searchPage(source, "Franco Unamerican", 0, 40)
+        assertEquals(1, page.total); assertEquals("Franco Un-American", page.songs.single().title)
+        assertEquals(2, http.calls.size)
+        assertFalse(punctuationSearchMatches(Song("x", "Franco Un-American", "NOFX"), "Franco Unamerikan"))
+    }
+
     private class MemoryStorage : ProfileStorage {
         val values = mutableMapOf<String, String>()
         override fun read(key: String) = values[key]

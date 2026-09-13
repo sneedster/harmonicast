@@ -105,12 +105,16 @@ internal class AndroidSecretCipher : SecretCipher {
     }
 }
 internal data class AcquisitionLogin(val url: String, val username: String = "", val password: String = "", val remember: Boolean = true,
-    val apiKeyMode: Boolean = false, val apiKey: String = "")
+    val apiKeyMode: Boolean = false, val apiKey: String = "") {
+    override fun toString() = "AcquisitionLogin(redacted)"
+}
 internal data class AcquisitionConnection(val url: String, val username: String, val accountId: String, val token: String,
-    val password: String = "", val apiKeyMode: Boolean = false, val apiKey: String = "") {
-    val identity: String get() = "$url|${if (apiKeyMode) "api-key" else accountId}"
+    val password: String = "", val apiKeyMode: Boolean = false, val apiKey: String = "", val role: String = "",
+    val destination: String = "", val scopeId: String = "") {
+    override fun toString() = "AcquisitionConnection(redacted)"
+    val identity: String get() = "$url|${if (apiKeyMode) "api-key" else accountId}" + if (scopeId.isBlank()) "" else "|$scopeId"
     fun json() = JSONObject().put("url", url).put("username", username).put("accountId", accountId).put("token", token)
-        .put("password", password).put("apiKeyMode", apiKeyMode).put("apiKey", apiKey)
+        .put("password", password).put("apiKeyMode", apiKeyMode).put("apiKey", apiKey).put("role", role).put("destination", destination).put("scopeId", scopeId)
     fun headers() = if (apiKeyMode) if (apiKey.isBlank()) emptyMap() else mapOf("X-API-Key" to apiKey) else mapOf("Authorization" to "Bearer $token")
 }
 internal data class AcquisitionConnectionState(val configured: Boolean = false, val available: Boolean = false, val checking: Boolean = false,
@@ -118,7 +122,8 @@ internal data class AcquisitionConnectionState(val configured: Boolean = false, 
 
 internal class MusicGrabberAccount(private val storage: ProfileStorage, private val cipher: SecretCipher,
     private val http: AcquisitionHttp = AcquisitionNetwork(), private val now: () -> Long = System::currentTimeMillis,
-    private val readSpacingMillis: Long = 5_000) {
+    private val readSpacingMillis: Long = 5_000, val restricted: Boolean = false,
+    private val contextValid: () -> Boolean = { true }) {
     private val mutex = Mutex()
     private var blockedToken: String? = null
     private var checkedAt: Long? = null
@@ -129,14 +134,25 @@ internal class MusicGrabberAccount(private val storage: ProfileStorage, private 
     val state = MutableStateFlow(AcquisitionConnectionState())
     fun connection(): AcquisitionConnection? = storage.read("acquisition.credentials")?.takeIf { it.isNotBlank() }?.let {
         runCatching { val j = JSONObject(cipher.open(it)); AcquisitionConnection(j.getString("url"), j.optString("username"), j.getString("accountId"),
-            j.optString("token"), j.optString("password"), j.optBoolean("apiKeyMode"), j.optString("apiKey")) }.getOrElse {
+            j.optString("token"), j.optString("password"), j.optBoolean("apiKeyMode"), j.optString("apiKey"),
+            j.optString("role"), j.optString("destination"), j.optString("scopeId")) }.getOrElse {
             state.value = AcquisitionConnectionState(message = "Saved login is unavailable. Connect again")
             null
         }
     }
     suspend fun validate(input: AcquisitionLogin): AcquisitionConnection {
-        val url = acquisitionUrl(input.url)
+        require(contextValid()) { "Plex source changed; start again" }
+        val url = if (restricted) sharedAcquisitionUrl(input.url) else acquisitionUrl(input.url)
         val config = http.call("$url/api/config")
+        if (restricted) {
+            require(!input.apiKeyMode && input.remember) { "Shared access requires a dedicated username and password" }
+            require(config.opt("users_exist") == true && config.optString("auth_mode") == "session") {
+                "Enable MusicGrabber multi-user mode with an administrator and a dedicated non-admin account"
+            }
+            val denied = try { http.call("$url/api/auth/me"); false }
+                catch (e: AcquisitionFailure) { if (e.status == 401) true else throw e }
+            require(denied) { "MusicGrabber must require a login for shared access" }
+        }
         require(config.has("auth_required") || config.has("version")) { "This URL did not return MusicGrabber configuration" }
         var candidate: AcquisitionConnection? = null
         try {
@@ -147,7 +163,12 @@ internal class MusicGrabberAccount(private val storage: ProfileStorage, private 
                 val token = login.getString("token")
                 candidate = AcquisitionConnection(url, input.username.trim(), "", token)
                 val user = http.call("$url/api/auth/me", headers = candidate.headers())
-                val result = AcquisitionConnection(url, user.getString("username"), user.getString("id"), token, if (input.remember) input.password else "")
+                if (restricted) require(user.optString("role") in setOf("peon", "user") && user.opt("id") is String && user.getString("id").isNotBlank()) {
+                    "Use a verified non-admin MusicGrabber account (peon recommended)"
+                }
+                val result = AcquisitionConnection(url, user.getString("username"), user.getString("id"), token,
+                    if (input.remember) input.password else "", role = user.optString("role"),
+                    destination = config.optString("singles_path_example").ifBlank { config.optString("music_dir") })
                 candidate = result
                 require(!user.optBoolean("force_password_change")) { "Change your password in MusicGrabber, then connect again" }
                 result
@@ -155,10 +176,17 @@ internal class MusicGrabberAccount(private val storage: ProfileStorage, private 
             require(candidate.apiKeyMode || (candidate.token.isNotBlank() && candidate.accountId.isNotBlank())) { "MusicGrabber returned an invalid login" }
             val access = http.call("$url/api/bulk-imports?limit=1", headers = candidate.headers())
             require(access.optJSONArray("imports") != null) { "MusicGrabber acquisition API is unavailable" }
+            if (restricted) {
+                val denied = try { http.call("$url/api/users", headers = candidate.headers()); false }
+                    catch (e: AcquisitionFailure) { if (e.status == 403) true else throw e }
+                require(denied) { "This MusicGrabber account has administrator access" }
+            }
+            require(contextValid()) { "Plex source changed; start again" }
             return candidate
         } catch (e: Exception) { candidate?.let { revoke(it) }; throw e }
     }
     suspend fun save(candidate: AcquisitionConnection) = mutex.withLock {
+        require(contextValid()) { "Plex source changed; start again" }
         val old = connection()
         storage.write(mapOf("acquisition.credentials" to cipher.seal(candidate.json().toString())))
         blockedToken = null; checkedAt = now()
@@ -198,6 +226,7 @@ internal class MusicGrabberAccount(private val storage: ProfileStorage, private 
         }
     }
     suspend fun call(path: String, method: String = "GET", body: JSONObject? = null, expected: String? = null): JSONObject {
+        require(contextValid()) { "Plex source changed; request is paused" }
         if (method == "GET") readMutex.withLock {
             lastReadAt?.let { delay((readSpacingMillis - (now() - it)).coerceAtLeast(0)) }
             lastReadAt = now()
@@ -205,7 +234,19 @@ internal class MusicGrabberAccount(private val storage: ProfileStorage, private 
         var c = connection() ?: throw AcquisitionFailure(401, "Connect MusicGrabber in Settings")
         require(expected == null || c.identity == expected) { "Connection changed; request is paused" }
         if (blockedToken == c.token && !c.apiKeyMode) throw AcquisitionFailure(401, "Sign in again")
-        try { return http.call(c.url + path, method, c.headers(), body) }
+        try {
+        if (restricted) {
+            val config = http.call(c.url + "/api/config")
+            val me = http.call(c.url + "/api/auth/me", headers = c.headers())
+            // A 401 here must enter the same bounded relogin path as the actual call.
+            require(config.opt("users_exist") == true && config.optString("auth_mode") == "session" &&
+                me.optString("id") == c.accountId && me.optString("role") in setOf("peon", "user") && !me.optBoolean("force_password_change")) {
+                "The shared account is no longer a usable non-admin account"
+            }
+        }
+        require(contextValid()) { "Plex source changed; request is paused" }
+        return http.call(c.url + path, method, c.headers(), body).also { require(contextValid()) { "Plex source changed; request is paused" } }
+        }
         catch (e: AcquisitionFailure) {
             if (e.status != 401 || c.apiKeyMode) throw e
         }
@@ -217,8 +258,9 @@ internal class MusicGrabberAccount(private val storage: ProfileStorage, private 
                     blockedToken = latest.token; throw AcquisitionFailure(401, "Sign in again")
                 }
                 try {
-                    val refreshed = validate(AcquisitionLogin(latest.url, latest.username, latest.password))
+                    val refreshed = validate(AcquisitionLogin(latest.url, latest.username, latest.password)).copy(scopeId = latest.scopeId)
                     require(refreshed.accountId == latest.accountId) { "MusicGrabber account changed" }
+                    require(contextValid()) { "Plex source changed; request is paused" }
                     storage.write(mapOf("acquisition.credentials" to cipher.seal(refreshed.json().toString())))
                     refreshed
                 } catch (e: Exception) {
@@ -228,7 +270,8 @@ internal class MusicGrabberAccount(private val storage: ProfileStorage, private 
             }
         }
         // A definitive HTTP 401 rejected the operation before execution; this retry is safe.
-        return http.call(c.url + path, method, c.headers(), body)
+        require(contextValid()) { "Plex source changed; request is paused" }
+        return http.call(c.url + path, method, c.headers(), body).also { require(contextValid()) { "Plex source changed; request is paused" } }
     }
 }
 internal fun safeAcquisitionError(error: Throwable): String = when (error) {
@@ -253,12 +296,47 @@ internal data class AcquisitionRequestState(val id: String, val recording: Catal
         j.optString("participant"), j.optString("connection"), j.optString("library"), j.optString("room"), j.getString("status"), j.optString("importId"), j.optString("message")) }
 }
 internal fun plexIdentity(source: PersonalPlexSource?) = source?.let { "${it.machineIdentifier}|${it.libraryKey}" }.orEmpty()
-internal class AcquisitionCoordinator(val account: MusicGrabberAccount, val catalog: MusicBrainzCatalog, private val storage: ProfileStorage,
+internal class AcquisitionCoordinator(val ownerAccount: MusicGrabberAccount, val catalog: MusicBrainzCatalog, private val storage: ProfileStorage,
     private val source: () -> PersonalPlexSource?, private val core: () -> HarmonicastCore,
-    private val recent: suspend () -> List<Song>, private val autoStart: Boolean = true) {
+    private val recent: suspend () -> List<Song>, private val autoStart: Boolean = true,
+    val shared: SharedAcquisition? = null) {
+    val account: MusicGrabberAccount get() = if (source()?.canWriteToPlex == false && shared != null) shared.account else ownerAccount
+    suspend fun checkAccess(force: Boolean = false): Boolean {
+        if (NearbyGuestParticipation.active) { roomAllowed.value = false; return false }
+        if (source()?.canWriteToPlex == false) return shared?.refresh(force) == true
+        return PlexAccessPolicy.forSource(source()).canSubmitAcquisition && ownerAccount.check(force)
+    }
+    fun invalidateSharedAccess() { roomAllowed.value = false; shared?.invalidate() }
     val requests = MutableStateFlow(readRequests())
     val roomAllowed = MutableStateFlow(false)
     val roomId = MutableStateFlow("")
+    private val libraryLookup = Mutex()
+    private data class ArtistSnapshot(val source: PersonalPlexSource?, val at: Long, val songs: List<Song>)
+    private val artistSnapshots = linkedMapOf<String, ArtistSnapshot>()
+    suspend fun browseCatalog(query: String, mode: String, parent: String, offset: Int): CatalogPage {
+        val selected = source()
+        val page = catalog.browse(query, mode, parent, offset)
+        val matches = libraryLookup.withLock {
+            val found = mutableListOf<Song>()
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+            for (artist in page.entries.filter { it.kind == "recording" }.map { it.artist }.filter { it.isNotBlank() }.distinct().take(4)) {
+                val cached = artistSnapshots[artist]?.takeIf { it.source == selected && System.currentTimeMillis() - it.at < 120_000 }
+                val remaining = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+                if (cached == null && remaining <= 0) break
+                val songs = cached?.songs ?: try {
+                    withTimeout(remaining.coerceAtLeast(1)) { core().library.artist(artist)?.songs.orEmpty().take(300) }.also {
+                        artistSnapshots[artist] = ArtistSnapshot(selected, System.currentTimeMillis(), it)
+                        while (artistSnapshots.size > 8) artistSnapshots.remove(artistSnapshots.keys.first())
+                    }
+                } catch (_: TimeoutCancellationException) { emptyList() }
+                catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
+                found += songs
+            }
+            found
+        }
+        require(source() == selected) { "Plex source changed; search again" }
+        return page.copy(entries = page.entries.map { entry -> entry.copy(inLibrary = entry.kind == "recording" && matches.any { acquisitionMatches(it, entry) }) })
+    }
     private val submission = Mutex()
     private val advanceLock = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -267,6 +345,7 @@ internal class AcquisitionCoordinator(val account: MusicGrabberAccount, val cata
         var wait = 30_000L
         while (isActive) {
             try {
+                if (source()?.canWriteToPlex == false) checkAccess()
                 if (roomAllowed.value && roomId.value.isNotBlank()) account.check()
                 advance(); wait = 30_000L
             } catch (e: CancellationException) { throw e } catch (_: Exception) { wait = (wait * 2).coerceAtMost(300_000) }
@@ -293,13 +372,14 @@ internal class AcquisitionCoordinator(val account: MusicGrabberAccount, val cata
     fun pending(participant: String) = requests.value.count { it.participant == participant && it.status !in setOf("failed", "fulfilled") }
     fun visible(participant: String?, room: String? = null) = requests.value.filter { (participant == null || it.participant == participant) && (room == null || it.room == room) }.takeLast(50)
     suspend fun setRoomAllowed(value: Boolean) {
-        if (value) require(PlexAccessPolicy.forSource(source()).canSubmitAcquisition && account.check()) { "MusicGrabber must be connected and available" }
+        if (value) require(checkAccess(true) && (source()?.canWriteToPlex == true || shared?.state?.value?.rooms == true)) { "Shared room acquisition must be permitted by the owner and the connection must be available" }
         roomAllowed.value = value
     }
     suspend fun submit(recordingId: String, participant: String = "Owner", room: String = ""): AcquisitionRequestState =
         scope.async { submitAccepted(recordingId, participant, room) }.await()
     private suspend fun submitAccepted(recordingId: String, participant: String, room: String): AcquisitionRequestState = submission.withLock {
-        require(PlexAccessPolicy.forSource(source()).canSubmitAcquisition) { "Acquisition requires an owner Plex library" }
+        val originalSource = source()
+        require(checkAccess(true)) { "Music acquisition access could not be verified" }
         if (room.isNotBlank()) require(roomId.value == room && roomAllowed.value) { "Music acquisition is disabled in this room" }
         require(account.check()) { account.state.value.message }
         val conn = account.connection() ?: throw IllegalArgumentException("Connect MusicGrabber first")
@@ -319,7 +399,18 @@ internal class AcquisitionCoordinator(val account: MusicGrabberAccount, val cata
         }
         var submissionStarted = false
         try {
+            require(source() == originalSource && checkAccess(true)) { "Plex source or shared access changed; request is paused" }
+            if (room.isNotBlank()) require(roomId.value == room && roomAllowed.value) { "Music acquisition is disabled in this room" }
             require(PlexAccessPolicy.forSource(source()).canSubmitAcquisition && plexIdentity(source()) == lib && account.connection()?.identity == conn.identity) { "Connection changed; request is paused" }
+            val existing = try { match(recording) }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { throw AcquisitionFailure(503, "Could not check your Plex library. Retry before downloading.") }
+            require(source() == originalSource) { "Plex source changed; request is paused" }
+            if (existing != null) {
+                fulfill(request, existing)
+                return@withLock requests.value.single { it.id == request.id }
+            }
+            if (room.isNotBlank()) require(roomId.value == room && roomAllowed.value) { "Music acquisition is disabled in this room" }
             submissionStarted = true
             val result = account.call("/api/bulk-import-async", "POST", JSONObject().put("songs", line).put("create_playlist", false).put("use_playlists_dir", false), conn.identity)
             val importId = result.optString("import_id")
@@ -344,10 +435,16 @@ internal class AcquisitionCoordinator(val account: MusicGrabberAccount, val cata
         update(request.copy(status = "fulfilled", message = "Queued"))
     }
     suspend fun advance() = advanceLock.withLock {
+        if (source()?.canWriteToPlex == false && !checkAccess()) {
+            requests.value.filter { it.status in setOf("acquiring", "waiting_for_plex") }.forEach {
+                update(it.copy(message = "Paused — shared Plex access could not be verified"))
+            }
+            return@withLock
+        }
         for (saved in requests.value) {
             if (saved.status !in setOf("acquiring", "waiting_for_plex", "submitting", "unconfirmed")) continue
             if (saved.library != plexIdentity(source()) || saved.connection != account.connection()?.identity || !PlexAccessPolicy.forSource(source()).canSubmitAcquisition) {
-                if (!saved.message.startsWith("Paused")) update(saved.copy(message = "Paused — reconnect the original account and owner Plex library"))
+                if (!saved.message.startsWith("Paused")) update(saved.copy(message = "Paused — reconnect the original account and Plex library"))
                 continue
             }
             if (saved.status == "submitting") continue
@@ -402,8 +499,13 @@ internal object AcquisitionRuntime {
         val storage = SharedPreferencesProfileStorage(context.applicationContext.getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
         val profile = HomeProfileStore(storage)
         val plex = LocalPlexClient(storage)
+        var coordinator: AcquisitionCoordinator? = null
+        val shared = SharedAcquisition(storage, AndroidSecretCipher(), { profile.personalSource },
+            onUnavailable = { coordinator?.roomAllowed?.value = false })
         AcquisitionCoordinator(MusicGrabberAccount(storage, AndroidSecretCipher()), MusicBrainzCatalog(), storage,
             { profile.personalSource }, { LocalHarmonicastCore(profile.personalSource, storage) },
-            { profile.personalSource?.let { plex.recentTracks(it) } ?: emptyList() }).also { instance = it; it.start() }
+            { profile.personalSource?.let { plex.recentTracks(it) } ?: emptyList() }, shared = shared).also {
+                coordinator = it; instance = it; it.start()
+            }
     }
 }

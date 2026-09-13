@@ -21,7 +21,7 @@ internal data class SharedPlexPreparation(
     val folder: String = "",
     internal val summary: String = "",
 ) {
-    enum class Stage { FOLDER, REVIEW, SCANNING, READY }
+    enum class Stage { FOLDER, REVIEW, SCANNING, READY, PUBLISHED }
     // Do not include metadata in logs or Compose saved state.
     override fun toString() = "SharedPlexPreparation($stage)"
 }
@@ -68,14 +68,17 @@ internal class SharedPlexSetup(
         }
 
         internal fun isPlaceholder(summary: String, source: PersonalPlexSource): Boolean = try {
-            require(summary.toByteArray().size <= 16 * 1024 && '\\' !in summary)
-            // The disabled record needs no escapes. Reject duplicate fields even on
+            // Android's JSONObject serializes URL slashes as \/. This optional
+            // JSON escape must be accepted on readback of our own saved record.
+            val normalized = summary.replace("\\/", "/")
+            require(summary.toByteArray().size <= 16 * 1024 && '\\' !in normalized)
+            // No other escapes are needed. Reject duplicate fields even on
             // Android JSONObject implementations that otherwise accept last-write-wins.
             for (key in listOf("type", "version", "configurationId", "revision", "plexServerId", "musicLibraryId",
                     "allowAcquisition", "allowRoomAcquisition", "musicGrabber", "url", "username", "password")) {
-                require(Regex("\"$key\"\\s*:").findAll(summary).count() == 1)
+                require(Regex("\"$key\"\\s*:").findAll(normalized).count() == 1)
             }
-            val json = JSONObject(summary)
+            val json = JSONObject(normalized)
             val uuid = UUID.fromString(json.getString("configurationId")).toString()
             sameRecord(json, placeholder(source, uuid))
         } catch (_: Exception) { false }
@@ -117,9 +120,17 @@ internal class SharedPlexSetup(
         owner(source)
         beforeWrite()
         checkSource(source)
-        http.request(source.baseUrl.trimEnd('/') + path, method,
+        // PMS metadata edits consume query parameters, not a form-encoded PUT
+        // body. Never log the target: live publication contains delegated secrets.
+        val queryEdit = method == "PUT" && form.isNotEmpty()
+        val target = source.baseUrl.trimEnd('/') + path + if (queryEdit)
+            "?" + form.entries.joinToString("&") { (key, value) ->
+                java.net.URLEncoder.encode(key, "UTF-8") + "=" + java.net.URLEncoder.encode(value, "UTF-8")
+            } else ""
+        http.request(target, method,
             mapOf("Accept" to "application/json", "X-Plex-Token" to source.token,
-                "X-Plex-Product" to "Harmonicast", "X-Plex-Client-Identifier" to plex.clientIdentifier), form)
+                "X-Plex-Product" to "Harmonicast", "X-Plex-Client-Identifier" to plex.clientIdentifier),
+            if (queryEdit) emptyMap() else form)
         currentCoroutineContext().ensureActive()
         checkSource(source)
     }
@@ -179,21 +190,28 @@ internal class SharedPlexSetup(
             "Plex returned an album from a different library. Start setup again."
         }
         val summary = detail.optString("summary")
-        val prepared = isPlaceholder(summary, source)
+        val record = runCatching { SharedAcquisitionRecord.parse(summary, source) }.getOrNull()
+        val prepared = isPlaceholder(summary, source) || record != null
         check(prepared || summary.isBlank()) {
             "This album already contains other configuration or metadata. It was preserved; check the library in Plex."
         }
         // Existing bound records establish reuse. Empty albums additionally need an explicit owner folder choice.
-        if (!prepared && (requestedFolder.isBlank() || actualFolder != requestedFolder ||
-                detail.optString("title") != "Harmonicast Sharing Proof" || detail.optString("parentTitle") != "Harmonicast Test")) {
+        val setupAlbum = (detail.optString("title") == "Shared Access Setup" && detail.optString("parentTitle") == "Harmonicast") ||
+            (detail.optString("title") == "Harmonicast Sharing Proof" && detail.optString("parentTitle") == "Harmonicast Test")
+        if (!prepared && (requestedFolder.isBlank() || actualFolder != requestedFolder || !setupAlbum)) {
             return SharedPlexPreparation(SharedPlexPreparation.Stage.FOLDER, title, key, folder = actualFolder)
         }
         val fields = detail.optJSONArray("Field") ?: JSONArray()
         val locked = (0 until fields.length()).any { fields.getJSONObject(it).let { f ->
             f.optString("name") == "summary" && (f.opt("locked") == true || f.opt("locked") == 1)
         } }
+        check(record?.enabled != true || locked) {
+            "The published record's summary is unlocked. Lock the album Summary field in Plex, then check again."
+        }
         if (prepared) storage.write(mapOf(libraryStorageKey(source.machineIdentifier) to key))
-        return SharedPlexPreparation(if (prepared && locked) SharedPlexPreparation.Stage.READY else SharedPlexPreparation.Stage.REVIEW,
+        return SharedPlexPreparation(if (prepared && locked) {
+            if (record?.enabled == true) SharedPlexPreparation.Stage.PUBLISHED else SharedPlexPreparation.Stage.READY
+        } else SharedPlexPreparation.Stage.REVIEW,
             title, key, albumKey, detail.getString("title"), actualFolder, summary)
     }
 
@@ -286,5 +304,45 @@ internal class SharedPlexSetup(
             }
             state
         }
+    }
+
+    suspend fun publish(source: PersonalPlexSource, review: SharedPlexPreparation, connection: AcquisitionConnection,
+        rooms: Boolean, verifyAccount: suspend () -> Unit): SharedPlexPreparation = mutex.withLock {
+        withTimeout(60_000) {
+            owner(source)
+            check(!connection.apiKeyMode && connection.role in setOf("peon", "user") && connection.password.isNotEmpty()) {
+                "Test a dedicated non-admin account before publishing"
+            }
+            sharedAcquisitionUrl(connection.url)
+            val before = inspectUnlocked(source, review.folder)
+            check(before == review && before.stage in setOf(SharedPlexPreparation.Stage.READY, SharedPlexPreparation.Stage.PUBLISHED)) {
+                "The setup record changed. Check again and review the new record before publishing."
+            }
+            verifyAccount()
+            val record = SharedAcquisitionRecord.publish(SharedAcquisitionRecord.parse(before.summary, source), source, connection, rooms)
+            writeRecord(source, before, record.json)
+        }
+    }
+
+    suspend fun unpublish(source: PersonalPlexSource, review: SharedPlexPreparation): SharedPlexPreparation = mutex.withLock {
+        withTimeout(60_000) {
+            val before = inspectUnlocked(source, review.folder)
+            check(before == review && before.stage == SharedPlexPreparation.Stage.PUBLISHED) { "The record changed. Check again before disabling sharing." }
+            val previous = SharedAcquisitionRecord.parse(before.summary, source)
+            writeRecord(source, before, placeholder(source, previous.id).put("revision", Math.addExact(previous.revision, 1)))
+        }
+    }
+
+    private suspend fun writeRecord(source: PersonalPlexSource, before: SharedPlexPreparation, record: JSONObject): SharedPlexPreparation {
+        mutate(source, "/library/sections/${id(before.libraryKey)}/all", "PUT", mapOf("type" to "9", "id" to id(before.albumKey),
+            "summary.value" to record.toString(), "summary.locked" to "1")) {
+            val fresh = rows(container(source, "/library/metadata/${id(before.albumKey)}"), "Metadata").single()
+            check(fresh.optString("ratingKey") == before.albumKey && fresh.optString("librarySectionID") == before.libraryKey &&
+                fresh.optString("summary") == before.summary) { "The record changed during review. Check again before publishing." }
+        }
+        val result = inspectUnlocked(source, before.folder)
+        check(result.stage in setOf(SharedPlexPreparation.Stage.READY, SharedPlexPreparation.Stage.PUBLISHED) &&
+            sameRecord(JSONObject(result.summary), record)) { "Plex has not confirmed the saved record. Check again before sharing." }
+        return result
     }
 }

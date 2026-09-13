@@ -258,6 +258,7 @@ class HarmonicastViewModel : ViewModel() {
 
     fun signOutPersonalPlex() {
         if (!isPersonalMode) return
+        AcquisitionRuntime.get(context).invalidateSharedAccess()
         setGuestControl(false)
         leaveNearbyRoom()
         personalAuthJob?.cancel()
@@ -396,7 +397,7 @@ class HarmonicastViewModel : ViewModel() {
                 personalServerToken = server.accessToken ?: personalToken
                 personalServerBase = plex.connect(personalServerToken, server)
                 plexLibraries = plex.musicLibraries(personalServerBase, personalServerToken).filterNot {
-                    it.key == api.storage.read(SharedPlexSetup.libraryStorageKey(server.machineIdentifier))
+                    it.title == "Harmonicast" || it.key == api.storage.read(SharedPlexSetup.libraryStorageKey(server.machineIdentifier))
                 }
                 if (plexLibraries.isEmpty()) error = "This Plex server has no Music libraries."
             } catch (e: Exception) {
@@ -410,6 +411,7 @@ class HarmonicastViewModel : ViewModel() {
     fun selectPlexLibrary(library: PlexLibrary) {
         val server = selectedPlexServer ?: return
         if (personalSetupActive) {
+            AcquisitionRuntime.get(context).invalidateSharedAccess()
             val previous = api.profile.personalSource
             if (previous != null && (
                     previous.machineIdentifier != server.machineIdentifier || previous.libraryKey != library.key

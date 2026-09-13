@@ -178,6 +178,21 @@ class LocalPlexClient(
             ?: throw IllegalStateException("Plex server returned an invalid response")
     }
 
+    suspend fun letterIndex(source: PersonalPlexSource, kind: BrowseKind): List<LibraryLetter> {
+        val query = "?type=${kind.plexType}&sort=titleSort:asc"
+        val base = "/library/sections/${source.libraryKey}"
+        val data = try { serverContainer(source.baseUrl, source.token, "$base/firstCharacter$query") }
+            catch (e: PlexRequestFailure) { if (e.status != 404) throw e; serverContainer(source.baseUrl, source.token, "$base/firstCharacters$query") }
+        val rows = data.optJSONArray("Directory") ?: if (data.optInt("size", -1) == 0) JSONArray() else error("Plex did not return a letter index")
+        require(rows.length() <= 512) { "Plex returned an oversized letter index" }
+        var offset = 0
+        return List(rows.length()) { rows.getJSONObject(it) }.mapNotNull { row ->
+            val count = row.getInt("size"); val title = row.getString("title")
+            require(count >= 0 && title.isNotBlank() && title.length <= 32)
+            if (count == 0) null else LibraryLetter(title, offset, count).also { offset = Math.addExact(offset, count) }
+        }
+    }
+
     suspend fun browse(source: PersonalPlexSource, kind: BrowseKind, order: BrowseOrder, offset: Int = 0, parent: String? = null, query: String = ""): LibraryPage {
         require(offset >= 0)
         var artistFilter = ""
@@ -237,6 +252,39 @@ class LocalPlexClient(
     suspend fun recentTracks(source: PersonalPlexSource): List<Song> = songs(source,
         serverContainer(source.baseUrl, source.token,
             "/library/sections/${source.libraryKey}/all?type=10&sort=addedAt:desc&X-Plex-Container-Size=100"))
+
+    suspend fun searchPage(source: PersonalPlexSource, query: String, offset: Int, limit: Int, tolerant: Boolean = true): TrackSearchPage {
+        require(offset >= 0 && limit > 0)
+        val term = query.trim()
+        if (term.isBlank()) return TrackSearchPage(emptyList(), 0)
+        val encoded = encodePlex(term)
+        // Plex evaluates the OR across track, artist and album titles over the whole section.
+        val base = "/library/sections/${source.libraryKey}/all?type=10&push=1&title=$encoded&or=1&artist.title=$encoded&or=1&album.title=$encoded&pop=1&sort=titleSort:asc"
+        val result = mutableListOf<Song>()
+        var cursor = offset
+        var total = Int.MAX_VALUE
+        while (result.size < limit && cursor < total) {
+            val amount = minOf(200, limit - result.size)
+            val body = serverContainer(source.baseUrl, source.token,
+                "$base&X-Plex-Container-Start=$cursor&X-Plex-Container-Size=$amount")
+            val rows = metadataArray(body)
+            total = body.optInt("totalSize", cursor + rows.size)
+            result += songs(source, body).take(limit - result.size)
+            if (rows.isEmpty()) break
+            cursor = Math.addExact(cursor, rows.size)
+        }
+        if (total == 0 && tolerant) {
+            val words = term.split(Regex("[^\\p{L}\\p{N}]+" )).filter { it.isNotBlank() }
+            val anchor = words.firstOrNull { it.length >= 3 }
+            if (words.size > 1 && anchor != null) {
+                val candidates = searchPage(source, anchor, 0, 1000, tolerant = false)
+                require(candidates.total <= 1000) { "Search is too broad. Include more of the track or artist name." }
+                val matches = candidates.songs.filter { punctuationSearchMatches(it, term) }
+                return TrackSearchPage(matches.drop(offset).take(limit), matches.size)
+            }
+        }
+        return TrackSearchPage(result, if (total == Int.MAX_VALUE) 0 else total)
+    }
 
     suspend fun search(source: PersonalPlexSource, query: String, expandAlbums: Boolean = true, expandArtists: Boolean = true): List<Song> {
         val term = query.trim()
@@ -511,3 +559,12 @@ internal fun normalizeServerUrl(raw: String): String? = runCatching {
 
 private fun encodePlex(value: String) = URLEncoder.encode(value, "UTF-8")
 private fun normalizeName(value: String) = value.lowercase().filter { it.isLetterOrDigit() }
+
+
+internal fun punctuationSearchMatches(song: Song, query: String): Boolean {
+    fun compact(text: String) = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKD)
+        .lowercase(java.util.Locale.ROOT).replace(Regex("[^\\p{L}\\p{N}]"), "")
+    val needle = compact(query)
+    return needle.isNotBlank() && listOf(song.title, song.artist, song.album, "${song.artist} ${song.title}")
+        .any { compact(it).contains(needle) }
+}

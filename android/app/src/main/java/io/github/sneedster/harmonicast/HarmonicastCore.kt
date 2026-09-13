@@ -2,8 +2,13 @@ package io.github.sneedster.harmonicast
 
 /** In-process contracts. Remote transport and JSON belong in adapters, not callers. */
 interface MusicLibrary {
+    suspend fun letterIndex(kind: BrowseKind): List<LibraryLetter> = emptyList()
     suspend fun browse(kind: BrowseKind, order: BrowseOrder, offset: Int = 0, parent: String? = null, query: String = ""): LibraryPage = LibraryPage(emptyList(), null)
     suspend fun albumTracks(id: String): List<Song> = emptyList()
+    suspend fun searchPage(query: String, offset: Int, limit: Int): TrackSearchPage {
+        val songs = search(query)
+        return TrackSearchPage(songs.drop(offset).take(limit), songs.size)
+    }
     suspend fun search(query: String): List<Song>
     suspend fun searchForBrowsing(query: String): List<Song> = search(query)
     /** Album-title matches plus releases by matching artists, with shared albums deduplicated. */

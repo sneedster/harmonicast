@@ -1,11 +1,11 @@
 # Shared Plex acquisition and room hosting
 
-Status: implementation started 2026-09-12; room capabilities, live-access guards,
-the sharing proof kit, and the owner library-preparation flow are implemented
-locally. Approved-account reads and same-token revocation passed the live API
-experiment. Automated Android validation passes (200 tests). Live preparation
-mutations, remaining cross-account controls, real credential publication,
-recipient acquisition, and physical-device acceptance remain outstanding.
+Status: local implementation includes owner preparation, reviewed non-admin
+account publication, recipient discovery/login, revocation checks, and shared-host
+room acquisition. Live ZIP installation and inactive library preparation passed on
+the Pixel and Plex server. Approved-account reads and same-token revocation passed
+the earlier API experiment. Real credential publication, recipient acquisition,
+remaining cross-account controls and physical-device acceptance remain outstanding.
 No release date assigned.
 Decision date: 2026-09-12.
 
@@ -164,8 +164,8 @@ The library-preparation portion is now implemented locally in
 SharedPlexSetup.kt and SharedPlexSetupSettings.kt. It exports the supplied FLAC,
 reuses an existing bound disabled record or creates a library for the chosen
 server folder, requests a scan, reviews/writes/locks a disabled record, and checks
-the saved result. Real credential publication and recipient acquisition are still
-outstanding; the panel explicitly reports that acquisition remains off.
+the saved result. Preparation reports that acquisition remains off until the separate dedicated
+account review and publication flow completes.
 
 Preparation rechecks the selected account's live ownership and advertised server
 connection before writes. It limits response bodies, refuses redirects, detects
@@ -174,12 +174,12 @@ music folders, and journals uncertain library creation to avoid an automatic
 duplicate POST. The record contains only the disabled dummy endpoint/account.
 An unresolved create response leads to Check again, never a blind retry. There is
 no claim of an atomic Plex compare-and-swap or protection from a simultaneous
-write on another device. Existing enabled/foreign records are preserved and
-require separate handling in the future publisher.
+write on another device. Valid enabled records have a separate update/disable review. Foreign records are
+preserved and rejected. An unlocked live record must be locked in Plex before reuse.
 
 Library creation/scanning request shapes were cross-checked against the maintained
 [Python PlexAPI implementation](https://python-plexapi.readthedocs.io/en/latest/_modules/plexapi/library.html).
-The Android preparation mutations still need live-server acceptance; the previous
+The Android preparation mutations passed live-server acceptance; the previous
 live experiment proved reads/revocation and used Plex Web for metadata writes.
 
 Document the security properties beside publication: the credential is readable
@@ -388,5 +388,78 @@ a CLI-generated disabled dummy record, sanitized direct-read and paged fallback
 checks, and an evidence worksheet. No live tokens or MusicGrabber credentials are
 included. Individual-item discovery deliberately remains a manual evidence gate;
 the probe never turns a successful known-item read into a discovery claim. The
-production delegated reader, publisher, login, and credential lifecycle remain
-unimplemented until phase 1 passes on the deployed Plex version.
+original proof did not implement the production reader or publisher. The local
+implementation described below uses dedicated-library discovery; individual-item
+discovery remains unproven and is not used.
+
+## Portable owner setup ZIP — 2026-09-12
+
+Owner preparation now offers **Download from a computer**. This explicitly starts
+a five-minute local web page in the app's existing setup gateway, serving only
+the instructions and a fixed, non-secret ZIP. A computer on the same private
+network downloads it directly; no phone-to-server transfer, public hosting,
+reverse proxy, Tailscale Funnel, script execution, or MusicGrabber change is needed.
+Leaving setup or changing source closes the page. Expiry can be recovered by
+opening a fresh download page. **Save setup ZIP on this device** is the fallback.
+
+Extract the archive contents into a dedicated Harmonicast folder outside existing
+music roots, on disk or a NAS/SMB share. The pre-tagged album is **Shared Access
+Setup** by **Harmonicast**. The app accepts that identity and the original test-kit
+identity, while retaining owner, folder-binding, review and conflict checks.
+Existing installations should keep their original album; never install both.
+The universal ZIP contains no installation IDs or credentials. After scanning,
+the app writes and verifies the installation-specific inactive record. This preparation step does
+not itself publish credentials; continue with the dedicated account review below.
+
+[Package instructions](shared-plex-setup/README.txt) explain extraction layout,
+native and Docker paths, separate mappings, NAS/SMB access and permissions.
+Generate the checked-in ZIP with `python3 scripts/build_shared_plex_setup.py`;
+verify freshness with `python3 scripts/build_shared_plex_setup.py --check`.
+Unix ZIP modes are 755 for directories and 644 for files; share ACLs and the
+permissions applied by extraction tools still govern actual access.
+
+Remote acquisition connectivity remains a separate deployment concern: the
+chosen MusicGrabber URL must be reachable from intended clients. No proxy,
+Funnel, or other public exposure is configured by this preparation flow.
+
+
+## Dedicated shared account implementation — 2026-09-12
+
+The owner can test a separate HTTPS MusicGrabber login on Android or through the
+paired five-minute computer page. The web page stages a candidate only. Android
+shows the exact Plex server, music library, configuration album, account/role and
+room permission. The owner confirms the download destination was checked and then
+reviews publication before writing any live password. Preparation does not copy
+the owner's saved personal connection. Account tests reject anonymous/single-user
+access, API keys, admin roles, forced password changes and unverifiable identities.
+
+The publisher rechecks live ownership, account identity/role and the reviewed
+Plex record before writing. It increments the revision, locks Summary, and reads
+back the saved record. Disabling replaces credentials with an inactive record.
+Plex metadata updates use query parameters as required by the deployed server;
+never log request URLs containing metadata. Plex has no atomic compare-and-swap.
+
+Recipients discover exactly one bounded configuration album in the dedicated
+Harmonicast library using their selected Plex token. The strict versioned parser
+rejects duplicate keys, malformed records, mismatched server/music library IDs,
+non-HTTPS endpoints and unlocked summaries. MusicGrabber receives its own session
+credentials only. Delegated credentials are encrypted separately from the owner's
+manual connection, bound to the selected Plex account/source and configuration ID.
+
+New submissions recheck Plex before acceptance and immediately before the remote
+POST; account identity and non-admin role are checked before service operations.
+Loss of access blocks new requests and clears usable credentials when confirmed.
+Transient failures pause access; opt-out persists across restart and requires an
+explicit reconnect. Source changes invalidate in-flight login results. Password
+rotation keeps the same job identity; another account/configuration pauses old
+jobs. Accepted remote work can continue. No uncertain submission is retried.
+
+Room acquisition requires both the published permission and the host's per-room
+opt-in. A fresh check removing room permission blocks a pending room submission.
+Shared access does not permit Plex ratings/history writes, owner setup, or use of
+the owner's personal MusicGrabber credentials. Joined guests use the room gateway.
+
+Live acceptance remains: owner enters the dedicated password in the setup UI,
+reviews publication, then verifies approved-recipient discovery and one download
+through Plex indexing/queue fulfillment. Test a separate unapproved account,
+revocation, restart/reconnect and a nearby guest before calling rollout complete.

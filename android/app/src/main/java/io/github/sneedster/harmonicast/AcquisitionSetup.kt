@@ -32,8 +32,9 @@ internal class SetupPairing(private val now: () -> Long = System::currentTimeMil
     @Synchronized fun authorized(candidate: String?) = active() && candidate != null && token != null && MessageDigest.isEqual(candidate.toByteArray(), token!!.toByteArray())
     @Synchronized fun close() { revoked = true; token = null }
 }
-internal class AcquisitionSetupGateway(private val context: Context, private val account: MusicGrabberAccount,
-    private val testBindAddress: String? = null, private val pairing: SetupPairing = SetupPairing()) {
+internal class AcquisitionSetupGateway(private val context: Context, private val account: MusicGrabberAccount? = null,
+    private val testBindAddress: String? = null, private val pairing: SetupPairing = SetupPairing(),
+    private val initialUrl: String = "") {
     val state = MutableStateFlow(AcquisitionSetupState())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val workers = java.util.concurrent.ThreadPoolExecutor(1, 2, 10, java.util.concurrent.TimeUnit.SECONDS,
@@ -52,7 +53,8 @@ internal class AcquisitionSetupGateway(private val context: Context, private val
         socket = try { preferred.apply { reuseAddress = true; bind(InetSocketAddress(address, 8789)) } }
         catch (_: java.net.BindException) { preferred.close(); ServerSocket().apply { bind(InetSocketAddress(address, 0)) } }
         expectedHost = "$address:${socket!!.localPort}"
-        state.value = AcquisitionSetupState("http://$expectedHost", pairing.code, "Open this address on a computer on the same private network")
+        state.value = AcquisitionSetupState("http://$expectedHost", if (account == null) "" else pairing.code,
+            "Open this address on a computer on the same private network. Keep this screen open; the page expires after five minutes.")
         scope.launch {
             while (pairing.active()) {
                 val client = runCatching { socket?.accept() }.getOrNull() ?: break
@@ -83,7 +85,18 @@ internal class AcquisitionSetupGateway(private val context: Context, private val
             respond(client, 403, JSONObject().put("error", "Setup is unavailable").toString()); return
         }
         if (first[0] == "GET" && first[1] == "/") {
-            respond(client, 200, context.assets.open("setup/index.html").bufferedReader().use { it.readText() }, true); return
+            val page = if (account == null) "shared-plex/index.html" else "setup/index.html"
+            val html = context.assets.open(page).bufferedReader().use { it.readText() }
+            respond(client, 200, if (account?.restricted == true) html.replace("data-purpose=\"personal\"", "data-purpose=\"shared\"") else html, true); return
+        }
+        // Download-only mode serves fixed, non-secret assets. It has no pairing,
+        // account access, filesystem parameters, or configuration mutation routes.
+        if (account == null) {
+            if (first[0] == "GET" && first[1] == "/harmonicast-plex-setup.zip") {
+                respondBytes(client, 200, context.assets.open("shared-plex/harmonicast-plex-setup.zip").use { it.readBytes() },
+                    "application/zip", "attachment; filename=\"harmonicast-plex-setup.zip\"")
+            } else respond(client, 404, "{\"error\":\"Not found\"}")
+            return
         }
         if (headers["origin"] != "http://$expectedHost" || first[0] != "POST" || headers["content-type"]?.startsWith("application/json") != true) {
             respond(client, 403, "{\"error\":\"Setup request rejected\"}"); return
@@ -94,7 +107,7 @@ internal class AcquisitionSetupGateway(private val context: Context, private val
         val body = JSONObject(String(bytes, Charsets.UTF_8))
         if (first[1] == "/pair") {
             val token = pairing.pair(body.optString("code"))
-            respond(client, if (token == null) 403 else 200, if (token == null) "{\"error\":\"Incorrect code, already paired, or setup expired\"}" else JSONObject().put("token", token).toString())
+            respond(client, if (token == null) 403 else 200, if (token == null) "{\"error\":\"Incorrect code, already paired, or setup expired\"}" else JSONObject().put("token", token).put("url", initialUrl).toString())
             if (!pairing.active()) scope.launch { close("Too many incorrect pairing attempts") }
             return
         }
@@ -111,19 +124,27 @@ internal class AcquisitionSetupGateway(private val context: Context, private val
                     body.optBoolean("remember", true), body.optBoolean("apiKeyMode"), body.optString("apiKey")))
                 if (!pairing.active()) { account.revoke(candidate); throw IllegalArgumentException("Setup expired") }
                 staged?.let { account.revoke(it) }; staged = candidate
-                state.value = state.value.copy(staged = candidate, message = "Connection tested. Save it on the Android device")
-                respond(client, 200, "{\"message\":\"Connection tested. Select Save connection on the Android device.\"}")
+                val completion = if (account.restricted) "Dedicated account tested. Review and publish it on the Android device. Nothing has been published yet."
+                    else "Connection tested. Select Save connection on the Android device."
+                state.value = state.value.copy(staged = candidate, message = completion)
+                respond(client, 200, JSONObject().put("message", completion).toString())
             } catch (e: Exception) { respond(client, 400, JSONObject().put("error", safeAcquisitionError(e)).toString()) }
             finally { mutation.unlock() }
         }
     }
     private fun respond(socket: Socket, code: Int, body: String, html: Boolean = false) {
-        val bytes = body.toByteArray(Charsets.UTF_8)
+        respondBytes(socket, code, body.toByteArray(Charsets.UTF_8),
+            "${if (html) "text/html" else "application/json"}; charset=utf-8")
+    }
+    private fun respondBytes(socket: Socket, code: Int, bytes: ByteArray, type: String, disposition: String? = null) {
         val out = socket.getOutputStream()
-        out.write(("HTTP/1.1 $code Response\r\nContent-Type: ${if (html) "text/html" else "application/json"}; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; form-action 'none'\r\nConnection: close\r\n\r\n").toByteArray(Charsets.UTF_8))
+        out.write(("HTTP/1.1 $code Response\r\nContent-Type: $type\r\n" +
+            (disposition?.let { "Content-Disposition: $it\r\n" } ?: "") +
+            "Content-Length: ${bytes.size}\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; form-action 'none'\r\nConnection: close\r\n\r\n").toByteArray(Charsets.UTF_8))
         out.write(bytes); out.flush()
     }
     suspend fun save() {
+        val account = requireNotNull(account) { "This page only provides the setup download" }
         mutation.lock()
         try {
             require(pairing.active()) { "Setup expired" }
@@ -135,7 +156,7 @@ internal class AcquisitionSetupGateway(private val context: Context, private val
     suspend fun close(message: String = "Setup closed") {
         pairing.close(); runCatching { socket?.close() }; socket = null
         mutation.lock()
-        try { staged?.let { account.revoke(it) }; staged = null; state.value = AcquisitionSetupState(message = message) }
+        try { staged?.let { account?.revoke(it) }; staged = null; state.value = AcquisitionSetupState(message = message) }
         finally { mutation.unlock() }
         workers.shutdownNow(); scope.cancel()
     }

@@ -85,7 +85,7 @@ class SettingsScreenTest {
     @Test fun computerSetupSurvivesActivityRecreation() {
         setup()
         open("Music acquisition")
-        compose.onNodeWithText("Set up from another device").performClick()
+        compose.onNodeWithText("Set up from another device").performScrollTo().performClick()
         val model = androidx.lifecycle.ViewModelProvider(compose.activity).get("acquisition-settings", AcquisitionSettingsModel::class.java)
         compose.waitUntil(5000) { model.gateway != null }
         val gateway = model.gateway!!
@@ -101,18 +101,37 @@ class SettingsScreenTest {
     @Test fun sharedPlexLibraryCannotConfigureAcquisition() {
         setup(readOnly = true)
         open("Music acquisition")
-        compose.onNodeWithText("Music acquisition currently requires a Plex server owner. Shared libraries can play music and host rooms.").assertExists()
+        compose.onNodeWithText("Shared music acquisition").assertExists()
+        compose.onNodeWithText("Refresh shared access").assertExists()
         compose.onNodeWithText("Connect", substring = false).assertDoesNotExist()
         compose.onNodeWithText("Set up from another device").assertDoesNotExist()
+        compose.onNodeWithText("Connect dedicated account").assertDoesNotExist()
     }
 
     @Test @Config(qualifiers = "w1280dp-h720dp-mdpi")
     fun acquisitionComputerSetupIsReachableOnTv() {
         setup(tv = true)
         open("Music acquisition")
-        compose.onNodeWithText("Set up from another device").assertIsDisplayed()
+        compose.onNodeWithText("Set up from another device").performScrollTo().assertIsDisplayed()
         screenshot("tv-acquisition")
         compose.onNodeWithText("Connect", substring = false).performScrollTo().assertExists()
+    }
+
+    @Test fun connectedAccountHidesLoginUntilEditAndCancelRestoresSummary() {
+        setup()
+        open("Music acquisition")
+        val account = AcquisitionRuntime.get(RuntimeEnvironment.getApplication()).ownerAccount
+        try {
+            compose.runOnIdle { account.state.value = AcquisitionConnectionState(true, true, message = "Connected", url = "https://music.example.com", username = "owner") }
+            compose.onNodeWithText("Password", substring = false).assertDoesNotExist()
+            compose.onNodeWithText("MusicGrabber URL", substring = false).assertDoesNotExist()
+            compose.onNodeWithText("Set up from another device").assertDoesNotExist()
+            screenshot("phone-acquisition-connected")
+            compose.onNodeWithText("Edit connection").performScrollTo().performClick()
+            compose.onNodeWithText("Password", substring = false).assertExists()
+            compose.onNodeWithText("Cancel personal setup").performScrollTo().performClick()
+            compose.onNodeWithText("Password", substring = false).assertDoesNotExist()
+        } finally { compose.runOnIdle { account.state.value = AcquisitionConnectionState() } }
     }
 
     @Test fun phoneHubAndConsentGatedTuning() {

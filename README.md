@@ -95,9 +95,10 @@ Once your server is running, open **Settings → Music acquisition**, enter its
 reachable URL and your MusicGrabber username/password, then tap **Connect**.
 You can also use **Set up from another device** to enter credentials on a computer
 and confirm the connection on Android. API-key connections are available under
-**Advanced settings**. Acquisition requires owner access to the selected Plex
-library. Shared-library room hosting does not require acquisition access; delegated
-MusicGrabber connections are still planned.
+**Advanced settings**. This manual connection belongs to the Plex owner.
+Owners can use **Set up shared access** to publish a
+separate non-admin connection for approved Plex recipients. Shared-library room
+hosting does not require acquisition access.
 
 Acquisition starts disabled in each room. The host can enable **Allow music acquisition**
 for guest requests using the host device's MusicGrabber connection. Accepted requests
@@ -150,7 +151,21 @@ Harmonicast is not affiliated with Plex. Licensed under AGPL-3.0-or-later.
 The current development build verifies Plex server/library access before opening a
 room and periodically while hosting. Confirmed access loss closes the room;
 transient network failures do not authorize a new room. Shared sources retain their
-existing Plex write restrictions. Delegated MusicGrabber acquisition remains pending.
+existing Plex write restrictions. The development build also includes reviewed
+publication of a dedicated non-admin MusicGrabber account and recipient discovery.
+Live shared-account download and device acceptance remain pending.
+
+Owner setup provides a [portable ZIP](docs/shared-plex-setup/README.txt) through a
+five-minute computer download page. Extract it into a dedicated folder readable
+by Plex, prepare the library, then connect and review the dedicated account in
+Settings. No MusicGrabber source changes or server script are needed. Remote
+recipients need a reachable HTTPS MusicGrabber endpoint; Harmonicast does not
+configure the reverse proxy or Funnel.
+
+Recipients select the shared music library and refresh shared access in Settings.
+Plex access is rechecked before new requests. Removing a share blocks new app
+requests after verification, but recipients can copy the published password;
+rotate that dedicated password to revoke copied credentials.
 
 To prepare the required cross-account experiment, use the
 [Plex sharing proof kit](docs/plex-sharing-test-kit/README.md). It includes synthetic

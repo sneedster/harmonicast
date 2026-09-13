@@ -20,6 +20,8 @@ class SharedPlexSetupTest {
         var duplicate = false
         var hasAlbum = true
         var locked = false
+        var albumTitle = "Harmonicast Sharing Proof"
+        var artistTitle = "Harmonicast Test"
         var summary = ""
         var ignoreWrite = false
         var failCreate = false
@@ -39,8 +41,15 @@ class SharedPlexSetupTest {
                 return "{}"
             }
             if (method == "PUT") {
-                writes += method to form
-                if (!ignoreWrite) { summary = form.getValue("summary.value"); locked = true }
+                assertTrue("Plex metadata edits must not use a PUT form body", form.isEmpty())
+                val params = java.net.URI(url).rawQuery?.split('&')?.associate {
+                    val pair = it.split('=', limit = 2)
+                    java.net.URLDecoder.decode(pair[0], "UTF-8") to java.net.URLDecoder.decode(pair[1], "UTF-8")
+                }.orEmpty()
+                assertEquals("9", params["type"])
+                assertEquals("42", params["id"])
+                writes += method to params
+                if (!ignoreWrite) { summary = params.getValue("summary.value"); locked = params["summary.locked"] == "1" }
                 return "{}"
             }
             val path = url.removePrefix(source.baseUrl)
@@ -56,7 +65,7 @@ class SharedPlexSetupTest {
                     .put("totalSize", if (hasAlbum) 1 else 0).put("Metadata", JSONArray().apply { if (hasAlbum) put(JSONObject().put("ratingKey", "42")) })
                 path == "/library/metadata/42" -> JSONObject().put("Metadata", JSONArray().put(JSONObject()
                     .put("ratingKey", "42").put("librarySectionID", "6").put("type", "album")
-                    .put("title", "Harmonicast Sharing Proof").put("parentTitle", "Harmonicast Test")
+                    .put("title", albumTitle).put("parentTitle", artistTitle)
                     .put("summary", summary).put("Field", JSONArray().put(JSONObject().put("name", "summary").put("locked", locked)))))
                 else -> error("Unexpected test route")
             }
@@ -86,6 +95,17 @@ class SharedPlexSetupTest {
     @Test fun recognizesPreviouslyPreparedRecordWithoutFolderEntry() = runBlocking {
         val http = Http(source).apply { summary = SharedPlexSetup.placeholder(source, UUID.randomUUID().toString()).toString(); locked = true }
         assertEquals(SharedPlexPreparation.Stage.READY, SharedPlexSetup(Store(), { source }, http, { false }).inspect(source).stage)
+        assertTrue(http.writes.isEmpty())
+    }
+
+    @Test fun acceptsProductionZipTagsAndPreservesUnrecognizedAlbum() = runBlocking {
+        val http = Http(source).apply { albumTitle = "Shared Access Setup"; artistTitle = "Harmonicast" }
+        val service = SharedPlexSetup(Store(), { source }, http, { false })
+        val review = service.inspect(source, "/setup")
+        assertEquals(SharedPlexPreparation.Stage.REVIEW, review.stage)
+        assertEquals(SharedPlexPreparation.Stage.READY, service.prepare(source, "/setup", review).stage)
+        http.summary = ""; http.artistTitle = "Someone else"; http.writes.clear()
+        assertEquals(SharedPlexPreparation.Stage.FOLDER, service.inspect(source, "/setup").stage)
         assertTrue(http.writes.isEmpty())
     }
 
@@ -146,9 +166,42 @@ class SharedPlexSetupTest {
     @Test fun placeholderRejectsEnabledWrongBindingAndDuplicateKeys() {
         val record = SharedPlexSetup.placeholder(source, UUID.randomUUID().toString()).toString()
         assertTrue(SharedPlexSetup.isPlaceholder(record, source))
+        assertTrue(SharedPlexSetup.isPlaceholder(record.replace("/", "\\/"), source))
+        assertFalse(SharedPlexSetup.isPlaceholder(record.replace("\"version\"", "\"\\u0076ersion\""), source))
         assertFalse(SharedPlexSetup.isPlaceholder(record, source.copy(libraryKey = "2")))
         assertFalse(SharedPlexSetup.isPlaceholder(record.replace("\"allowAcquisition\":false", "\"allowAcquisition\":true"), source))
         assertFalse(SharedPlexSetup.isPlaceholder(record.replace("\"version\":1", "\"version\":1,\"version\":1"), source))
         assertFalse(SharedPlexSetup.isPlaceholder(record.replace("\"version\":1", "\"version\":true"), source))
+    }
+
+    @Test fun publishesReviewedRestrictedAccountAndDisablesWithoutKeepingPassword() = runBlocking {
+        val http = Http(source).apply { summary = SharedPlexSetup.placeholder(source, UUID.randomUUID().toString()).toString(); locked = true }
+        val service = SharedPlexSetup(Store(), { source }, http, { false })
+        val prepared = service.inspect(source, "/setup")
+        val candidate = AcquisitionConnection("https://shared.example", "guests", "account-2", "session-secret", "password-secret", role = "peon")
+        var verified = 0
+        val published = service.publish(source, prepared, candidate, true) { verified++ }
+        assertEquals(1, verified)
+        assertEquals(SharedPlexPreparation.Stage.PUBLISHED, published.stage)
+        val record = SharedAcquisitionRecord.parse(http.summary, source)
+        assertEquals("account-2", record.accountId)
+        assertEquals(2, record.revision)
+        assertTrue(record.rooms)
+        assertFalse(http.summary.contains("session-secret"))
+        assertEquals(SharedPlexPreparation.Stage.READY, service.unpublish(source, published).stage)
+        assertFalse(http.summary.contains("password-secret"))
+        assertFalse(SharedAcquisitionRecord.parse(http.summary, source).enabled)
+    }
+
+    @Test fun publicationRejectsAdminAndRechecksConcurrentChangesAfterAccountValidation() = runBlocking {
+        val http = Http(source).apply { summary = SharedPlexSetup.placeholder(source, UUID.randomUUID().toString()).toString(); locked = true }
+        val service = SharedPlexSetup(Store(), { source }, http, { false })
+        val prepared = service.inspect(source, "/setup")
+        val candidate = AcquisitionConnection("https://shared.example", "guests", "account-2", "session-secret", "password-secret", role = "admin")
+        assertTrue(runCatching { service.publish(source, prepared, candidate, false) {} }.isFailure)
+        assertTrue(http.writes.isEmpty())
+        assertTrue(runCatching { service.publish(source, prepared, candidate.copy(role = "peon"), false) { http.summary = "Someone else's change" } }.isFailure)
+        assertTrue(http.writes.isEmpty())
+        assertEquals("Someone else's change", http.summary)
     }
 }

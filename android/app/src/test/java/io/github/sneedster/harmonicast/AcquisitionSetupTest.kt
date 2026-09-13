@@ -63,4 +63,28 @@ class AcquisitionSetupTest {
             assertTrue(gateway.state.value.url.isEmpty()); assertNull(gateway.state.value.staged)
         } finally { gateway.close() }
     }
+
+    @Test fun sharedWebSetupOnlyStagesRestrictedAccountAndNeverReturnsSecrets() = runBlocking {
+        val network = SharedGrabberStub()
+        val account = MusicGrabberAccount(AcquisitionMemory(), TestSecretCipher(), network, readSpacingMillis = 0, restricted = true)
+        val gateway = AcquisitionSetupGateway(RuntimeEnvironment.getApplication(), account, "127.0.0.1", initialUrl = "https://shared.example")
+        try {
+            gateway.start(); val base = gateway.state.value.url
+            val paired = JSONObject(call(base, "/pair", JSONObject().put("code", gateway.state.value.code)).second)
+            assertEquals("https://shared.example", paired.getString("url"))
+            assertEquals(setOf("token", "url"), paired.keys().asSequence().toSet())
+            val token = paired.getString("token")
+            val result = call(base, "/validate", JSONObject().put("url", "https://shared.example").put("username", "guests")
+                .put("password", "test-password"), token)
+            assertEquals(200, result.first)
+            assertTrue(result.second.contains("Nothing has been published yet"))
+            assertFalse(result.second.contains("test-password")); assertFalse(result.second.contains("session-"))
+            assertNotNull(gateway.state.value.staged); assertNull(account.connection())
+            assertEquals(404, call(base, "/publish", token = token).first)
+            network.role = "admin"
+            assertEquals(400, call(base, "/validate", JSONObject().put("url", "https://shared.example").put("username", "guests")
+                .put("password", "test-password"), token).first)
+            assertNull(account.connection())
+        } finally { gateway.close() }
+    }
 }

@@ -17,8 +17,7 @@ internal data class PlexAccessPolicy(
                 } }.getOrDefault(false)
             val personal = usable && !joinedGuest
             val owner = personal && source?.canWriteToPlex == true
-            // Delegated acquisition remains disabled until Plex grant discovery is verified.
-            return PlexAccessPolicy(personal, usable, owner, owner, owner)
+            return PlexAccessPolicy(personal, usable, owner, owner, owner || personal && SharedAcquisitionAccess.available(source))
         }
     }
 }

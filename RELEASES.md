@@ -1,5 +1,17 @@
 # Releases
 
+## v1.1.11 — shared Plex access and better library browsing
+
+Version code: **73**.
+
+- Owners can prepare a dedicated Plex sharing library and publish a separate non-admin MusicGrabber connection. Approved shared users discover it automatically.
+- Download the portable setup ZIP from a computer through the phone's temporary setup page, then extract it into a Plex-accessible folder. No MusicGrabber source changes are needed.
+- Music acquisition settings show connection and publication status clearly, with connection editing on demand and the configured server URL prefilled for shared setup.
+- Acquisition results mark known library matches and offer Queue existing track. A final Plex check avoids submitting a new download for an existing match; short-lived artist caches limit lookup overhead.
+- Android Auto artist and album browsing uses the full letter index. Search supports result pagination and punctuation variants such as Franco Unamerican / Franco Un-American.
+
+Validation: 228 unit tests, debug lint, setup ZIP checks, rendered UI checks, and live Pixel owner/shared-user setup and acquisition checks. Android Auto changes still need a real head-unit check. Further acceptance details and limits are recorded in [the validation notes](docs/acquisition-library-auto-validation.md).
+
 ## v1.1.10 — smooth player swipes and stable controls
 
 Version code: **72**.

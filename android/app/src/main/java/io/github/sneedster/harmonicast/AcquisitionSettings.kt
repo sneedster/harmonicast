@@ -60,7 +60,9 @@ internal class AcquisitionSettingsModel : ViewModel() {
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
-@Composable private fun LoginField(value: String, change: (String) -> Unit, title: String, secret: Boolean = false, username: Boolean = false) {
+@Composable internal fun LoginField(value: String, change: (String) -> Unit, title: String, secret: Boolean = false, username: Boolean = false,
+    enabled: Boolean = true) {
+    var visible by remember(title) { mutableStateOf(false) }
     val autofill = LocalAutofill.current
     val tree = LocalAutofillTree.current
     val currentChange by rememberUpdatedState(change)
@@ -72,23 +74,29 @@ internal class AcquisitionSettingsModel : ViewModel() {
     DisposableEffect(node) { tree += node; onDispose { tree.children.remove(node.id) } }
     RemoteTextField(value, change, Modifier.fillMaxWidth().onGloballyPositioned { node.boundingBox = it.boundsInWindow() }
         .onFocusChanged { if (it.hasFocus && node.autofillTypes.isNotEmpty()) autofill?.requestAutofillForNode(node) else autofill?.cancelAutofillForNode(node) },
-        label = { Text(title) }, allowVoice = false,
-        visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+        label = { Text(title) }, allowVoice = false, enabled = enabled,
+        visualTransformation = if (secret && !visible) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else if (title.contains("URL")) KeyboardType.Uri else KeyboardType.Text))
     if (secret) {
+        TextButton(onClick = { visible = !visible }, enabled = enabled, modifier = Modifier.tvFocusFeedback()) { Text(if (visible) "Hide $title" else "Show $title") }
         val context = LocalContext.current
         TextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
-            ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()?.let(change) }, modifier = Modifier.tvFocusFeedback()) { Text("Paste $title") }
+            ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()?.let(change) }, enabled = enabled, modifier = Modifier.tvFocusFeedback()) { Text("Paste $title") }
     }
 }
 
 @Composable internal fun AcquisitionSettings(vm: HarmonicastViewModel, isActive: Boolean) {
     val context = LocalContext.current
     val acquisition = remember { AcquisitionRuntime.get(context) }
-    val account = acquisition.account
+    if (vm.sharedSetupSource()?.canWriteToPlex == false) {
+        SharedRecipientSettings(vm, acquisition)
+        return
+    }
+    val account = acquisition.ownerAccount
     val state by account.state.collectAsState()
     val model: AcquisitionSettingsModel = viewModel(key = "acquisition-settings")
     var advanced by rememberSaveable { mutableStateOf(false) }
+    var editPersonal by rememberSaveable { mutableStateOf(false) }
     val canConfigure = vm.plexAccess.canManageAcquisition
     LaunchedEffect(Unit) {
         account.connection()?.let { model.url = it.url; model.username = if (it.apiKeyMode) "" else it.username; model.keyMode = it.apiKeyMode; model.rememberLogin = it.password.isNotBlank() }
@@ -96,7 +104,9 @@ internal class AcquisitionSettingsModel : ViewModel() {
     }
     LaunchedEffect(isActive, canConfigure) { if (!isActive || !canConfigure) { model.closeSetup(); model.clearSecrets() } }
     DisposableEffect(Unit) { onDispose { if ((context as? android.app.Activity)?.isChangingConfigurations != true) { model.closeSetup(); model.clearSecrets() } } }
-    SettingsDescription("Connect your existing MusicGrabber service. Its URL must be reachable from this app, including through a VPN such as Tailscale.")
+    SharedPlexSetupSettings(vm, isActive)
+    HorizontalDivider()
+    Text("Your personal connection", style = MaterialTheme.typography.titleMedium)
     if (!canConfigure) {
         SettingsDescription("Music acquisition currently requires a Plex server owner. Shared libraries can play music and host rooms.")
         return
@@ -123,7 +133,12 @@ internal class AcquisitionSettingsModel : ViewModel() {
             Button(onClick = { model.run { gateway.save(); model.closeSetup() } }, enabled = !model.busy, modifier = Modifier.tvFocusFeedback()) { Text("Save connection") }
         }
         OutlinedButton(onClick = model::closeSetup, modifier = Modifier.tvFocusFeedback()) { Text("Close setup") }
+    } else if (state.configured && !editPersonal) {
+        OutlinedButton(onClick = { editPersonal = true }, modifier = Modifier.tvFocusFeedback()) {
+            Text("Edit connection")
+        }
     } else {
+        SettingsDescription("This connection is for your own requests. Shared access uses its dedicated account above.")
         Button(onClick = { model.start(context, account) }, enabled = !model.busy, modifier = Modifier.tvFocusFeedback()) { Text("Set up from another device") }
         Text("Or enter on this device", style = MaterialTheme.typography.titleMedium)
         LoginField(model.url, { model.url = it }, "MusicGrabber URL")
@@ -139,13 +154,12 @@ internal class AcquisitionSettingsModel : ViewModel() {
         }
         Button(onClick = { model.run {
             val candidate = account.validate(AcquisitionLogin(model.url, model.username, model.password, model.rememberLogin, model.keyMode, model.key))
-            try { require(vm.plexAccess.canManageAcquisition) { "An owner Plex library is required" }; account.save(candidate); model.clearSecrets() } catch (e: Exception) { account.revoke(candidate); throw e }
+            try { require(vm.plexAccess.canManageAcquisition) { "An owner Plex library is required" }; account.save(candidate); model.clearSecrets(); editPersonal = false } catch (e: Exception) { account.revoke(candidate); throw e }
         } }, enabled = !model.busy && model.url.isNotBlank(), modifier = Modifier.tvFocusFeedback()) { Text("Connect") }
+        TextButton(onClick = { editPersonal = false; model.clearSecrets() }, enabled = !model.busy, modifier = Modifier.tvFocusFeedback()) { Text("Cancel personal setup") }
     }
     if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     if (model.message.isNotBlank()) Text(model.message, color = MaterialTheme.colorScheme.error)
-    HorizontalDivider()
-    SharedPlexSetupSettings(vm, isActive)
     AcquisitionRequestList(acquisition)
 }
 

@@ -86,6 +86,36 @@ internal class AcquisitionFixture {
 }
 
 class AcquisitionTest {
+    @Test fun catalogLibraryMarkersReuseArtistLookupAndRoundTripToGuests() = runBlocking {
+        val f = AcquisitionFixture()
+        var reads = 0
+        val base = f.core()
+        val library = object : MusicLibrary by base.library {
+            override suspend fun artist(query: String): LibraryArtistBrowse {
+                reads++
+                return LibraryArtistBrowse("Artist", listOf(Song("existing", "Track", "Artist", duration = 180)))
+            }
+        }
+        val core = object : HarmonicastCore by base { override val library = library }
+        val catalog = MusicBrainzCatalog(object : AcquisitionHttp {
+            override suspend fun call(url: String, method: String, headers: Map<String, String>, body: JSONObject?) = JSONObject()
+                .put("count", 1).put("recordings", JSONArray().put(JSONObject().put("id", f.recordingId).put("title", "Track").put("length", 180000)
+                    .put("artist-credit", JSONArray().put(JSONObject().put("name", "Artist")))
+                    .put("releases", JSONArray().put(JSONObject().put("status", "Official").put("title", "Album")
+                        .put("release-group", JSONObject().put("primary-type", "Album"))))))
+        }, 0)
+        val coordinator = AcquisitionCoordinator(f.account, catalog, f.storage, { f.source }, { core }, { emptyList() }, false)
+        repeat(2) {
+            val page = coordinator.browseCatalog("Track", "search", "", 0)
+            assertTrue(page.entries.single().inLibrary)
+            assertTrue(CatalogPage.decode(page.json()).entries.single().inLibrary)
+        }
+        assertEquals(1, reads)
+        f.source = f.source!!.copy(accountToken = "different-account")
+        coordinator.browseCatalog("Track", "search", "", 0)
+        assertEquals(2, reads)
+    }
+
     @Test fun joinedOwnerCannotSubmitOrEnablePersonalAcquisition() = runBlocking {
         val f = AcquisitionFixture(); f.connect(); val c = f.coordinator()
         val guest = Any()
@@ -201,19 +231,31 @@ class AcquisitionTest {
     }
 
     @Test fun completedTrackUsesNormalQueueAndFulfillmentIsDurable() = runBlocking {
-        val f = AcquisitionFixture(); f.connect(); f.inPlex = true
+        val f = AcquisitionFixture(); f.connect()
         f.core().queue.add(Song("older", "Older request", "Artist", addedByEmail = "Owner"))
         val c = f.coordinator(); val r = c.submit(f.recordingId)
         assertEquals("acquiring", r.status); assertEquals(1, f.network.submissions.get())
         f.network.job = JSONObject().put("status", "completed").put("complete", true).put("completed", 1)
+        f.inPlex = true
         c.advance(); assertEquals("fulfilled", c.requests.value.single().status)
         assertEquals(listOf("older", "plex:machine:1"), f.core().queue.songs().map { it.id })
         f.core().queue.addOnce(r.id, Song("plex:machine:1", "Track", "Artist"))
         assertEquals(2, f.core().queue.songs().size)
         f.coordinator().advance(); assertEquals(2, f.core().queue.songs().size)
     }
-    @Test fun submissionDoesNotQueryPlexAndSendsOnlyArtistAndTitle() = runBlocking {
-        val f = AcquisitionFixture(); f.connect(); f.plexUnavailable = true
+    @Test fun existingTrackQueuesWithoutDownloadingAndPlexFailurePreventsUnverifiedDownload() = runBlocking {
+        val f = AcquisitionFixture(); f.connect(); f.inPlex = true
+        val c = f.coordinator()
+        assertEquals("fulfilled", c.submit(f.recordingId).status)
+        assertEquals(0, f.network.submissions.get())
+        assertEquals(listOf("plex:machine:1"), f.core().queue.songs().map { it.id })
+        f.plexUnavailable = true
+        assertEquals("failed", c.submit(f.recordingId).status)
+        assertEquals(0, f.network.submissions.get())
+    }
+
+    @Test fun submissionSendsOnlyArtistAndTitle() = runBlocking {
+        val f = AcquisitionFixture(); f.connect()
         val result = f.coordinator().submit(f.recordingId)
         assertEquals("acquiring", result.status)
         assertEquals(1, f.network.submissions.get())
@@ -224,8 +266,9 @@ class AcquisitionTest {
         assertEquals(setOf("songs", "create_playlist", "use_playlists_dir"), body.keys().asSequence().toSet())
     }
     @Test fun completedAcquisitionWaitsForPlexRecoveryWithoutResubmission() = runBlocking {
-        val f = AcquisitionFixture(); f.connect(); f.plexUnavailable = true
+        val f = AcquisitionFixture(); f.connect()
         val c = f.coordinator(); val accepted = c.submit(f.recordingId)
+        f.plexUnavailable = true
         f.network.job = JSONObject().put("complete", true).put("completed", 1)
         runCatching { c.advance() }
         assertEquals("waiting_for_plex", c.requests.value.single().status)

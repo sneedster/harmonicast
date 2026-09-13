@@ -61,6 +61,7 @@ internal data class CatalogLocation(val query: String, val mode: String = "searc
                 }
                 Text("Find music", style = MaterialTheme.typography.headlineSmall)
                 Text(location.query, style = MaterialTheme.typography.titleMedium)
+                Text("Known library matches are marked. Other tracks are checked before downloading.", style = MaterialTheme.typography.bodySmall)
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (lookupError.isNotBlank()) {
                     Text(lookupError)
@@ -73,11 +74,7 @@ internal data class CatalogLocation(val query: String, val mode: String = "searc
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!busy && page.entries.isEmpty() && lookupError.isBlank()) item { Text("No matching music found") }
                     items(page.entries, key = { it.id }) { entry ->
-                        ElevatedCard(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(14.dp)) {
-                                Text(entry.title, style = MaterialTheme.typography.titleMedium)
-                                Text(listOf(entry.artist, entry.album, entry.year, entry.detail).filter { it.isNotBlank() }.joinToString(" · "))
-                                Button(onClick = {
+                        AcquisitionCatalogRow(entry, busy) {
                                     if (entry.kind == "recording") scope.launch {
                                         busy = true; submissionError = ""
                                         try { submitted = submit(entry.id) }
@@ -87,8 +84,6 @@ internal data class CatalogLocation(val query: String, val mode: String = "searc
                                         back += location
                                         location = CatalogLocation(entry.artist.ifBlank { entry.title }, if (entry.kind == "artist") "albums" else "tracks", entry.id)
                                     }
-                                }, enabled = !busy, modifier = Modifier.tvFocusFeedback()) { Text(if (entry.kind == "recording") "Acquire track" else if (entry.kind == "artist") "Browse releases" else "View tracks") }
-                            }
                         }
                     }
                     if (page.more) item { OutlinedButton(onClick = { back += location; location = location.copy(offset = page.offset + page.entries.size) }, enabled = !busy, modifier = Modifier.tvFocusFeedback()) { Text("More results") } }
@@ -103,26 +98,27 @@ internal data class CatalogLocation(val query: String, val mode: String = "searc
     val context = LocalContext.current
     val acquisition = remember { AcquisitionRuntime.get(context) }
     val state by acquisition.account.state.collectAsState()
+    val grant = acquisition.shared?.state?.collectAsState()?.value
     var artist by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf<String?>(null) }
     val term = vm.query.trim()
-    LaunchedEffect(term, vm.searchLoading, vm.plexAccess.canSubmitAcquisition) {
+    LaunchedEffect(term, vm.searchLoading, vm.sharedSetupSource()) {
         artist = false; picker = null
-        if (term.isNotBlank() && !vm.searchLoading && vm.plexAccess.canSubmitAcquisition) {
-            if (acquisition.account.check()) {
+        if (term.isNotBlank() && !vm.searchLoading) {
+            if (acquisition.checkAccess()) {
                 artist = try { vm.searchLibrary.artist(term)?.name?.equals(term, true) == true }
                 catch (e: CancellationException) { throw e } catch (_: Exception) { false }
             }
         }
     }
-    if (vm.plexAccess.canSubmitAcquisition && state.available && term.isNotBlank() && !vm.searchLoading) {
+    if (vm.plexAccess.canSubmitAcquisition && state.available && (vm.canWriteToPlex || grant?.available == true) && term.isNotBlank() && !vm.searchLoading) {
         Column(Modifier.padding(horizontal = 24.dp)) {
             if (vm.results.isEmpty()) OutlinedButton(onClick = { picker = "search" }, modifier = Modifier.tvFocusFeedback()) { Text("Search connected music sources") }
             if (artist) OutlinedButton(onClick = { picker = "artist" }, modifier = Modifier.tvFocusFeedback()) { Text("Find songs by this artist") }
         }
     }
     picker?.let { mode -> AcquisitionPicker(term, mode, { picker = null },
-        browse = { acquisition.catalog.browse(it.query, it.mode, it.parent, it.offset) },
+        browse = { acquisition.browseCatalog(it.query, it.mode, it.parent, it.offset) },
         submit = { acquisition.submit(it).json(true) },
         status = { JSONArray().apply { acquisition.visible("Owner").forEach { put(it.json(true)) } } }) }
 }
@@ -131,16 +127,17 @@ internal data class CatalogLocation(val query: String, val mode: String = "searc
     val context = LocalContext.current
     val acquisition = remember { AcquisitionRuntime.get(context) }
     val state by acquisition.account.state.collectAsState()
+    val grant = acquisition.shared?.state?.collectAsState()?.value
     val allowed by acquisition.roomAllowed.collectAsState()
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { acquisition.account.check() }
-    if (vm.isPersonalMode && vm.plexAccess.canSubmitAcquisition && state.configured) {
+    LaunchedEffect(Unit) { acquisition.checkAccess() }
+    if (vm.isPersonalMode && vm.plexAccess.canSubmitAcquisition && state.configured && (vm.canWriteToPlex || grant?.rooms == true)) {
         SettingsToggle("Allow music acquisition", "Let guests acquire missing tracks using this device's MusicGrabber connection. Accepted requests finish even if the room ends.", allowed, state.available || allowed) {
             scope.launch { try { acquisition.setRoomAllowed(it) } catch (e: Exception) { vm.error = safeAcquisitionError(e) } }
         }
         if (!state.available) {
             SettingsDescription(state.message)
-            TextButton(onClick = { scope.launch { acquisition.account.check(true) } }, modifier = Modifier.tvFocusFeedback()) { Text("Retry connection") }
+            TextButton(onClick = { scope.launch { acquisition.checkAccess(true) } }, modifier = Modifier.tvFocusFeedback()) { Text("Retry connection") }
         }
     }
 }
@@ -185,4 +182,19 @@ internal data class CatalogLocation(val query: String, val mode: String = "searc
             } while (result.optBoolean("more") && offset < 5)
             all
         }) }
+}
+
+
+@Composable internal fun AcquisitionCatalogRow(entry: CatalogEntry, busy: Boolean, choose: () -> Unit) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Text(entry.title, style = MaterialTheme.typography.titleMedium)
+            Text(listOf(entry.artist, entry.album, entry.year, entry.detail).filter { it.isNotBlank() }.joinToString(" · "))
+            if (entry.inLibrary) Text("In your library", color = MaterialTheme.colorScheme.primary)
+            Button(onClick = choose, enabled = !busy, modifier = Modifier.tvFocusFeedback()) {
+                Text(if (entry.kind == "recording") (if (entry.inLibrary) "Queue existing track" else "Acquire track")
+                    else if (entry.kind == "artist") "Browse releases" else "View tracks")
+            }
+        }
+    }
 }
