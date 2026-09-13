@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -72,6 +73,12 @@ internal fun shareText(context: Context, text: String, title: String) {
                 room.enabled -> {
                     Text("Room ${room.roomCode}", style = MaterialTheme.typography.headlineSmall)
                     SettingsDescription(if (room.nearbyAvailable) "Bluetooth room is ready" else "Bluetooth is unavailable; same-Wi-Fi access still works")
+                    Text("Join in a browser", style = MaterialTheme.typography.titleMedium)
+                    SelectionContainer { Text(room.guestEntryUrl, style = MaterialTheme.typography.titleMedium) }
+                    SettingsDescription("On the same Wi-Fi, open this address and enter room code ${room.roomCode}.")
+                    Text("Browser display", style = MaterialTheme.typography.titleMedium)
+                    SelectionContainer { Text(room.displayEntryUrl, style = MaterialTheme.typography.titleMedium) }
+                    SettingsDescription("Open this address on the same Wi-Fi. Select Open room display below for the private display code.")
                     RoomAcquisitionToggle(vm)
                     Text("Room playback", style = MaterialTheme.typography.titleMedium)
                     if (HarmonicastMediaService.nativeOutputActive.value) {
@@ -117,11 +124,17 @@ internal fun shareText(context: Context, text: String, title: String) {
             text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (display) {
                     SettingsDescription("On the other device, connect to the same Wi-Fi and type this address in its browser:")
-                    Text(room.displayEntryUrl, style = MaterialTheme.typography.titleMedium)
+                    SelectionContainer { Text(room.displayEntryUrl, style = MaterialTheme.typography.titleMedium) }
                     SettingsDescription("Then enter this display code:")
                     Text(room.displayEntryCode, style = MaterialTheme.typography.headlineMedium)
                     SettingsDescription("Keep this code private: it grants browsing, queue, and playback controls until the room closes.")
                     HorizontalDivider()
+                }
+                if (!display) {
+                    SettingsDescription("On the same Wi-Fi, type this address in the browser:")
+                    SelectionContainer { Text(room.guestEntryUrl, style = MaterialTheme.typography.titleMedium) }
+                    SettingsDescription("Then enter this four-letter room code:")
+                    Text(room.roomCode, style = MaterialTheme.typography.headlineMedium)
                 }
                 SettingsDescription(if (display) "Or scan this QR code to open the display." else "Guests on the same Wi-Fi can scan this code to browse, request, and vote in a browser. Installing the app is optional.")
                 Box(Modifier.widthIn(max = 260.dp).align(Alignment.CenterHorizontally)) { RoomQrCode(url, "$title for room ${room.roomCode}") }

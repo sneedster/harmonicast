@@ -1,5 +1,19 @@
 # Releases
 
+## v1.1.13 — a richer room display and album browsing
+
+Version code: **75**.
+
+- Restored the house-jukebox room display with large artwork, playback controls, queue, search, fullscreen, and idle now-playing view.
+- Tonight’s picks brings back four equal categories. Artwork and the grid adapt to the available space, with larger covers on bigger screens and a manageable number of choices.
+- Browser guests get artwork, playback progress, and selectable Nocturne, Aurora, and Ember themes.
+- Artist searches open albums first; select an album to see its tracks. Library and connected-source albums show cover art and browse chronologically, with unknown years last.
+- Guests can join using the short local address and four-letter room code. Display controls retain a separate four-digit code, with clearer recovery for expired invitations.
+- Fixed slow Plex queries that prevented picks from loading and blocked requests in the optional integration. Browser submissions show progress and allow more time for library verification.
+- Moved optional integration instructions into a dedicated setup guide.
+
+Validation: 248 Android tests passed with test-class isolation, debug lint, release lint, the signed release build, and strict UI audit. All three browser suites passed. Live Pixel checks verified artwork, album navigation, picks, and an accepted integration request; the responsive display was checked from phone size through 4K.
+
 ## v1.1.12 — remote Plex connections and startup update prompts
 
 Version code: **74**.
@@ -18,7 +32,7 @@ Version code: **73**.
 - Owners can prepare a dedicated Plex sharing library and publish a separate non-admin MusicGrabber connection. Approved shared users discover it automatically.
 - Download the portable setup ZIP from a computer through the phone's temporary setup page, then extract it into a Plex-accessible folder. No MusicGrabber source changes are needed.
 - Music acquisition settings show connection and publication status clearly, with connection editing on demand and the configured server URL prefilled for shared setup.
-- Acquisition results mark known library matches and offer Queue existing track. A final Plex check avoids submitting a new download for an existing match; short-lived artist caches limit lookup overhead.
+- The optional integration recognizes existing library matches before submitting a request. See the [setup guide](docs/MUSICGRABBER_SETUP.md) for configuration.
 - Android Auto artist and album browsing uses the full letter index. Search supports result pagination and punctuation variants such as Franco Unamerican / Franco Un-American.
 
 Validation: 228 unit tests, debug lint, setup ZIP checks, rendered UI checks, and live Pixel owner/shared-user setup and acquisition checks. Android Auto changes still need a real head-unit check. Further acceptance details and limits are recorded in [the validation notes](docs/acquisition-library-auto-validation.md).
@@ -38,19 +52,14 @@ track. Layout regression tests cover short portrait screens, the full navigation
 landscape, and stable button positions across title lengths. All 161 unit tests and
 full debug lint passed.
 
-## v1.1.9 — optional MusicGrabber acquisition
+## v1.1.9 — optional integration settings
 
-- Username/password connection with remembered login, session recovery, and API key
-  under Advanced settings. Credentials are protected with Android Keystore.
-- Pair a computer with the temporary setup page to enter credentials, then confirm
-  the tested connection on the Android device.
-- Restore missing-track acquisition search and artist/release browsing. Tracks enter
-  normal request order only after Plex verification.
-- Each room starts with acquisition off; the host may enable native, browser, and
-  display requests. Accepted work continues after the room closes.
-- Shared read-only Plex libraries cannot acquire or host.
-- Catalogue results are limited to official albums, EPs, and singles. Selection
-  submits only artist/title to MusicGrabber, which handles duplicate checking.
+- Added an optional MusicGrabber connection in Settings, with protected credentials,
+  computer-assisted setup, session recovery, and request status.
+- Connection and room permissions are documented in the
+  [integration setup guide](docs/MUSICGRABBER_SETUP.md).
+- At this release, shared read-only Plex libraries could not use the integration
+  or host rooms.
 
 Version code: **71**, superseding acquisition test candidates through code 70.
 

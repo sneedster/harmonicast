@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Open room display · Harmonicast</title>
+<title>__ENTRY_TITLE__ · Harmonicast</title>
 <style>
 :root { color-scheme: dark; --accent: #bfa7f5; scrollbar-color: #857399 #121421; scrollbar-width: auto; }
 * { box-sizing: border-box; }
@@ -29,24 +29,30 @@ button:disabled { cursor: wait; opacity: .6; }
 <body>
 <main>
 <p class="brand">Harmonicast</p>
-<h1>Open room display</h1>
-<p>On the host, open <strong>Rooms → Open room display</strong> and enter the four-digit display code shown there.</p>
+<h1>__ENTRY_TITLE__</h1>
+<p>On the host, open <strong>__ENTRY_LOCATION__</strong> and enter the __ENTRY_DESCRIPTION__ shown there.</p>
 <form novalidate>
-<label for="code">Display code</label>
-<input id="code" name="code" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="24" aria-describedby="message">
+<label for="code">__ENTRY_LABEL__</label>
+<input id="code" name="code" type="__ENTRY_TYPE__" inputmode="__ENTRY_INPUTMODE__" autocapitalize="characters" spellcheck="false" autocomplete="one-time-code" maxlength="24" aria-describedby="message">
 <button id="visibility" type="button" aria-controls="code" aria-pressed="false">Show code</button>
 <p id="message" role="status" aria-live="polite"></p>
-<button id="submit" type="submit">Open display</button>
+<button id="submit" type="submit">__ENTRY_BUTTON__</button>
 </form>
 <p>Keep both devices on the same Wi-Fi. The code works only while the host’s room is open.</p>
 </main>
 <script>
 (function () {
+  var guest = '__ENTRY_KIND__' === 'guest';
   var form = document.querySelector('form');
   var code = document.querySelector('#code');
   var visibility = document.querySelector('#visibility');
   var message = document.querySelector('#message');
   var submit = document.querySelector('#submit');
+  visibility.hidden = guest;
+  if (new URLSearchParams(location.search).get('reason') === 'expired') {
+    message.textContent = 'Enter the current __ENTRY_DESCRIPTION__ from __ENTRY_LOCATION__ on the host. Previous room links expire when the room closes.';
+    code.focus();
+  }
   visibility.addEventListener('click', function () {
     var show = code.type === 'password';
     code.type = show ? 'text' : 'password';
@@ -57,19 +63,19 @@ button:disabled { cursor: wait; opacity: .6; }
   form.addEventListener('submit', async function (event) {
     event.preventDefault();
     if (submit.disabled) return;
-    var value = code.value.trim().replace(/[ -]/g, '');
-    if (!/^[0-9]{4}$/.test(value)) {
-      message.textContent = 'Enter the four-digit display code from the host.';
+    var value = code.value.trim().replace(/[ -]/g, '').toUpperCase();
+    if (!(guest ? /^[A-Z]{4}$/ : /^[0-9]{4}$/).test(value)) {
+      message.textContent = 'Enter the __ENTRY_DESCRIPTION__ from the host.';
       code.setAttribute('aria-invalid', 'true');
       code.focus();
       return;
     }
     submit.disabled = true;
-    message.textContent = 'Opening display…';
+    message.textContent = guest ? 'Joining room…' : 'Opening display…';
     var controller = new AbortController();
     var timer = setTimeout(function () { controller.abort(); }, 10000);
     try {
-      var response = await fetch('/v1/display/open', {
+      var response = await fetch(guest ? '/v1/guest/open' : '/v1/display/open', {
         method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: value, signal: controller.signal
       });
       var result = await response.json();
@@ -79,7 +85,7 @@ button:disabled { cursor: wait; opacity: .6; }
         return;
       }
       // Use the existing display bootstrap; replace keeps the entry page out of Back history.
-      location.replace('/display#cap=' + encodeURIComponent(result.capability));
+      location.replace((guest ? '/#cap=' : '/display#cap=') + encodeURIComponent(result.capability));
     } catch (_) {
       message.textContent = 'Could not reach the host. Check that the room is open and both devices are on the same Wi-Fi, then try again.';
     } finally {

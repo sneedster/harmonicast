@@ -60,7 +60,14 @@
     .acquisition-panel > button { margin: 0 .6rem .8rem 0; }
     .acquisition-panel .card { margin: .8rem 0; padding: 1rem; border: 1px solid #51435f; border-radius: 1rem; }
     .acquisition-panel p { margin: .5rem 0; line-height: 1.5; }
-  </style>
+
+    :root{--surface:#141320;--muted:#b9b3c6;--border:#bfa7f525;scrollbar-color:#635477 #141320;scrollbar-width:thin}
+    main{width:min(1120px,100%);padding:32px 28px 48px}header{margin-bottom:12px}.palette-choice{justify-content:flex-end;margin-bottom:24px}
+    .now-card{display:grid;grid-template-columns:minmax(220px,.9fr) minmax(0,1.1fr);gap:40px;align-items:center;padding:20px 0 40px}.hero-art{aspect-ratio:1;display:grid;place-items:center;position:relative;border-radius:28px;overflow:hidden;background:linear-gradient(145deg,var(--glow),var(--surface));box-shadow:0 24px 70px #0009;border:1px solid var(--border)}.hero-art>span{font-size:80px;color:var(--accent)}.hero-art img{position:absolute;width:100%;height:100%;object-fit:cover}.song{font-family:Georgia,serif;font-weight:400;font-size:clamp(32px,4vw,52px);line-height:1.06;margin:12px 0;overflow-wrap:anywhere}.now-details>.artist{font-size:22px}.now-details>.muted{margin-top:8px}.room-columns{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:24px}.card{padding:24px;margin:0 0 24px}.card h2{font-size:20px}.progress{height:4px;border-radius:4px;background:#ffffff20;margin-top:26px;overflow:hidden}.progress>span{display:block;width:0;height:100%;background:var(--accent)}.times{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-top:8px;font-variant-numeric:tabular-nums}.votes{margin-top:24px}.votes button{min-height:48px}li{gap:12px}.track{flex:1}.track strong,.track span{white-space:normal;overflow-wrap:anywhere}.thumb{height:52px;width:52px;flex-shrink:0;position:relative;display:grid;place-items:center;overflow:hidden;border-radius:10px;background:var(--glow);color:var(--accent);font-size:24px}.thumb img{position:absolute;height:100%;width:100%;object-fit:cover}#message{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:5;background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:0 8px 30px #0008;padding:14px 20px;width:max-content;max-width:calc(100vw - 32px);margin:0}#message:empty{display:none}button:hover,.app-download:hover{filter:brightness(1.12)}button:active{transform:scale(.98)}input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:4px}select{cursor:pointer}::-webkit-scrollbar{width:10px}::-webkit-scrollbar-track{background:var(--surface)}::-webkit-scrollbar-thumb{background:#635477;border-radius:8px}::-webkit-scrollbar-thumb:hover{background:#9182a5}::-webkit-scrollbar-thumb:active{background:var(--accent)}@media(forced-colors:active){:root{scrollbar-color:auto}button{border:1px solid ButtonText}}
+    @media(max-width:700px){main{padding:24px 20px 40px}.now-card{grid-template-columns:1fr;gap:28px;padding-top:0}.hero-art{width:min(100%,380px);margin:auto}.now-details{text-align:center}.song{font-size:36px}.room-columns{grid-template-columns:1fr;gap:0}.card{padding:20px}form{flex-wrap:wrap}form input{flex-basis:100%}.palette-choice{margin-bottom:24px}h1{font-size:32px}}
+  .catalog-cover{width:88px;height:88px;position:relative;display:grid;place-items:center;background:var(--glow,#29231b);color:var(--accent);border-radius:12px;overflow:hidden;margin-bottom:12px;font-size:32px}.catalog-cover img{position:absolute;width:100%;height:100%;object-fit:cover}.album-heading{grid-column:1/-1;display:block!important;background:none!important;border:0!important;padding:20px 0 4px!important;color:var(--accent);font-weight:800}
+.library-album{padding:0!important;border:0!important}.library-album-button{width:100%;display:flex;align-items:center;gap:16px;text-align:left;min-width:0;padding:12px!important}.library-album-button .catalog-cover{flex-shrink:0;margin:0}.library-album-button .track{flex:1}
+</style>
 </head>
 <body>
 <main>
@@ -70,51 +77,68 @@
   </header>
     <label class="palette-choice">Appearance <select id="palette" aria-label="Color scheme"><option>Nocturne</option><option>Aurora</option><option>Ember</option></select></label>
 
-  <section class="card">
-    <h2>Now playing</h2>
-    <p id="now-title" class="song">Nothing playing</p>
-    <p id="now-artist" class="artist"></p>
-    <div class="votes">
-      <button id="vote-up" class="secondary" type="button">Like this</button>
-      <button id="vote-down" class="secondary" type="button">Not for me</button>
-    </div>
+  <section class="now-card" aria-label="Now playing">
+    <div class="hero-art"><span aria-hidden="true">♫</span><img id="now-art" alt="Current album cover" hidden></div>
+    <div class="now-details"><p id="play-state" class="eyebrow">Now playing</p>
+    <h2 id="now-title" class="song">The room is listening</h2>
+    <p id="now-artist" class="artist">Find a song to get started.</p><p id="now-album" class="muted"></p>
+    <div class="progress"><span id="progress"></span></div><div class="times"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
+    <div class="votes"><button id="vote-up" class="secondary" type="button">♡ Like this</button><button id="vote-down" class="secondary" type="button">Not for me</button></div></div>
   </section>
+  <div class="room-columns"><div>
 
   <section class="card">
     <h2>Request a song</h2>
-    <form id="search-form">
+    <form id="search-form" novalidate>
       <input id="search" type="search" autocomplete="off" placeholder="Song, artist, or album" aria-label="Search">
-      <button type="submit">Search</button>
+      <button id="clear-search" class="secondary" type="button" hidden>Clear</button><button type="submit">Search</button>
     </form>
-    <p id="message"></p>
+    <p id="message" role="status" aria-live="polite"></p>
     <ul id="results"></ul>
   </section>
 
-  <section class="card">
+  </div><section class="card queue-card">
     <h2>Coming up</h2>
     <ul id="queue"><li class="muted">The queue is empty.</li></ul>
   </section>
-  <section class="card" aria-labelledby="get-app-title">
+  </div><section class="card" aria-labelledby="get-app-title">
     <h2 id="get-app-title">Take Harmonicast with you</h2>
     <p class="muted">Keep using this guest page without installing anything, or get the Android app.</p>
     <a class="app-download" href="https://harmonicast.app" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Get the Android app</a>
     <p class="muted">Visit harmonicast.app for the download link. Open the downloaded APK and follow Android’s installation prompts.</p>
   </section>
 </main>
+<script src="/room-library.js"></script>
 <script>
 (() => {
   const hash = new URLSearchParams(location.hash.slice(1));
   const supplied = hash.get('cap');
-  if (supplied) sessionStorage.setItem('harmonicast-room-cap', supplied);
-  const capability = supplied || sessionStorage.getItem('harmonicast-room-cap') || '';
-  let participant = sessionStorage.getItem('harmonicast-room-participant') || '';
+  let capability = supplied || '';
+  let participant = '';
+  try {
+    if (supplied) sessionStorage.setItem('harmonicast-room-cap', supplied);
+    else capability = sessionStorage.getItem('harmonicast-room-cap') || '';
+    participant = sessionStorage.getItem('harmonicast-room-participant') || '';
+  } catch (_) {}
+  let invitationExpired = !capability;
+  const invitationHelp = 'Enter the current four-letter room code from the host.';
+  function reenter() {
+    invitationExpired = true;
+    capability = '';
+    try { sessionStorage.removeItem('harmonicast-room-cap'); } catch (_) {}
+    location.replace('/enter?reason=expired');
+  }
+  if (!capability) { reenter(); return; }
   if (!participant) {
     participant = window.crypto && typeof window.crypto.randomUUID === 'function'
       ? window.crypto.randomUUID()
       : `${Date.now()}-${Math.random()}`;
-    sessionStorage.setItem('harmonicast-room-participant', participant);
+    try { sessionStorage.setItem('harmonicast-room-participant', participant); } catch (_) {}
   }
   if (location.hash) history.replaceState(null, '', location.pathname);
+  window.addEventListener('hashchange', function () {
+    if (new URLSearchParams(location.hash.slice(1)).get('cap')) location.reload();
+  });
 
   const status = document.querySelector('#status');
   const message = document.querySelector('#message');
@@ -124,7 +148,7 @@
   const results = document.querySelector('#results');
 
   async function api(path, options = {}) {
-    if (!capability) throw new Error('Scan the room code again to join.');
+    if (invitationExpired) throw new Error(invitationHelp);
     const headers = {
       'Authorization': `Bearer ${capability}`,
       'Content-Type': 'application/json',
@@ -134,9 +158,14 @@
     const response = await fetch(path, {
       method: options.method || 'GET',
       body: options.body,
+      signal: AbortSignal.timeout((path.startsWith('/v1/acquisition/catalog') || (path === '/v1/acquisition/requests' && options.method === 'POST')) ? 180000 : 12000),
       cache: 'no-store',
       headers
     });
+    if (response.status === 401) {
+      if (!invitationExpired) reenter();
+      throw new Error(invitationHelp);
+    }
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'The room did not respond.');
     return data;
@@ -144,6 +173,7 @@
 
   function trackRow(song, action) {
     const item = document.createElement('li');
+    item.appendChild(trackArt(song));
     const text = document.createElement('div');
     text.className = 'track';
     const name = document.createElement('strong');
@@ -172,7 +202,11 @@
       target.appendChild(empty);
       return;
     }
-    songs.forEach(song => target.appendChild(trackRow(song, requestable)));
+    let lastAlbum = null;
+    songs.forEach(song => {
+      if(requestable){const group=[song.year || 'Year unknown',song.album || 'Other tracks'].join(' · ');if(group!==lastAlbum){const heading=document.createElement('li');heading.className='album-heading';heading.textContent=group;target.appendChild(heading);lastAlbum=group;}}
+      target.appendChild(trackRow(song, requestable));
+    });
   }
 
   var palette = document.querySelector('#palette');
@@ -190,20 +224,46 @@
       controls[i].disabled = !enabled;
     }
   }
+  const artworkCache = new Map();
+  async function artworkFor(song) {
+    if (!song) return null;
+    if (artworkCache.has(song.id)) return artworkCache.get(song.id);
+    const promise = api('/v1/artwork?id='+encodeURIComponent(song.id)).then(data => {
+      return typeof data.image==='string' && /^data:image\/(jpeg|png|webp);base64,/.test(data.image) ? data.image : null;
+    }).catch(() => {artworkCache.delete(song.id);return null;});
+    if(artworkCache.size>=48) artworkCache.delete(artworkCache.keys().next().value);
+    artworkCache.set(song.id,promise); return promise;
+  }
+  function applyArt(image,src){image.hidden=!src;if(src)image.src=src;else image.removeAttribute('src');image.onerror=()=>{image.hidden=true;};}
+  function trackArt(song){const cover=document.createElement('div');cover.className='thumb';cover.setAttribute('aria-hidden','true');cover.textContent='♫';const image=document.createElement('img');image.alt='';image.hidden=true;cover.appendChild(image);artworkFor(song).then(src=>applyArt(image,src));return cover;}
+  let nowArtId=null,artGeneration=0;
+  function updateNowArt(song){const id=song&&song.id||'';if(id===nowArtId)return;nowArtId=id;const generation=++artGeneration;const image=document.querySelector('#now-art');applyArt(image,null);artworkFor(song).then(src=>{if(generation===artGeneration)applyArt(image,src);});}
+  let playback={position:0,duration:0,playing:false,at:Date.now()};
+  function clock(value){const n=Math.max(0,Math.floor(value));return Math.floor(n/60)+':'+String(n%60).padStart(2,'0');}
+  function updateProgress(){const p=Math.min(playback.duration,playback.position+(playback.playing?(Date.now()-playback.at)/1000:0));document.querySelector('#progress').style.width=(playback.duration?p/playback.duration*100:0)+'%';document.querySelector('#elapsed').textContent=clock(p);document.querySelector('#duration').textContent=clock(playback.duration);}
+  setInterval(updateProgress,1000);
   async function refresh() {
     try {
       const [playing, songs] = await Promise.all([api('/v1/now-playing'), api('/v1/queue')]);
-      title.textContent = playing.song && playing.song.title || 'Nothing playing';
-      artist.textContent = playing.song && playing.song.artist || '';
+      title.textContent = playing.song && playing.song.title || 'The room is listening';
+      artist.textContent = playing.song && playing.song.artist || 'Find a song to get started.';
+      document.querySelector('#now-album').textContent = playing.song && playing.song.album || '';
+      document.querySelector('#play-state').textContent = playing.song ? (playing.isPlaying ? 'Now playing' : 'Paused') : 'Make the first selection';
+      updateNowArt(playing.song);
+      playback = {position:Number(playing.position)||0, duration:playing.song && Number(playing.song.duration)||0, playing:!!playing.isPlaying, at:Date.now()};
+      updateProgress();
       showList(queue, songs);
       roomControls(true);
+      if (status.textContent === 'Room unavailable') message.textContent = '';
       status.textContent = 'Connected';
       status.classList.add('live');
     } catch (error) {
+      playback.playing = false;
       roomControls(false);
-      status.textContent = 'Room unavailable';
+      status.textContent = invitationExpired ? 'New invitation needed' : 'Room unavailable';
       status.classList.remove('live');
-      message.textContent = 'Connection lost. Reconnecting… If the room ended, ask the host for a new invitation.';
+      message.textContent = invitationExpired ? invitationHelp :
+        (error.message === 'Failed to fetch' ? 'Cannot reach the host. Keep the room open and both devices on the same Wi-Fi. Reconnecting…' : error.message + '. Check the room on the host. Reconnecting…');
     }
   }
 
@@ -219,19 +279,13 @@
     }
   }
 
-  document.querySelector('#search-form').addEventListener('submit', async event => {
-    event.preventDefault();
-    const query = document.querySelector('#search').value.trim();
-    if (!query) return;
-    message.textContent = 'Searching…';
-    try {
-      const songs = await api(`/v1/search?q=${encodeURIComponent(query)}`);
-      showList(results, songs, true);
-      acquisitionSearchDone(query, songs);
-      message.textContent = '';
-    } catch (error) { message.textContent = error.message; }
-  });
-
+  let searchGeneration = 0;
+  const searchInput = document.querySelector('#search'), clearSearch = document.querySelector('#clear-search');
+  searchInput.addEventListener('input', () => { ++searchGeneration; clearSearch.hidden = !searchInput.value; results.replaceChildren(); });
+  clearSearch.addEventListener('click', () => { searchInput.value=''; searchInput.dispatchEvent(new Event('input')); searchInput.focus(); message.textContent=''; });
+  const libraryBrowser = createRoomLibraryBrowser({api, results, showTracks:(songs) => showList(results, songs, true), notify:text => { message.textContent=text; }, onSearchDone:(query,items)=>acquisitionSearchDone(query,items)});
+  searchInput.addEventListener('input',()=>libraryBrowser.clear());
+  document.querySelector('#search-form').addEventListener('submit', event => { event.preventDefault(); const query=searchInput.value.trim();if(query)libraryBrowser.search(query); });
   async function vote(direction) {
     try {
       await api('/v1/votes', { method: 'POST', body: JSON.stringify({ direction }) });
@@ -245,7 +299,7 @@
   const acquisitionControls = document.createElement('section');
   acquisitionControls.className = 'acquisition-controls'; acquisitionControls.hidden = true;
   document.querySelector('#search-form').parentElement.appendChild(acquisitionControls);
-  const acquisitionPanel = document.createElement('dialog'); acquisitionPanel.className = 'acquisition-panel'; acquisitionPanel.hidden = true;
+  const acquisitionPanel = document.createElement('dialog'); acquisitionPanel.className = 'acquisition-panel'; acquisitionPanel.setAttribute('aria-label','Connected music sources'); acquisitionPanel.hidden = true;
   acquisitionControls.parentElement.appendChild(acquisitionPanel);
   const acquisitionHistory = document.createElement('div'); acquisitionHistory.setAttribute('aria-live','polite');
   acquisitionControls.parentElement.appendChild(acquisitionHistory);
@@ -267,6 +321,35 @@
   }
   document.querySelector('#search').addEventListener('input',()=>{++acquisitionGeneration; acquisitionControls.hidden=true; acquisitionPanel.hidden=true; acquisitionPanel.close(); acquisitionOpen=false;});
   function acqOpen(query,mode){acquisitionOpen=true; acquisitionBack=[];acquisitionLocation={q:query,mode,parent:'',offset:0};acqLoad();}
+
+  const catalogArtCache = new Map();
+  const catalogArtQueue = [];
+  let catalogArtActive = 0;
+  function catalogArtRequest(key) {
+    return new Promise(resolve => {
+      catalogArtQueue.push(async () => {
+        try { resolve(await api('/v1/acquisition/artwork?key='+encodeURIComponent(key))); }
+        catch (_) { resolve({image:null}); }
+        finally { catalogArtActive--; drainCatalogArt(); }
+      });
+      drainCatalogArt();
+    });
+  }
+  function drainCatalogArt() { while(catalogArtActive<3 && catalogArtQueue.length){catalogArtActive++;catalogArtQueue.shift()();} }
+
+  function catalogArt(entry, row) {
+    if (!entry.artworkKey) return;
+    const cover = document.createElement('div'); cover.className = 'catalog-cover'; cover.setAttribute('aria-hidden','true');
+    const fallback = document.createElement('span'); fallback.textContent = '♫'; cover.appendChild(fallback);
+    const img = document.createElement('img'); img.alt = ''; img.hidden = true; cover.appendChild(img); row.prepend(cover);
+    img.onerror = () => { img.hidden = true; fallback.hidden = false; };
+    if (!catalogArtCache.has(entry.artworkKey)) {
+      if (catalogArtCache.size >= 48) catalogArtCache.delete(catalogArtCache.keys().next().value);
+      catalogArtCache.set(entry.artworkKey, catalogArtRequest(entry.artworkKey).then(data =>
+        typeof data.image === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(data.image) ? data.image : null).catch(() => null));
+    }
+    catalogArtCache.get(entry.artworkKey).then(src => { if(src){img.src=src;img.hidden=false;fallback.hidden=true;} });
+  }
   async function acqLoad(){
     const generation=++acquisitionGeneration; const current={...acquisitionLocation};
     acquisitionPanel.hidden=false; if(!acquisitionPanel.open)acquisitionPanel.showModal(); acquisitionPanel.replaceChildren();
@@ -279,14 +362,15 @@
       acquisitionPanel.lastChild.remove();acqText(current.q,acquisitionPanel);
       if(!data.items.length)acqText('No matching music found',acquisitionPanel);
       for(const entry of data.items){
-        const row=document.createElement('div'); row.className='card';acquisitionPanel.appendChild(row);
+        const row=document.createElement('div'); row.className='card';acquisitionPanel.appendChild(row);catalogArt(entry,row);
         acqText(entry.title,row);acqText([entry.artist,entry.album,entry.year,entry.detail].filter(Boolean).join(' · '),row);
         if(entry.inLibrary)acqText('In your library',row);
         acqButton(entry.kind==='recording'?(entry.inLibrary?'Queue existing track':'Acquire track'):entry.kind==='artist'?'Browse releases':'View tracks',async event=>{
           if(entry.kind!=='recording'){acquisitionBack.push(current);acquisitionLocation={q:entry.artist||entry.title,mode:entry.kind==='artist'?'albums':'tracks',parent:entry.id,offset:0};acqLoad();return;}
           if(acquisitionBusy)return;acquisitionBusy=true; const buttons=acquisitionPanel.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
-          try{const result=await api('/v1/acquisition/requests',{method:'POST',body:JSON.stringify({recordingId:entry.id})});acqText(result.message||'Request accepted',row);await acqRefreshHistory();}
-          catch(e){acqText(e.message,row);}finally{acquisitionBusy=false;buttons.forEach(b=>b.disabled=false);}
+          const progress=document.createElement('p');progress.setAttribute('role','status');progress.textContent='Checking your library and requesting track…';row.appendChild(progress);
+          try{const result=await api('/v1/acquisition/requests',{method:'POST',body:JSON.stringify({recordingId:entry.id})});progress.textContent=result.message||'Request accepted';await acqRefreshHistory();}
+          catch(e){progress.textContent=e.name==='TimeoutError'||e.name==='AbortError'||e instanceof TypeError?'The host has not confirmed this request yet. Check request history before trying again.':e.message;await acqRefreshHistory();}finally{acquisitionBusy=false;buttons.forEach(b=>b.disabled=false);}
         },row);
       }
       if(data.more)acqButton('More results',()=>{acquisitionBack.push(current);acquisitionLocation={...current,offset:data.offset+data.items.length};acqLoad();},acquisitionPanel);

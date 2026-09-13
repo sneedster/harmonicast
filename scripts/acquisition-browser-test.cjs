@@ -8,10 +8,12 @@ const root = path.resolve(__dirname, '..');
 const out = path.join(root, 'android/app/build/reports/acquisition-browser');
 fs.mkdirSync(out, {recursive:true});
 let allowed = true, requests = [], queued = [], setupToken = '', setupClosed = false, submitted = null;
-const recording = {id:'11111111-1111-1111-1111-111111111111',title:'Missing Track',artist:'Example Artist',kind:'recording',album:'Example Album',year:'2001',durationMs:180000,detail:''};
+const recording = {id:'11111111-1111-1111-1111-111111111111',title:'Missing Track',artist:'Example Artist',kind:'recording',album:'Example Album',year:'2001',durationMs:180000,detail:'',artworkKey:'release/11111111-1111-1111-1111-111111111111'};
 const server = http.createServer(async (req,res)=>{
   let body='';for await(const chunk of req)body+=chunk;
-  const url=new URL(req.url,'http://localhost');let result={},code=200;
+  const url=new URL(req.url,'http://localhost');
+if(url.pathname==='/room-library.js'){res.setHeader('Content-Type','application/javascript');res.end(fs.readFileSync(path.resolve(__dirname,'../android/app/src/main/assets/room/library.js'),'utf8'));return;}
+let result={},code=200;
   if(['/setup','/guest','/display'].includes(url.pathname)){
     const kind=url.pathname.slice(1);res.setHeader('Content-Type','text/html');
     res.end(fs.readFileSync(path.join(root,'android/app/src/main/assets',kind,'index.html'),'utf8').replaceAll('__ROOM_CODE__','ABCD'));return;
@@ -22,18 +24,19 @@ const server = http.createServer(async (req,res)=>{
   else {
     if(!url.pathname.startsWith("/v1/")){res.writeHead(404);res.end();return;}
     assert.equal(req.headers.authorization,'Bearer room-token');
-    if(url.pathname==='/v1/search')result=url.searchParams.get('q')==='Example Artist'?[{id:'local',title:'Local song',artist:'Example Artist'}]:[];
+    if(url.pathname==='/v1/library/search')result={kind:'tracks',items:url.searchParams.get('q')==='Example Artist'?[{id:'local',title:'Local song',artist:'Example Artist'}]:[]};
     else if(url.pathname==='/v1/queue')result=queued;
     else if(url.pathname==='/v1/now-playing')result={song:null,isPlaying:false,position:0};
     else if(url.pathname==='/v1/status')result={acquisitionAllowed:allowed,acquisitionAvailable:true};
     else if(url.pathname==='/v1/acquisition/entry')result={available:allowed,artist:url.searchParams.get('q')==='Example Artist'};
+    else if(url.pathname==='/v1/acquisition/artwork')result={image:'data:image/png;base64,'+fs.readFileSync(path.join(root,'marketing-site/public/harmonicast-icon.png')).toString('base64')};
     else if(url.pathname==='/v1/acquisition/catalog'){
       const mode=url.searchParams.get('mode');
-      result={items:mode==='artist'?[{id:'artist-id',title:'Example Artist',artist:'Example Artist',kind:'artist'}]:mode==='albums'?[{id:'album-id',title:'Example Album',artist:'Example Artist',kind:'album'}]:[recording],more:false,offset:0};
+      result={items:mode==='artist'?[{id:'artist-id',title:'Example Artist',artist:'Example Artist',kind:'artist'}]:mode==='albums'?[{id:'album-id',title:'Example Album',artist:'Example Artist',kind:'album',year:'2001',artworkKey:'release-group/11111111-1111-1111-1111-111111111111'}]:[recording],more:false,offset:0};
     } else if(url.pathname==='/v1/acquisition/requests'&&req.method==='POST'){
       assert.equal(JSON.parse(body).recordingId,recording.id);
       if(!allowed){code=403;result={error:'Music acquisition is disabled in this room'};}
-      else{result={id:'request1',recording,status:'acquiring',message:'Acquiring track…'};requests=[result];}
+      else{await new Promise(resolve=>setTimeout(resolve,13000));result={id:'request1',recording,status:'acquiring',message:'Acquiring track…'};requests=[result];}
     } else if(url.pathname==='/v1/acquisition/requests')result={items:requests};
     else{code=404;result={error:'Not found'};}
   }
@@ -59,16 +62,19 @@ const server = http.createServer(async (req,res)=>{
     allowed=true;requests=[];queued=[];
     const p=await browser.newPage({viewport:{width:kind==='guest'?420:1280,height:900}});p.on('pageerror',e=>errors.push(e.message));
     await p.goto(base+'/'+kind+'#cap=room-token');
-    await p.locator('#search').fill('Missing Track');await p.locator('#search-form button').click();
+    if(kind==='display') await p.locator('nav button[data-page=search]').click();
+    await p.locator('#search').fill('Missing Track');await p.locator('#search-form button[type=submit]').click();
     await p.getByRole('button',{name:'Search connected music sources'}).click();
     await p.getByRole('button',{name:'Acquire track'}).waitFor();
+    await p.locator('.acquisition-panel .catalog-cover img').waitFor({state:'visible'});
+    await p.screenshot({path:path.join(out,kind+'-catalog-art.png')});
     await p.screenshot({path:path.join(out,kind+'-acquisition.png'),fullPage:true});
-    await p.getByRole('button',{name:'Acquire track'}).click();await p.getByText('Acquiring track…',{exact:true}).first().waitFor();assert.equal(queued.length,0);
+    await p.getByRole('button',{name:'Acquire track'}).click();await p.getByText('Checking your library and requesting track…',{exact:true}).waitFor();await p.getByText('Acquiring track…',{exact:true}).first().waitFor();assert.equal(queued.length,0);
     requests[0].status='fulfilled';requests[0].message='Queued';queued=[{id:'plex-track',title:'Missing Track',artist:'Example Artist'}];
     await p.getByText('Missing Track — Queued',{exact:true}).waitFor();
     await p.getByRole('button',{name:'Close',exact:true}).click();
     assert.equal(await p.locator('#search').inputValue(),'Missing Track');
-    await p.locator('#search').fill('Example Artist');await p.locator('#search-form button').click();
+    await p.locator('#search').fill('Example Artist');await p.locator('#search-form button[type=submit]').click();
     await p.getByRole('button',{name:'Find songs by this artist'}).click();
     await p.getByRole('button',{name:'Browse releases'}).click();await p.getByRole('button',{name:'View tracks'}).click();await p.getByRole('button',{name:'Acquire track'}).waitFor();
     allowed=false;await p.getByText('Music acquisition is disabled or unavailable. Accepted requests continue.').waitFor();

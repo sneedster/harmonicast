@@ -5,6 +5,55 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LocalPlexClientTest {
+    @Test fun acquisitionRecentTracksUseAlbumIndexAndIncludeLaterTracks() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"Metadata":[{"type":"album","ratingKey":"7"}]}}"""
+            responses += """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"41","title":"First"},{"type":"track","ratingKey":"42","title":"Hear Me"}]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val tracks = LocalPlexClient(MemoryStorage(), http).recentTracks(source)
+        assertEquals(listOf("First", "Hear Me"), tracks.map { it.title })
+        assertTrue(http.calls[0].url.contains("type=9&sort=addedAt:desc"))
+        assertTrue(http.calls[1].url.contains("/7/children?"))
+        assertTrue(http.calls[1].url.contains("X-Plex-Container-Size=100"))
+    }
+
+    @Test fun roomRecentPicksReadAlbumDatesAndBoundTrackFetches() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"Metadata":[{"type":"album","ratingKey":"7"}]}}"""
+            responses += """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"42","title":"New Track","Media":[{"Part":[{"key":"/song"}]}]}]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val tracks = LocalPlexClient(MemoryStorage(), http).discoveryRecentTracks(source)
+        assertEquals("New Track", tracks.single().title)
+        assertTrue(http.calls[0].url.contains("type=9&sort=addedAt:desc"))
+        assertTrue(http.calls[0].url.contains("X-Plex-Container-Size=48"))
+        assertTrue(http.calls[1].url.contains("/7/children?"))
+        assertTrue(http.calls[1].url.contains("X-Plex-Container-Size=1"))
+    }
+
+    @Test fun roomDiscoverySamplesBoundedIndexedPagesWithoutRandomSort() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"totalSize":2,"Metadata":[]}}"""
+            responses += """{"MediaContainer":{"Metadata":[]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        LocalPlexClient(MemoryStorage(), http).discoverySample(source)
+        assertTrue(http.calls.all { it.url.contains("sort=titleSort:asc") })
+        assertTrue(http.calls.first().url.contains("X-Plex-Container-Size=1"))
+        assertTrue(http.calls.last().url.contains("X-Plex-Container-Size=2"))
+        assertEquals(2, http.calls.size)
+    }
+
+    @Test fun randomTrackSamplingUsesExplicitPlexPagination() = runBlocking {
+        val http = FakeHttp().apply { responses += """{"MediaContainer":{"Metadata":[]}}""" }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        LocalPlexClient(MemoryStorage(), http).random(source, 999)
+        val url = http.calls.single().url
+        assertTrue(url.contains("X-Plex-Container-Start=0"))
+        assertTrue(url.contains("X-Plex-Container-Size=100"))
+    }
+
     @Test fun alphabetIndexIncludesLettersBeyondFirstBrowsePageWithoutLoadingMedia() = runBlocking {
         val http = FakeHttp().apply {
             responses += """{"MediaContainer":{"Directory":[{"title":"A","size":400},{"title":"Z","size":12}]}}"""
@@ -236,14 +285,15 @@ class LocalPlexClientTest {
             responses += """{"MediaContainer":{"Metadata":[{"librarySectionID":"7"}]}}"""
             responses += """{"MediaContainer":{"size":1,"totalSize":2,"Metadata":[{"type":"album","ratingKey":"91","title":"Tesla","parentTitle":"Tesla"}]}}"""
             responses += """{"MediaContainer":{"Metadata":[{"librarySectionID":"7"}]}}"""
-            responses += """{"MediaContainer":{"size":1,"totalSize":2,"Metadata":[{"type":"album","ratingKey":"92","title":"Mechanical Resonance","parentTitle":"Tesla"}]}}"""
+            responses += """{"MediaContainer":{"size":1,"totalSize":2,"Metadata":[{"type":"album","ratingKey":"92","title":"Mechanical Resonance","parentTitle":"Tesla","year":1986}]}}"""
         }
         val storage = MemoryStorage()
         val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
         val library = LocalHarmonicastCore(source, storage, LocalPlexClient(storage, http)).library
         assertEquals(listOf("Tesla Song"), library.searchForBrowsing("Tesla").map { it.title })
         val albums = library.searchAlbums("Tesla")
-        assertEquals(listOf("Tesla", "Mechanical Resonance"), albums.map { it.title })
+        assertEquals(listOf("Mechanical Resonance", "Tesla"), albums.map { it.title })
+        assertEquals(listOf(1986, null), albums.map { it.year })
         assertEquals(2, albums.map { it.id }.distinct().size)
         assertTrue(albums.all { it.kind == BrowseKind.ALBUMS })
         assertFalse(http.calls.any { it.url.contains("/allLeaves") || it.url.contains("/children") })

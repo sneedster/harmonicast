@@ -1,130 +1,51 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Harmonicast display __ROOM_CODE__</title>
-  <style>
-    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #07080d; color: #fff8ec; }
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; overflow-x: hidden; background: radial-gradient(circle at 18% 12%, #563c79 0, #1b2035 34%, #07080d 72%); }
-    main { min-height: 100vh; display: grid; grid-template-columns: minmax(18rem, 1.35fr) minmax(16rem, .8fr); gap: clamp(1.2rem, 3vw, 3rem); padding: clamp(1.2rem, 4vw, 4rem); }
-    .hero { display: flex; flex-direction: column; min-width: 0; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-    .brand { font-weight: 850; font-size: clamp(1.2rem, 2vw, 1.8rem); letter-spacing: -.04em; }
-    .room { color: #cab9ec; font-size: .85rem; font-weight: 750; letter-spacing: .16em; text-transform: uppercase; }
-    .status { border: 1px solid #706489; border-radius: 999px; color: #c9bedc; padding: .45rem .75rem; font-size: .8rem; white-space: nowrap; }
-    .status.live { border-color: #65d9a2; color: #86e9ba; }
-    .record-wrap { flex: 0 1 auto; display: grid; place-items: center; min-height: 10rem; padding: 2vh 0; }
-    .record { width: 34vh; height: 34vh; max-width: 48vw; max-height: 48vw; border-radius: 50%; display: grid; place-items: center; background: repeating-radial-gradient(circle, #11131c 0 5px, #222534 6px 8px); box-shadow: 0 2.2rem 6rem #000a, inset 0 0 0 2px #ffffff14; }
-    .record.playing { animation: spin 9s linear infinite; }
-    .label { width: 36%; height: 36%; border-radius: 50%; display: grid; place-items: center; text-align: center; padding: .5rem; background: linear-gradient(145deg, #e59a5b, #8f4fd1); color: #140e1a; font-weight: 900; font-size: clamp(1rem, 3vw, 2.3rem); box-shadow: inset 0 0 0 5px #ffffff18; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    h1 { margin: 0; max-width: 15ch; font-size: clamp(2.2rem, 6vw, 5.4rem); line-height: .96; letter-spacing: -.055em; overflow-wrap: anywhere; }
-    .artist { margin: .65rem 0 0; color: #cabfd7; font-size: clamp(1.15rem, 2.6vw, 2rem); }
-    .album { margin: .35rem 0 0; color: #9189a1; font-size: clamp(.95rem, 1.8vw, 1.35rem); }
-    .progress { height: .48rem; margin-top: 1.5rem; overflow: hidden; border-radius: 999px; background: #ffffff1c; }
-    .progress span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #e59a5b, #a26ce5); transition: width .5s linear; }
-    .times { display: flex; justify-content: space-between; margin-top: .4rem; color: #958da3; font-variant-numeric: tabular-nums; }
-    .controls { display: flex; gap: .8rem; margin-top: 1.4rem; }
-    button { border: 0; border-radius: .9rem; padding: .85rem 1.25rem; background: #e7a45f; color: #170f18; font: inherit; font-weight: 850; cursor: pointer; }
-    button.secondary { border: 1px solid #ffffff25; background: #24283a; color: #fff8ec; }
-    aside { min-width: 0; align-self: center; max-height: calc(100vh - 8vw); overflow: hidden; border: 1px solid #ffffff18; background: #111522d9; border-radius: 1.4rem; box-shadow: 0 2rem 5rem #0007; }
-    aside h2 { margin: 0; padding: 1.25rem 1.35rem; border-bottom: 1px solid #ffffff14; font-size: clamp(1.2rem, 2vw, 1.7rem); }
-    form { display: flex; gap: .6rem; padding: 1rem 1.2rem; border-bottom: 1px solid #ffffff14; }
-    input { min-width: 0; flex: 1; border: 1px solid #ffffff25; border-radius: .8rem; background: #090c15; color: #fff8ec; padding: .8rem; font: inherit; }
-    #results { max-height: 14rem; overflow-y: auto; border-bottom: 1px solid #ffffff14; }
-    #results:empty { display: none; }
-    #results li { grid-template-columns: 1fr auto; }
-    #results button { padding: .55rem .75rem; }
-    ol { margin: 0; padding: 0; list-style: none; }
-    li { display: grid; grid-template-columns: 2rem 1fr; gap: .8rem; padding: 1rem 1.35rem; border-bottom: 1px solid #ffffff10; }
-    li:last-child { border-bottom: 0; }
-    .number { color: #9a83bd; font-weight: 800; }
-    .track { min-width: 0; }
-    .track strong, .track span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .track span { color: #9e97aa; margin-top: .2rem; font-size: .9rem; }
-    .empty { display: block; color: #9e97aa; padding: 1.4rem; }
-    #fullscreen { position: fixed; right: 1rem; top: 1rem; border: 1px solid #ffffff24; border-radius: 999px; background: #161b2bdb; color: #eee7f6; padding: .65rem 1rem; font: inherit; }
-    #message { position: fixed; inset: auto 1rem 1rem 1rem; text-align: center; color: #f2bc78; pointer-events: none; }
-    @media (max-width: 720px), (orientation: portrait) {
-      body { overflow: auto; }
-      main { grid-template-columns: 1fr; }
-      .record { width: 62vw; height: 62vw; max-width: 42vh; max-height: 42vh; }
-      aside { max-height: none; align-self: stretch; }
-      h1 { max-width: none; }
-    }
-    @media (orientation: landscape) and (max-height: 1000px) {
-      main { height: 100vh; min-height: 0; padding: 1.25rem 4vw 2rem; overflow: hidden; }
-      .hero { min-height: 0; }
-      .record-wrap { min-height: 7rem; padding: 1vh 0; }
-      .record { width: 25vh; height: 25vh; }
-      h1 { font-size: clamp(2rem, 5vw, 4.2rem); }
-      .controls { margin-top: .8rem; }
-    }
-    @media (prefers-reduced-motion: reduce) { .record.playing { animation: none; } }
-
-    :root { --accent: #bfa7f5; --ink: #1d1430; --glow: #211b33; }
-    :root[data-palette="Aurora"] { --accent: #8bdcc7; --ink: #062b24; --glow: #12332e; }
-    :root[data-palette="Ember"] { --accent: #f6b590; --ink: #371909; --glow: #352017; }
-    #palette { background: #141320; color: var(--accent); border: 1px solid #ffffff25; border-radius: 1rem; padding: .4rem .6rem; font: inherit; max-width: 8rem; }
-    .palette-choice { display: flex; align-items: center; gap: .5rem; margin-top: .75rem; font-size: .8rem; color: #b9b3c6; }
-    body { background: radial-gradient(ellipse at 70% 0, var(--glow), #08090f 55%, #000); }
-    h1 { font-family: Georgia, serif; font-weight: 400; letter-spacing: -.035em; }
-    button { background: var(--accent); color: var(--ink); transition: transform .18s, box-shadow .18s; }
-    button:focus { outline: 2px solid var(--accent); outline-offset: 4px; box-shadow: 0 8px 24px #bfa7f530; }
-    button:disabled { opacity: .4; cursor: default; }
-    .card, aside { background: #141320e8; border-color: #bfa7f525; box-shadow: 0 20px 50px #0008; }
-    .progress span, .label { background: linear-gradient(120deg, #d1baff, #8e74ba); }
-    #message, .room, .eyebrow { color: var(--accent); }
-    .progress span, .label { background: var(--accent); }
-    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
-
-    [hidden] { display: none !important; }
-    .acquisition-controls { padding: 1rem; display: flex; flex-wrap: wrap; gap: .7rem; }
-    .acquisition-panel { width: min(42rem, calc(100vw - 2rem)); max-height: 90vh; overflow-y: auto; padding: 1.25rem; border: 1px solid #635477; border-radius: 1.2rem; background: #16131f; color: #f1eafa; }
-    .acquisition-panel::backdrop { background: #000b; backdrop-filter: blur(3px); }
-    .acquisition-panel > button { margin: 0 .6rem .8rem 0; }
-    .acquisition-panel .card { margin: .8rem 0; padding: 1rem; border: 1px solid #51435f; border-radius: 1rem; }
-    .acquisition-panel p { margin: .5rem 0; line-height: 1.5; }
-  </style>
-</head>
-<body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Harmonicast · Room __ROOM_CODE__</title><style>
+:root{color-scheme:dark;--accent:#fbbf24;--ink:#0a0a0b;--surface:#111113;--muted:#b4b4bd;--border:#3a3a43;font-family:Inter,system-ui,sans-serif;background:var(--ink);color:#fff;scrollbar-color:#565661 #111113;scrollbar-width:thin}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#f59e0b47,transparent 42%),linear-gradient(135deg,#07070b,#18101c 52%,#07070b)}[hidden]{display:none!important}
+body{height:100dvh;display:grid;grid-template-rows:80px minmax(0,1fr) 80px}header{display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-bottom:1px solid #ffffff1a;gap:16px}.identity{display:flex;align-items:center;gap:12px}.brand-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:16px;background:var(--accent);color:var(--ink);font-size:30px}.brand{font-size:20px;font-weight:900}.eyebrow{color:var(--accent);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.24em;margin:0}.header-actions{display:flex;align-items:center;gap:12px}.status{font-size:12px;color:var(--muted)}.status.live{color:#a3dfba}
+main{min-height:0;overflow:hidden}.panel{height:100%;overflow-y:auto;padding:32px 40px}.hero{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(0,1.2fr);align-items:center;gap:48px}.art-wrap{position:relative;width:100%;max-width:min(58vh,520px);margin:auto}.art-wrap:before{content:'';position:absolute;inset:-24px;background:#f59e0b35;filter:blur(48px);border-radius:40px}.cover{position:relative;aspect-ratio:1;width:100%;border-radius:32px;background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 64px #0009;display:grid;place-items:center;overflow:hidden}.cover img{width:100%;height:100%;object-fit:cover}.placeholder{font-size:72px;color:var(--accent)}h1{font-size:clamp(36px,5vw,72px);font-weight:900;line-height:.94;letter-spacing:-.035em;margin:16px 0;overflow-wrap:anywhere}h2{font-size:36px;line-height:1.1;margin:8px 0 24px;font-weight:900}.artist{font-size:clamp(20px,2.5vw,30px);color:var(--muted);margin:16px 0 8px}.album{color:#a3a3ad;font-size:14px}.controls{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}button,input{font:inherit}button{cursor:pointer;border:1px solid transparent;border-radius:16px;background:var(--accent);color:var(--ink);padding:14px 22px;font-weight:900;min-height:48px;transition:background .18s,transform .18s}button:hover{filter:brightness(1.12)}button:active{transform:scale(.98)}button:disabled{opacity:.45;cursor:default}button.secondary{background:transparent;border-color:var(--border);color:white}button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.controls button{min-height:64px;font-size:18px}.progress{height:5px;background:#ffffff1a;border-radius:6px;margin-top:28px;overflow:hidden}.progress span{display:block;height:100%;width:0;background:var(--accent)}.times{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:8px;font-variant-numeric:tabular-nums}
+nav{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid #ffffff1a;background:#0a0a0bd9}nav button{border-radius:0;background:transparent;color:var(--muted);font-size:12px;padding:8px}nav button[aria-current=page]{background:var(--accent);color:var(--ink)}nav span{display:block;font-size:23px;line-height:28px;margin-bottom:4px}form{display:flex;gap:12px;margin-bottom:24px}input{min-width:0;flex:1;background:var(--surface);color:white;border:1px solid var(--border);border-radius:16px;padding:18px;font-size:20px}ol{list-style:none;margin:0;padding:0}#results,#queue,.pick-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}li{min-width:0;display:flex;align-items:center;gap:16px;padding:16px;border:1px solid #ffffff1a;border-radius:16px;background:#111113b3}.number{color:var(--accent);font-weight:900}.track{min-width:0;flex:1}.track strong,.track span{display:block;overflow-wrap:anywhere}.track span{font-size:14px;color:var(--muted);margin-top:4px}.empty{grid-column:1/-1;color:var(--muted);border:0;background:none;padding:32px 0}#results li{flex-wrap:wrap}.pick{padding:0;background:transparent;color:white;text-align:left;min-width:0}.pick .cover{border-radius:16px;box-shadow:none}.pick strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:10px}.pick small{display:block;color:var(--muted);margin-top:4px}.shelf{margin-bottom:32px}.shelf h3{font-size:18px;line-height:22px;margin:0 0 14px}.pick-grid{grid-template-columns:repeat(6,minmax(0,1fr))}.section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}#message{position:fixed;z-index:5;top:88px;left:50%;transform:translateX(-50%);max-width:90vw;background:var(--accent);color:var(--ink);border-radius:24px;padding:12px 22px;font-weight:750;text-align:center;pointer-events:none}#message:empty{display:none}.acquisition-controls{display:flex;gap:12px;margin-top:24px}.acquisition-panel{width:min(680px,calc(100vw - 24px));max-height:90dvh;overflow-y:auto;border:1px solid var(--border);border-radius:24px;background:var(--ink);color:white;padding:24px}.acquisition-panel::backdrop{background:#000b;backdrop-filter:blur(4px)}.acquisition-panel button{margin:0 8px 8px 0}.card{border:1px solid var(--border);background:var(--surface);padding:16px;border-radius:16px;margin:16px 0}#attract{position:fixed;inset:0;z-index:10;background:radial-gradient(ellipse at center,#422b17,#07070b 75%);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px;color:white;border-radius:0;width:100%;height:100%}#attract .cover{width:min(54vmin,520px);flex-shrink:0}#attract h2{font-size:clamp(32px,6vw,80px);max-width:18ch;margin:24px 0 12px}#attract .wake{margin-top:28px;border:1px solid #fbbf2499;border-radius:24px;padding:12px 24px;color:var(--accent)}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:var(--surface)}::-webkit-scrollbar-thumb{background:#565661;border-radius:8px}::-webkit-scrollbar-thumb:hover{background:#8b8b96}::-webkit-scrollbar-thumb:active{background:var(--accent)}@media(forced-colors:active){:root{scrollbar-color:auto}button{border:1px solid ButtonText}}
+@media(max-width:900px){.hero{grid-template-columns:1fr;gap:24px;text-align:center}.art-wrap{max-width:min(42vh,400px)}.controls{justify-content:center}.panel{padding:24px}#results,#queue{grid-template-columns:repeat(2,minmax(0,1fr))}.pick-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:520px){body{grid-template-rows:72px minmax(0,1fr) 72px}header{padding:0 16px}.eyebrow{font-size:10px}.brand{font-size:18px}.header-actions{gap:6px}.status{max-width:70px}.header-actions button{font-size:12px;padding:10px}.panel{padding:24px 20px}#results,#queue{grid-template-columns:1fr}h2{font-size:28px}form{flex-wrap:wrap}input{width:100%;flex-basis:100%}.pick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.catalog-cover{width:88px;height:88px;position:relative;display:grid;place-items:center;background:var(--glow,#29231b);color:var(--accent);border-radius:12px;overflow:hidden;margin-bottom:12px;font-size:32px}.catalog-cover img{position:absolute;width:100%;height:100%;object-fit:cover}.album-heading{grid-column:1/-1;display:block!important;background:none!important;border:0!important;padding:20px 0 4px!important;color:var(--accent);font-weight:800}
+#results .catalog-cover{width:64px;height:64px;margin:0;flex-shrink:0}#picks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px}.pick-grid{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:700px){#picks{grid-template-columns:1fr}} .pick-grid{gap:16px}.pick .cover{width:100%;height:auto;aspect-ratio:1}.pick{width:100%;min-width:0}.pick strong{font-size:13px;line-height:18px}.pick small{font-size:11px}
+@media(min-width:701px){#picks-panel{display:flex;flex-direction:column;overflow:hidden}#picks-panel>.section-heading{flex-shrink:0}#picks{flex:1;min-height:0;grid-template-rows:repeat(2,minmax(0,1fr))}.shelf{min-height:0;margin:0;overflow:hidden}.pick-grid{align-content:start;row-gap:12px}}
+.pick{max-width:var(--pick-size,144px);justify-self:center;align-self:start}.pick .cover{width:var(--pick-size,144px);height:var(--pick-size,144px)}.pick strong{font-size:12px;line-height:16px;margin-top:6px;display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.pick small{font-size:10px;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0}
+#picks-panel{display:flex;flex-direction:column;overflow:hidden}#picks-panel>.section-heading{flex-shrink:0}#picks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));flex:1;min-height:0;gap:28px}.shelf{min-height:0;margin:0;overflow:hidden}.pick-grid{align-content:start;row-gap:12px}@media(max-width:700px){.shelf h3{font-size:14px;line-height:18px;min-height:36px;margin-bottom:16px}#picks-title{font-size:24px}#refresh-picks{font-size:12px;padding:10px}}
+@media(max-height:800px) and (min-width:701px){#picks-panel{padding-top:16px;padding-bottom:16px}#picks-title{font-size:28px;margin-bottom:16px}.shelf{overflow:auto}}
+@media(min-width:701px){.pick strong{font-size:clamp(14px,1vw,18px);line-height:22px;margin-top:6px}.pick small{font-size:clamp(12px,.8vw,15px);line-height:16px}}
+.library-album{padding:0!important;border:0!important}.library-album-button{width:100%;display:flex;align-items:center;gap:16px;text-align:left;min-width:0;padding:12px!important}.library-album-button .catalog-cover{flex-shrink:0;margin:0}.library-album-button .track{flex:1}
+</style></head><body>
+<header><div class="identity"><div class="brand-icon" aria-hidden="true">◎</div><div><p class="eyebrow">The house jukebox</p><div class="brand">Harmonicast</div></div></div><div class="header-actions"><span id="status" class="status" role="status">Connecting</span><button id="fullscreen" class="secondary" type="button">Full screen</button></div></header>
 <main>
-  <section class="hero">
-    <header>
-      <div><div class="brand">Harmonicast</div><div class="room">Room __ROOM_CODE__ · Display</div></div>
-      <div id="status" class="status">Connecting</div>
-    </header>
-    <label class="palette-choice">Appearance <select id="palette" aria-label="Color scheme"><option>Nocturne</option><option>Aurora</option><option>Ember</option></select></label>
-    <div class="record-wrap"><div id="record" class="record"><div id="label" class="label">H</div></div></div>
-    <h1 id="title">Nothing playing</h1>
-    <p id="artist" class="artist"></p>
-    <p id="album" class="album"></p>
-    <div class="progress"><span id="progress"></span></div>
-    <div class="times"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
-    <div class="controls">
-      <button id="toggle" type="button">Play / pause</button>
-      <button id="skip" class="secondary" type="button">Next</button>
-    </div>
-  </section>
-  <aside>
-    <h2>Find music</h2>
-    <form id="search-form"><input id="search" type="search" autocomplete="off" placeholder="Song, artist, or album" aria-label="Search music"><button type="submit">Search</button></form>
-    <ol id="results"></ol>
-    <h2>Coming up</h2>
-    <ol id="queue"><li class="empty">The queue is empty.</li></ol>
-  </aside>
-</main>
-<button id="fullscreen" type="button">Full screen</button>
-<div id="message"></div>
+<section id="home-panel" class="panel hero" aria-label="Now playing"><div class="art-wrap"><div id="record" class="cover"><span id="label" class="placeholder" aria-hidden="true">♫</span><img id="artwork" alt="Album cover" hidden></div></div><div><p id="playing-label" class="eyebrow">Make the first selection</p><h1 id="title">The room is listening</h1><p id="artist" class="artist">Choose a track from tonight’s picks.</p><p id="album" class="album"></p><div class="progress"><span id="progress"></span></div><div class="times"><span id="elapsed">0:00</span><span id="duration">0:00</span></div><div class="controls"><button id="toggle" type="button" disabled>Play</button><button id="skip" class="secondary" type="button" disabled>Next</button></div></div></section>
+<section id="picks-panel" class="panel" aria-labelledby="picks-title" hidden><div class="section-heading"><div><p class="eyebrow">Browse the room</p><h2 id="picks-title">Tonight’s picks</h2></div><button id="refresh-picks" class="secondary">Refresh picks</button></div><div id="picks" aria-live="polite"></div></section>
+<section id="search-panel" class="panel" aria-labelledby="search-title" hidden><p class="eyebrow">Make a selection</p><h2 id="search-title">Find music</h2><form id="search-form" novalidate><input id="search" type="search" autocomplete="off" placeholder="Song, artist, or album" aria-label="Search music"><button id="clear-search" class="secondary" type="button" hidden>Clear</button><button type="submit">Search</button></form><ol id="results" aria-live="polite"><li class="empty">Search your room’s music library.</li></ol></section>
+<section id="queue-panel" class="panel" aria-labelledby="queue-title" hidden><p class="eyebrow">Coming up</p><h2 id="queue-title">The queue</h2><ol id="queue"><li class="empty">The queue is empty.</li></ol></section>
+</main><nav aria-label="Room display"><button data-page="home" aria-current="page"><span aria-hidden="true">◎</span>Now playing</button><button data-page="picks"><span aria-hidden="true">↻</span>Tonight’s picks</button><button data-page="search"><span aria-hidden="true">⌕</span>Find music</button><button data-page="queue"><span aria-hidden="true">≡</span>Queue</button></nav><div id="message" role="status" aria-live="polite"></div>
+<button id="attract" hidden aria-label="Return to room controls"><div class="cover"><span class="placeholder">♫</span><img id="attract-art" alt="Album cover" hidden></div><p class="eyebrow" style="margin-top:28px">The house jukebox</p><h2 id="attract-title"></h2><p id="attract-artist" class="artist"></p><span class="wake">Touch to choose the next track</span></button>
+<script src="/room-library.js"></script>
 <script>
 (function () {
   var hash = new URLSearchParams(location.hash.slice(1));
   var supplied = hash.get('cap');
-  if (supplied) sessionStorage.setItem('harmonicast-display-cap', supplied);
-  var capability = supplied || sessionStorage.getItem('harmonicast-display-cap') || '';
+  var capability = supplied || '';
+  try {
+    if (supplied) sessionStorage.setItem('harmonicast-display-cap', supplied);
+    else capability = sessionStorage.getItem('harmonicast-display-cap') || '';
+  } catch (_) {} // A fresh invitation also works when browser storage is blocked.
+  var reentering = false;
+  function reenter() {
+    if (reentering) return;
+    reentering = true;
+    capability = '';
+    try { sessionStorage.removeItem('harmonicast-display-cap'); } catch (_) {}
+    location.replace('/open?reason=expired');
+  }
+  if (!capability) { reenter(); return; }
   if (location.hash) history.replaceState(null, '', location.pathname);
+  window.addEventListener('hashchange', function () {
+    if (new URLSearchParams(location.hash.slice(1)).get('cap')) location.reload();
+  });
   var status = document.querySelector('#status');
   var title = document.querySelector('#title');
   var artist = document.querySelector('#artist');
@@ -147,10 +68,12 @@
     return fetch(path, {
       method: options.method || 'GET',
       body: options.body,
+      signal: AbortSignal.timeout((path.startsWith('/v1/acquisition/catalog') || (path === '/v1/acquisition/requests' && options.method === 'POST')) ? 180000 : path.startsWith('/v1/picks') ? 30000 : 12000),
       cache: 'no-store',
       headers: { 'Authorization': 'Bearer ' + capability, 'Content-Type': 'application/json' }
     })
       .then(function (response) {
+        if (response.status === 401) reenter();
         return response.json().then(function (data) {
           if (!response.ok) throw new Error(data.error || 'The room did not respond.');
           return data;
@@ -177,7 +100,7 @@
       queue.appendChild(empty);
       return;
     }
-    songs.slice(0, 8).forEach(function (song, index) {
+    songs.forEach(function (song, index) {
       var item = document.createElement('li');
       var number = document.createElement('span');
       number.className = 'number';
@@ -197,8 +120,12 @@
   }
   function showResults(songs) {
     while (results.firstChild) results.removeChild(results.firstChild);
-    songs.slice(0, 12).forEach(function (song) {
+    var lastAlbum = null;
+    songs.forEach(function (song) {
+      var group = [song.year || 'Year unknown', song.album || 'Other tracks'].join(' · ');
+      if (group !== lastAlbum) { var heading = document.createElement('li'); heading.className='album-heading'; heading.textContent=group; results.appendChild(heading); lastAlbum=group; }
       var item = document.createElement('li');
+      var cover=document.createElement('div');cover.className='catalog-cover';cover.setAttribute('aria-hidden','true');var fallback=document.createElement('span');fallback.textContent='♫';var image=document.createElement('img');image.alt='';image.hidden=true;cover.append(fallback,image);item.appendChild(cover);artworkFor(song).then(src=>setCover(image,src)).catch(()=>{});
       var text = document.createElement('div');
       text.className = 'track';
       var name = document.createElement('strong');
@@ -222,14 +149,6 @@
     });
     if (!songs.length) message.textContent = 'No matching tracks.';
   }
-  var palette = document.querySelector('#palette');
-  try { palette.value = localStorage.getItem('harmonicast.palette') || 'Nocturne'; } catch (_) {}
-  if (!palette.value) palette.value = 'Nocturne';
-  document.documentElement.setAttribute('data-palette', palette.value);
-  palette.addEventListener('change', function () {
-    document.documentElement.setAttribute('data-palette', palette.value);
-    try { localStorage.setItem('harmonicast.palette', palette.value); } catch (_) {}
-  });
   function roomControls(enabled) {
     if (!enabled) while (results.firstChild) results.removeChild(results.firstChild);
     var controls = document.querySelectorAll('#search-form button, #search, #vote-up, #vote-down, #toggle, #skip');
@@ -238,37 +157,46 @@
     }
   }
   function refresh() {
-    Promise.all([api('/v1/now-playing'), api('/v1/queue')]).then(function (result) {
+    return Promise.all([api('/v1/now-playing'), api('/v1/queue')]).then(function (result) {
       var state = result[0];
       var song = state.song;
-      title.textContent = song && song.title || 'Nothing playing';
-      artist.textContent = song && song.artist || '';
+      title.textContent = song && song.title || 'The room is listening';
+      artist.textContent = song && song.artist || 'Choose a track from tonight’s picks.';
       album.textContent = song && song.album || '';
-      label.textContent = song && (song.title || 'H').trim().charAt(0).toUpperCase() || 'H';
+      label.textContent = '♫';
+      updateArtwork(song);
+      document.querySelector('#attract-title').textContent = title.textContent;
+      document.querySelector('#attract-artist').textContent = artist.textContent;
       playing = Boolean(state.isPlaying);
+      document.querySelector('#playing-label').textContent = song ? (playing ? 'Now playing' : 'Paused') : 'Make the first selection';
+      document.querySelector('#toggle').textContent = playing ? 'Pause' : 'Play';
       position = Number(state.position) || 0;
       total = song && Number(song.duration) || 0;
-      record.className = playing ? 'record playing' : 'record';
+      record.className = 'cover';
       showQueue(result[1]);
       updateProgress();
       roomControls(true);
+      if (status.textContent === 'Room unavailable') message.textContent = '';
       status.textContent = 'Connected';
       status.className = 'status live';
-      message.textContent = '';
     }).catch(function (error) {
+      if (reentering) return;
       playing = false;
-      record.className = 'record';
+      record.className = 'cover';
       roomControls(false);
       status.textContent = 'Room unavailable';
       status.className = 'status';
-      message.textContent = 'Connection lost. Reconnecting… If the room ended, ask the host for a new invitation.';
+      message.textContent = error.message === 'Failed to fetch'
+        ? 'Cannot reach the host. Keep the room open and both devices on the same Wi-Fi. Reconnecting…'
+        : error.message + '. Check the room on the host. Reconnecting…';
     });
   }
   document.querySelector('#fullscreen').addEventListener('click', function () {
     var root = document.documentElement;
     var enter = root.requestFullscreen || root.webkitRequestFullscreen;
-    if (enter) enter.call(root);
-    this.style.display = 'none';
+    if (document.fullscreenElement) document.exitFullscreen().catch(function () {});
+    else if (enter) Promise.resolve(enter.call(root)).catch(function () { message.textContent = 'Full screen is unavailable in this browser.'; });
+
   });
   document.querySelector('#toggle').addEventListener('click', function () {
     api('/v1/display/player/toggle', { method: 'POST' }).then(refresh)
@@ -278,22 +206,19 @@
     api('/v1/display/player/skip', { method: 'POST' }).then(refresh)
       .catch(function (error) { message.textContent = error.message; });
   });
-  document.querySelector('#search-form').addEventListener('submit', function (event) {
-    event.preventDefault();
-    var query = document.querySelector('#search').value.trim();
-    if (!query) return;
-    message.textContent = 'Searching…';
-    api('/v1/search?q=' + encodeURIComponent(query)).then(function (songs) {
-      message.textContent = '';
-      showResults(songs);
-      acquisitionSearchDone(query, songs);
-    }).catch(function (error) { message.textContent = error.message; });
-  });
+  var searchGeneration = 0;
+  var searchInput = document.querySelector('#search');
+  var clearSearch = document.querySelector('#clear-search');
+  searchInput.addEventListener('input', function () { ++searchGeneration; clearSearch.hidden = !searchInput.value; results.replaceChildren(); });
+  clearSearch.addEventListener('click', function () { searchInput.value = ''; searchInput.dispatchEvent(new Event('input')); searchInput.focus(); message.textContent = ''; });
+  const libraryBrowser = createRoomLibraryBrowser({api, results, showTracks:showResults, notify:text => { message.textContent=text; }, onSearchDone:(query,items)=>acquisitionSearchDone(query,items)});
+  searchInput.addEventListener('input',()=>libraryBrowser.clear());
+  document.querySelector('#search-form').addEventListener('submit', event => { event.preventDefault(); const query=searchInput.value.trim();if(query)libraryBrowser.search(query); });
   // Room-scoped acquisition. All service calls run on the Android host.
   const acquisitionControls = document.createElement('section');
   acquisitionControls.className = 'acquisition-controls'; acquisitionControls.hidden = true;
   document.querySelector('#search-form').parentElement.appendChild(acquisitionControls);
-  const acquisitionPanel = document.createElement('dialog'); acquisitionPanel.className = 'acquisition-panel'; acquisitionPanel.hidden = true;
+  const acquisitionPanel = document.createElement('dialog'); acquisitionPanel.className = 'acquisition-panel'; acquisitionPanel.setAttribute('aria-label','Connected music sources'); acquisitionPanel.hidden = true;
   acquisitionControls.parentElement.appendChild(acquisitionPanel);
   const acquisitionHistory = document.createElement('div'); acquisitionHistory.setAttribute('aria-live','polite');
   acquisitionControls.parentElement.appendChild(acquisitionHistory);
@@ -315,6 +240,35 @@
   }
   document.querySelector('#search').addEventListener('input',()=>{++acquisitionGeneration; acquisitionControls.hidden=true; acquisitionPanel.hidden=true; acquisitionPanel.close(); acquisitionOpen=false;});
   function acqOpen(query,mode){acquisitionOpen=true; acquisitionBack=[];acquisitionLocation={q:query,mode,parent:'',offset:0};acqLoad();}
+
+  const catalogArtCache = new Map();
+  const catalogArtQueue = [];
+  let catalogArtActive = 0;
+  function catalogArtRequest(key) {
+    return new Promise(resolve => {
+      catalogArtQueue.push(async () => {
+        try { resolve(await api('/v1/acquisition/artwork?key='+encodeURIComponent(key))); }
+        catch (_) { resolve({image:null}); }
+        finally { catalogArtActive--; drainCatalogArt(); }
+      });
+      drainCatalogArt();
+    });
+  }
+  function drainCatalogArt() { while(catalogArtActive<3 && catalogArtQueue.length){catalogArtActive++;catalogArtQueue.shift()();} }
+
+  function catalogArt(entry, row) {
+    if (!entry.artworkKey) return;
+    const cover = document.createElement('div'); cover.className = 'catalog-cover'; cover.setAttribute('aria-hidden','true');
+    const fallback = document.createElement('span'); fallback.textContent = '♫'; cover.appendChild(fallback);
+    const img = document.createElement('img'); img.alt = ''; img.hidden = true; cover.appendChild(img); row.prepend(cover);
+    img.onerror = () => { img.hidden = true; fallback.hidden = false; };
+    if (!catalogArtCache.has(entry.artworkKey)) {
+      if (catalogArtCache.size >= 48) catalogArtCache.delete(catalogArtCache.keys().next().value);
+      catalogArtCache.set(entry.artworkKey, catalogArtRequest(entry.artworkKey).then(data =>
+        typeof data.image === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(data.image) ? data.image : null).catch(() => null));
+    }
+    catalogArtCache.get(entry.artworkKey).then(src => { if(src){img.src=src;img.hidden=false;fallback.hidden=true;} });
+  }
   async function acqLoad(){
     const generation=++acquisitionGeneration; const current={...acquisitionLocation};
     acquisitionPanel.hidden=false; if(!acquisitionPanel.open)acquisitionPanel.showModal(); acquisitionPanel.replaceChildren();
@@ -327,14 +281,15 @@
       acquisitionPanel.lastChild.remove();acqText(current.q,acquisitionPanel);
       if(!data.items.length)acqText('No matching music found',acquisitionPanel);
       for(const entry of data.items){
-        const row=document.createElement('div'); row.className='card';acquisitionPanel.appendChild(row);
+        const row=document.createElement('div'); row.className='card';acquisitionPanel.appendChild(row);catalogArt(entry,row);
         acqText(entry.title,row);acqText([entry.artist,entry.album,entry.year,entry.detail].filter(Boolean).join(' · '),row);
         if(entry.inLibrary)acqText('In your library',row);
         acqButton(entry.kind==='recording'?(entry.inLibrary?'Queue existing track':'Acquire track'):entry.kind==='artist'?'Browse releases':'View tracks',async event=>{
           if(entry.kind!=='recording'){acquisitionBack.push(current);acquisitionLocation={q:entry.artist||entry.title,mode:entry.kind==='artist'?'albums':'tracks',parent:entry.id,offset:0};acqLoad();return;}
           if(acquisitionBusy)return;acquisitionBusy=true; const buttons=acquisitionPanel.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
-          try{const result=await api('/v1/acquisition/requests',{method:'POST',body:JSON.stringify({recordingId:entry.id})});acqText(result.message||'Request accepted',row);await acqRefreshHistory();}
-          catch(e){acqText(e.message,row);}finally{acquisitionBusy=false;buttons.forEach(b=>b.disabled=false);}
+          const progress=document.createElement('p');progress.setAttribute('role','status');progress.textContent='Checking your library and requesting track…';row.appendChild(progress);
+          try{const result=await api('/v1/acquisition/requests',{method:'POST',body:JSON.stringify({recordingId:entry.id})});progress.textContent=result.message||'Request accepted';await acqRefreshHistory();}
+          catch(e){progress.textContent=e.name==='TimeoutError'||e.name==='AbortError'||e instanceof TypeError?'The host has not confirmed this request yet. Check request history before trying again.':e.message;await acqRefreshHistory();}finally{acquisitionBusy=false;buttons.forEach(b=>b.disabled=false);}
         },row);
       }
       if(data.more)acqButton('More results',()=>{acquisitionBack.push(current);acquisitionLocation={...current,offset:data.offset+data.items.length};acqLoad();},acquisitionPanel);
@@ -352,6 +307,148 @@
     }catch(e){acquisitionControls.hidden=true;}
   }
   setInterval(acqRefreshHistory,5000);
+
+  var artworkId = null, artworkGeneration = 0;
+  var artworkCache = new Map();
+  function artworkFor(song) {
+    if (!song) return Promise.resolve(null);
+    if (artworkCache.has(song.id)) return Promise.resolve(artworkCache.get(song.id));
+    return api('/v1/artwork?id=' + encodeURIComponent(song.id)).then(function (data) {
+      var image = typeof data.image === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(data.image) ? data.image : null;
+      if (artworkCache.size >= 24) artworkCache.delete(artworkCache.keys().next().value);
+      artworkCache.set(song.id, image);
+      return image;
+    });
+  }
+  function setCover(image, src) {
+    image.hidden = !src;
+    image.previousElementSibling.hidden = !!src;
+    if (src) image.src = src; else image.removeAttribute('src');
+    image.onerror = function () { image.hidden = true; image.previousElementSibling.hidden = false; };
+  }
+  function updateArtwork(song) {
+    var id = song && song.id || '';
+    if (id === artworkId) return;
+    artworkId = id;
+    var generation = ++artworkGeneration;
+    var images = [document.querySelector('#artwork'), document.querySelector('#attract-art')];
+    images.forEach(function (image) { setCover(image, null); });
+    artworkFor(song).then(function (src) {
+      if (generation === artworkGeneration) images.forEach(function (image) { setCover(image, src); });
+    }).catch(function () { if (generation === artworkGeneration) artworkId = null; });
+  }
+  function picksLayout() {
+    const container = document.querySelector('#picks');
+    const width = Math.max(1, (container.clientWidth - 28) / 2);
+    const height = Math.max(1, (container.clientHeight - 28) / 2 - (innerWidth > 700 ? 36 : 52));
+    const caption = innerWidth > 700 ? 46 : 38;
+    let best = null;
+    // Fit a small collection to the section, rather than fixing thumbnail size.
+    // Compare complete grids by occupied area; prefer fewer, larger covers when
+    // two arrangements fit similarly. Eight choices per section is the ceiling.
+    for (let columns = 1; columns <= 8; columns++) {
+      for (let rows = 1; rows * columns <= 8; rows++) {
+        const size = Math.min(420, (width - (columns - 1) * 16) / columns,
+          (height - (rows - 1) * 12) / rows - caption);
+        if (size < 48) continue;
+        const count = columns * rows;
+        const coverage = count * size * (size + caption) / (width * height);
+        const score = coverage - .018 * (count - 1) - Math.max(0, 120 - size) / 240;
+        if (!best || score > best.score) best = {columns, rows, size, count, score};
+      }
+    }
+    return best || {columns:1, rows:1, size:Math.max(48, Math.min(width, height-caption)), count:1};
+  }
+  function picksPerShelf() { return picksLayout().count; }
+  var picksResizeTimer;
+  window.addEventListener('resize', function () { clearTimeout(picksResizeTimer); picksResizeTimer=setTimeout(function(){ if(activePage==='picks') loadPicks(); else picksLoaded=false; },350); });
+  var picksLoaded = false, picksGeneration = 0;
+  async function loadPicks() {
+    var generation = ++picksGeneration;
+    var container = document.querySelector('#picks');
+    var refreshButton = document.querySelector('#refresh-picks');
+    refreshButton.disabled = true;
+    container.textContent = 'Finding music…';
+    try {
+      var data = await api('/v1/picks?count=' + picksPerShelf());
+      if (generation !== picksGeneration) return;
+      container.replaceChildren();
+      var count = 0;
+      var pickArtJobs = [];
+      for (var shelf of data.shelves) {
+
+        var section = document.createElement('section'); section.className = 'shelf';
+        var heading = document.createElement('h3'); heading.textContent = shelf.title; section.appendChild(heading);
+        var grid = document.createElement('div'); grid.className = 'pick-grid'; var layout=picksLayout(); grid.style.gridTemplateColumns='repeat('+layout.columns+', minmax(0, 1fr))'; grid.style.setProperty('--pick-size',layout.size+'px'); section.appendChild(grid);
+        container.appendChild(section);
+        if (!shelf.songs.length) { var empty=document.createElement('p'); empty.className='empty'; empty.textContent=shelf.error || 'No picks yet. Find music to choose a track.'; grid.appendChild(empty); }
+        for (let song of shelf.songs.slice(0, picksPerShelf())) {
+          count++;
+          const card = document.createElement('button'); card.className = 'pick'; card.type = 'button';
+          card.setAttribute('aria-label', 'Queue ' + song.title + ' by ' + song.artist);
+          const cover = document.createElement('div'); cover.className = 'cover';
+          const placeholder = document.createElement('span'); placeholder.className = 'placeholder'; placeholder.textContent = '♫'; placeholder.setAttribute('aria-hidden','true');
+          const image = document.createElement('img'); image.alt = ''; image.hidden = true;
+          cover.append(placeholder, image);
+          const name = document.createElement('strong'); name.textContent = song.title;
+          const artistName = document.createElement('small'); artistName.textContent = song.artist;
+          card.append(cover, name, artistName); grid.appendChild(card);
+          pickArtJobs.push(() => artworkFor(song).then(src => setCover(image, src)).catch(() => {}));
+          card.addEventListener('click', async function () {
+            card.disabled = true;
+            try { await api('/v1/display/queue', {method:'POST', body:JSON.stringify({songId:song.id})}); await refresh(); message.textContent = 'Queued ' + song.title; }
+            catch (e) { message.textContent = e.message; }
+            finally { card.disabled = false; }
+          });
+        }
+      }
+
+      picksLoaded = true;
+      async function nextArt() { while (pickArtJobs.length && generation === picksGeneration) await pickArtJobs.shift()(); }
+      for (var worker=0;worker<3;worker++) nextArt();
+    } catch (e) { if(generation !== picksGeneration)return; container.textContent = 'Could not load picks. ' + e.message + ' Use Refresh picks to try again.'; }
+    finally { if(generation === picksGeneration) refreshButton.disabled = false; }
+  }
+  document.querySelector('#refresh-picks').addEventListener('click', loadPicks);
+  var activePage = 'home';
+  function navigate(page) {
+    activePage = page;
+    document.querySelectorAll('main > .panel').forEach(panel => { panel.hidden = panel.id !== page + '-panel'; });
+    document.querySelectorAll('nav button').forEach(button => {
+      if (button.dataset.page === page) button.setAttribute('aria-current','page'); else button.removeAttribute('aria-current');
+    });
+    if (page === 'picks' && !picksLoaded) loadPicks();
+  }
+  document.querySelectorAll('nav button').forEach(button => button.addEventListener('click', () => navigate(button.dataset.page)));
+  var touchStart = null;
+  document.querySelector('main').addEventListener('touchstart', event => { if (!event.target.closest('button,input,dialog')) touchStart = [event.touches[0].clientX,event.touches[0].clientY]; }, {passive:true});
+  document.querySelector('main').addEventListener('touchend', event => {
+    if (!touchStart) return;
+    var dx = event.changedTouches[0].clientX-touchStart[0], dy = event.changedTouches[0].clientY-touchStart[1]; touchStart=null;
+    if (Math.abs(dx)<70 || Math.abs(dx)<Math.abs(dy)*1.5) return;
+    var pages=['home','picks','search','queue']; navigate(pages[Math.max(0,Math.min(3,pages.indexOf(activePage)+(dx<0?1:-1)))]);
+  }, {passive:true});
+  var lastActivity = Date.now(), priorFocus = null;
+  var attract = document.querySelector('#attract');
+  function wake() {
+    lastActivity = Date.now();
+    if (!attract.hidden) {
+      attract.hidden = true;
+      document.querySelectorAll('header,main,nav').forEach(el => el.inert = false);
+      if (priorFocus && priorFocus.isConnected) priorFocus.focus();
+    }
+  }
+  document.addEventListener('pointerdown', wake);
+  document.addEventListener('keydown', wake);
+  attract.addEventListener('click', wake);
+  setInterval(function () {
+    if (Date.now()-lastActivity < 60000 || !attract.hidden || document.querySelector('dialog[open]') || activePage === 'search' && searchInput.value) return;
+    priorFocus = document.activeElement;
+    attract.hidden = false;
+    document.querySelectorAll('header,main,nav').forEach(el => el.inert = true);
+    attract.focus();
+  }, 1000);
+  document.addEventListener('fullscreenchange', function () { document.querySelector('#fullscreen').textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen'; });
 
   refresh();
   setInterval(refresh, 3000);

@@ -1,5 +1,8 @@
 package io.github.sneedster.harmonicast
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
@@ -258,9 +261,19 @@ class LocalPlexClient(
         return id.removePrefix(prefix).also { require(it.matches(Regex("\\d+"))) { "Invalid collection" } }
     }
 
-    suspend fun recentTracks(source: PersonalPlexSource): List<Song> = songs(source,
-        serverContainer(source.baseUrl, source.token,
-            "/library/sections/${source.libraryKey}/all?type=10&sort=addedAt:desc&X-Plex-Container-Size=100"))
+    suspend fun recentTracks(source: PersonalPlexSource): List<Song> {
+        // Use the album added-date index: sorting every track stalls large libraries.
+        val albums = metadataArray(serverContainer(source.baseUrl, source.token,
+            "/library/sections/${source.libraryKey}/all?type=9&sort=addedAt:desc&X-Plex-Container-Start=0&X-Plex-Container-Size=12"))
+            .mapNotNull { it.optString("ratingKey").takeIf { key -> key.matches(Regex("\\d+")) } }.take(12)
+        val tracks = mutableListOf<Song>()
+        for (key in albums) {
+            tracks += songs(source, serverContainer(source.baseUrl, source.token,
+                "/library/metadata/$key/children?X-Plex-Container-Start=0&X-Plex-Container-Size=100"))
+            if (tracks.size >= 100) break
+        }
+        return tracks.take(100)
+    }
 
     suspend fun searchPage(source: PersonalPlexSource, query: String, offset: Int, limit: Int, tolerant: Boolean = true): TrackSearchPage {
         require(offset >= 0 && limit > 0)
@@ -321,12 +334,45 @@ class LocalPlexClient(
     suspend fun track(source: PersonalPlexSource, id: String): Song? =
         metadata(source, id)?.let { mapSong(source, it) }
 
+    /** Album addedAt is indexed; sorting every track by its album's date can time out. */
+    suspend fun discoveryRecentTracks(source: PersonalPlexSource): List<Song> {
+        val albums = metadataArray(serverContainer(source.baseUrl, source.token,
+            "/library/sections/${source.libraryKey}/all?type=9&sort=addedAt:desc&X-Plex-Container-Start=0&X-Plex-Container-Size=48"))
+            .mapNotNull { it.optString("ratingKey").takeIf { key -> key.matches(Regex("\\d+")) } }.take(48)
+        val concurrency = Semaphore(4)
+        return kotlinx.coroutines.coroutineScope {
+            albums.map { key -> async { concurrency.withPermit {
+                songs(source, serverContainer(source.baseUrl, source.token,
+                    "/library/metadata/$key/children?X-Plex-Container-Start=0&X-Plex-Container-Size=1")).firstOrNull()
+            } } }.mapNotNull { it.await() }
+        }
+    }
+
+    /** Avoid Plex's full-library random sort for interactive room discovery. */
+    suspend fun discoverySample(source: PersonalPlexSource, limit: Int = 100): List<Song> {
+        val bounded = limit.coerceIn(1, 100)
+        val base = "/library/sections/${source.libraryKey}/all?type=10&sort=titleSort:asc"
+        val first = serverContainer(source.baseUrl, source.token, "$base&X-Plex-Container-Start=0&X-Plex-Container-Size=1")
+        val total = first.optInt("totalSize", first.optInt("size", 0))
+        if (total <= 0) return songs(source, first)
+        val pageSize = minOf(25, bounded, total)
+        val starts = if (total <= bounded) (0 until total step pageSize).toList() else {
+            (0 until (bounded + pageSize - 1) / pageSize).map { kotlin.random.Random.nextInt(0, total - pageSize + 1) }.distinct()
+        }
+        return kotlinx.coroutines.coroutineScope {
+            starts.map { offset -> async {
+                songs(source, serverContainer(source.baseUrl, source.token,
+                    "$base&X-Plex-Container-Start=$offset&X-Plex-Container-Size=$pageSize"))
+            } }.map { it.await() }.flatten().distinctBy(Song::id).take(bounded)
+        }
+    }
+
     suspend fun random(source: PersonalPlexSource, limit: Int = 20): List<Song> = songs(
         source,
         serverContainer(
             source.baseUrl,
             source.token,
-            "/library/sections/${source.libraryKey}/all?type=10&sort=random&limit=${limit.coerceIn(1, 100)}",
+            "/library/sections/${source.libraryKey}/all?type=10&sort=random&X-Plex-Container-Start=0&X-Plex-Container-Size=${limit.coerceIn(1, 100)}",
         ),
     )
 

@@ -195,3 +195,107 @@ Android still owns install consent. Long release notes scroll within the dialog
 while actions remain in its footer. Busy downloads disable the primary action
 and offer cancellation. Dismissing the dialog clears automatic installer launch.
 Existing MaterialTheme roles and tvFocusFeedback remain the visual owners.
+
+## MusicGrabber communication
+
+MusicGrabber is an optional Settings integration. Public marketing focuses on Plex
+playback, library browsing, music tuning, and listening rooms. Do not promote
+acquisition in feature lists, banners, search metadata, or screenshot galleries.
+Keep connection instructions in docs/MUSICGRABBER_SETUP.md, with a quiet link in
+the app guide. Preserve accurate privacy disclosures and technical documentation.
+
+
+## Browser display recovery
+
+RoomsScreen shows the selectable local /open URL directly under the hosted room.
+The existing display dialog owns the private entry code and QR invitation.
+The browser returns missing or rejected display capabilities to /open with inline
+re-entry guidance; transient network and source errors retain retry behavior.
+RoomCapability remains the authority for session validity; the advertised room
+name alone never authorizes a display.
+
+The host shows the short local guest address and four-letter room code on Rooms
+and in Invite guests. Root browser navigation and expired guest sessions lead to
+the shared entry form in guest mode. Guest code exchange grants only the existing
+guest capability; display entry keeps its independent private code and attempt
+limit. QR codes and shared full invitations remain optional shortcuts. The shared
+entry template owns validation, focus, loading, timeout, and error behavior for
+both modes; room name is visible text for guest entry, display code is masked.
+
+## Restored house jukebox and guest artwork
+
+The room display restores `src/components/KioskView.tsx` from the parent of
+`157fdcf`, at the user's request: amber #fbbf24 on ink #0a0a0b, charcoal
+#111113 surfaces, bold system sans typography, large square album art, four
+bottom destinations, swipe navigation and a 60-second idle attract screen.
+`display/index.html` owns this intentional kiosk variant; Android palettes remain
+unchanged. Tonight's picks restores Crowd favorites, Underplayed gems, Recently added,
+and Wild cards from the retired server. Each card queues its named track.
+
+The guest browser on phone and desktop keeps the app's Nocturne/Aurora/Ember
+palette and Georgia display headings, with prominent artwork, progress, and
+artwork-bearing search/queue rows. Native nearby guests already receive current
+art via NearbyRoomBluetooth; their existing app interface remains the owner.
+
+Canonical web owners: each bundled page's root CSS owns tokens and global
+scrollbars; semantic forms own explicit search with stale-result rejection and
+Clear; the existing polite message region owns action feedback; native dialog
+owns connected-source focus/modal behavior. Guest appearance uses the existing
+native select with platform-owned popup. Panels own kiosk scrolling; guest
+content retains document scrolling. Missing artwork uses a reserved square music
+placeholder. Attract mode restores focus on wake and never covers an open dialog
+or an in-progress search.
+
+GuestRoomRouter authorizes read-only `/v1/artwork` and `/v1/picks` for room
+capabilities. Artwork resolves an existing library track on the host, accepts only
+bounded JPEG/PNG/WebP bytes, and returns inline image data without Plex URLs or
+tokens. Existing guest requests/votes and display playback permissions remain
+separate. Browser caches are bounded and transient; no account identity is shared.
+
+
+### Album chronology, artwork and picks density
+
+Library search results group tracks by album, oldest year first, with unknown
+years last and stable track order within an album. Native album search uses the
+same chronology. Connected-source artist discographies are fetched in bounded
+batches, sorted before 25-album display pagination, and cached in memory so later
+pages continue the same chronology. Unknown dates sort last. Release tracks keep
+their original order.
+
+Connected-source album/recording entries carry a Cover Art Archive release
+identity. The web loads thumbnails through the host's room-authorized artwork
+route; no source credentials or arbitrary remote URLs reach the browser. Native
+catalog rows use the public Cover Art Archive thumbnail. Missing covers retain a
+reserved placeholder. See https://musicbrainz.org/doc/Cover_Art_Archive/API.
+
+Tonight's picks uses four equal quadrants of the available content area. The
+layout evaluates complete square-cover grids against each quadrant's width and
+height, preferring high space usage and fewer, larger covers. Artwork grows with
+the screen instead of staying at thumbnail size; a 420 CSS pixel ceiling and at
+most eight choices per quadrant keep it a curated display. Counts are an outcome
+of the fit, not a design target. Captions grow for room-distance reading. Narrow
+screens retain the four sections and fewer covers. Small libraries may have fewer
+choices. Sample ranking follows the original rating/play-count formulas; recent
+additions are host library tracks, and wild cards shuffle the sample. Artwork
+loads with bounded concurrency. Resize invalidates stale layouts.
+
+Colors are intentionally unchanged: the guest browser saves its own selected
+Nocturne/Aurora/Ember theme; it does not inherit the host phone's setting. The
+kiosk retains the original amber identity.
+
+### Library artist navigation and live Plex discovery
+
+The guest and kiosk pages share `room/library.js`, served as `/room-library.js`.
+An exact or unique library artist match opens year-ordered album cards. Selecting
+an album fetches its tracks; Back to albums restores the album list and focus.
+Changing/clearing search invalidates pending album and artwork requests. Only
+track rows offer Queue/Request. The host validates album identities against the
+selected Plex library and keeps authenticated artwork URLs private.
+
+Room discovery samples bounded pages in Plex's title index instead of issuing a
+full-library random sort. Recently added uses the album date index and one track
+per album, with four concurrent reads at most; the full-track added-date query
+was observed timing out on the live host. Categories report failures separately,
+so one unavailable source does not discard successful categories.
+
+Acquisition submissions allow three minutes for source validation and show in-progress feedback; uncertain responses direct listeners to request history. Acquisition recent-library checks use the Plex album date index and include all fetched tracks, avoiding the expensive global track-date sort.

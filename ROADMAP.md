@@ -55,3 +55,11 @@ playback sources and a general plugin installer remain outside scope.
 
 See [architecture](docs/STANDALONE_ARCHITECTURE.md), [design](docs/NOCTURNE_DESIGN.md)
 and [validation](docs/ANDROID_VALIDATION.md).
+
+## Documentation and marketing scope
+
+MusicGrabber remains an optional integration discovered in Settings. Public-facing
+feature lists and the website focus on Plex playback and listening together.
+Connection instructions live in the [integration setup guide](docs/MUSICGRABBER_SETUP.md);
+privacy disclosures, implementation plans, and validation records retain the
+detail needed to use and maintain the integration.

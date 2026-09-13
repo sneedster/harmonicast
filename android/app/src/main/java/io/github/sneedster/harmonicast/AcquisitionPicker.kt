@@ -6,7 +6,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.shape.RoundedCornerShape
+import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -188,6 +192,15 @@ internal data class CatalogLocation(val query: String, val mode: String = "searc
 @Composable internal fun AcquisitionCatalogRow(entry: CatalogEntry, busy: Boolean, choose: () -> Unit) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
+            catalogArtworkUrl(entry.artworkKey)?.let { url ->
+                Surface(Modifier.size(88.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("♫", style = MaterialTheme.typography.headlineLarge)
+                        AsyncImage(url, "Album cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
             Text(entry.title, style = MaterialTheme.typography.titleMedium)
             Text(listOf(entry.artist, entry.album, entry.year, entry.detail).filter { it.isNotBlank() }.joinToString(" · "))
             if (entry.inLibrary) Text("In your library", color = MaterialTheme.colorScheme.primary)

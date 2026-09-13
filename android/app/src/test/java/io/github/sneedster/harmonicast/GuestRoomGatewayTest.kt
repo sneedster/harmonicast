@@ -49,7 +49,66 @@ class GuestRoomGatewayTest {
         assertEquals(0, fixture.network.submissions.get())
     }
 
+    @Test fun roomArtworkIsAuthorizedAndNeverExposesPlexCredentials() = runBlocking {
+        val core = FakeCore()
+        val room = RoomCapability.create(nowMillis = 1000)
+        var loads = 0
+        val router = GuestRoomRouter(core, room, displayArtwork = { song ->
+            assertEquals(core.track.id, song.id)
+            loads++
+            "data:image/png;base64,cGl4ZWw="
+        }, nowMillis = { 2000 })
+        assertEquals(401, router.route(GuestApiRequest("GET", "/v1/artwork", "wrong", mapOf("id" to core.track.id))).status)
+        assertEquals(0, loads)
+        for (bearer in listOf(room.bearer, room.displayBearer)) {
+            val response = router.route(GuestApiRequest("GET", "/v1/artwork", bearer, mapOf("id" to core.track.id)))
+            assertEquals(200, response.status)
+            assertTrue(response.body.contains("data:image/png"))
+            assertFalse(response.body.contains("owner-secret"))
+            assertEquals(200, router.route(GuestApiRequest("GET", "/v1/picks", bearer)).status)
+        }
+        assertEquals(404, router.route(GuestApiRequest("GET", "/v1/artwork", room.bearer, mapOf("id" to "https://attacker.example"))).status)
+        assertEquals(2, loads)
+        val blocked = GuestRoomRouter(core, room, accessAllowed = { false }, displayArtwork = { error("Must not load") }, nowMillis = { 2000 })
+        assertEquals(403, blocked.route(GuestApiRequest("GET", "/v1/artwork", room.bearer, mapOf("id" to core.track.id))).status)
+    }
+
+    @Test fun picksRestoreFourEqualCategoriesAndHonorBoundedDensity() = runBlocking {
+        val core = FakeCore()
+        val room = RoomCapability.create(nowMillis = 1000)
+        val router = GuestRoomRouter(core, room, nowMillis = { 2000 })
+        val response = router.route(GuestApiRequest("GET", "/v1/picks", room.displayBearer, mapOf("count" to "12")))
+        assertEquals(200, response.status)
+        val shelves = JSONObject(response.body).getJSONArray("shelves")
+        assertEquals(listOf("Crowd favorites", "Underplayed gems", "Recently added", "Wild cards"),
+            (0 until shelves.length()).map { shelves.getJSONObject(it).getString("title") })
+        for (i in 0 until shelves.length()) assertEquals(12, shelves.getJSONObject(i).getJSONArray("songs").length())
+        assertFalse(response.body.contains("owner-secret"))
+        val capped = JSONObject(router.route(GuestApiRequest("GET", "/v1/picks", room.displayBearer, mapOf("count" to "9999"))).body).getJSONArray("shelves")
+        assertEquals(48, capped.getJSONObject(0).getJSONArray("songs").length())
+    }
+
+    @Test fun libraryArtistSearchReturnsAlbumsThenTracksWithoutLeakingArtworkUrls() = runBlocking {
+        val core = FakeCore().apply { albumBrowsing = true }
+        val room = RoomCapability.create(nowMillis = 1000)
+        val router = GuestRoomRouter(core, room, nowMillis = { 2000 })
+        for (bearer in listOf(room.bearer, room.displayBearer)) {
+            val result = router.route(GuestApiRequest("GET", "/v1/library/search", bearer, mapOf("q" to "Artist")))
+            assertEquals(200, result.status)
+            val data = JSONObject(result.body)
+            assertEquals("albums", data.getString("kind"))
+            val albums = data.getJSONArray("items")
+            assertEquals("Early album", albums.getJSONObject(0).getString("title"))
+            assertEquals("Late album", albums.getJSONObject(1).getString("title"))
+            assertFalse(result.body.contains("owner-secret"))
+            assertFalse(result.body.contains("Safe Song"))
+            val tracks = router.route(GuestApiRequest("GET", "/v1/library/album", bearer, mapOf("id" to "early")))
+            assertEquals(core.track.title, JSONArray(tracks.body).getJSONObject(0).getString("title"))
+        }
+    }
+
     private class FakeCore : HarmonicastCore {
+        var albumBrowsing = false
         val track = Song(
             id = "plex:server:42",
             title = "Safe Song",
@@ -61,6 +120,15 @@ class GuestRoomGatewayTest {
         val votes = mutableListOf<Boolean>()
         override fun observe(onEvent: (CoreEvent) -> Unit, onDisconnected: () -> Unit) = CoreSubscription { }
         override val library = object : MusicLibrary {
+            override suspend fun browse(kind: BrowseKind, order: BrowseOrder, offset: Int, parent: String?, query: String): LibraryPage {
+                if (!albumBrowsing) return LibraryPage(emptyList(), null)
+                return LibraryPage(if (kind == BrowseKind.ARTISTS) listOf(LibraryEntry("artist", "Artist", "", "https://example/?owner-secret", kind))
+                    else listOf(LibraryEntry("late", "Late album", "Artist", "https://example/?owner-secret", kind, 2001), LibraryEntry("early", "Early album", "Artist", "", kind, 1986)), null)
+            }
+            override suspend fun albumTracks(id: String) = listOf(track)
+
+            override suspend fun randomTracks(limit: Int) = (0 until limit).map { track.copy(id = "sample:$it", rating = 8.0, viewCount = it) }
+            override suspend fun recentTracks() = (0 until 100).map { track.copy(id = "recent:$it") }
             override suspend fun search(query: String) = listOf(track)
             override suspend fun track(id: String) = track.takeIf { it.id == id }
             override suspend fun artist(query: String) = null

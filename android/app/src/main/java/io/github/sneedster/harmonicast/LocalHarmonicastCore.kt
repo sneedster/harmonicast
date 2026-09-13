@@ -32,6 +32,8 @@ class LocalHarmonicastCore(
     }
 
     override val library: MusicLibrary = object : MusicLibrary {
+        override suspend fun randomTracks(limit: Int) = plex.discoverySample(source, limit)
+        override suspend fun recentTracks() = plex.discoveryRecentTracks(source)
         override suspend fun letterIndex(kind: BrowseKind) = plex.letterIndex(source, kind)
         override suspend fun browse(kind: BrowseKind, order: BrowseOrder, offset: Int, parent: String?, query: String) = plex.browse(source, kind, order, offset, parent, query)
         override suspend fun albumTracks(id: String) = plex.albumTracks(source, id)

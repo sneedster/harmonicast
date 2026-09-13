@@ -8,11 +8,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal data class CatalogEntry(val id: String, val title: String, val artist: String = "", val kind: String = "recording",
-    val album: String = "", val year: String = "", val durationMs: Int = 0, val detail: String = "", val inLibrary: Boolean = false) {
+    val album: String = "", val year: String = "", val durationMs: Int = 0, val detail: String = "", val inLibrary: Boolean = false, val artworkKey: String = "") {
     fun json() = JSONObject().put("id", id).put("title", title).put("artist", artist).put("kind", kind)
-        .put("album", album).put("year", year).put("durationMs", durationMs).put("detail", detail).put("inLibrary", inLibrary)
+        .put("album", album).put("year", year).put("durationMs", durationMs).put("detail", detail).put("inLibrary", inLibrary).put("artworkKey", artworkKey)
     companion object { fun decode(j: JSONObject) = CatalogEntry(j.getString("id"), j.getString("title"), j.optString("artist"),
-        j.optString("kind", "recording"), j.optString("album"), j.optString("year"), j.optInt("durationMs"), j.optString("detail"), j.optBoolean("inLibrary")) }
+        j.optString("kind", "recording"), j.optString("album"), j.optString("year"), j.optInt("durationMs"), j.optString("detail"), j.optBoolean("inLibrary"), j.optString("artworkKey")) }
 }
 internal data class CatalogPage(val entries: List<CatalogEntry>, val more: Boolean = false, val offset: Int = 0) {
     fun json() = JSONObject().put("items", JSONArray().apply { entries.forEach { put(it.json()) } }).put("more", more).put("offset", offset)
@@ -26,6 +26,7 @@ internal class MusicBrainzCatalog(private val http: AcquisitionHttp = Acquisitio
     private var lastRequest = 0L
     private val recordings = linkedMapOf<String, CatalogEntry>()
     private val pages = linkedMapOf<String, CatalogPage>()
+    private val discographies = linkedMapOf<String, List<CatalogEntry>>()
     private suspend fun get(path: String): JSONObject = mutex.withLock {
         var last: Exception? = null
         repeat(3) { attempt ->
@@ -56,7 +57,7 @@ internal class MusicBrainzCatalog(private val http: AcquisitionHttp = Acquisitio
             ?: (0 until releases.length()).map { releases.getJSONObject(it) }.firstOrNull(::officialRelease)
             ?: return null
         val entry = CatalogEntry(id, title, artist, album = release?.optString("title").orEmpty(),
-            year = release?.optString("date").orEmpty().take(4), durationMs = j.optInt("length"), detail = j.optString("disambiguation"))
+            year = release?.optString("date").orEmpty().take(4), durationMs = j.optInt("length"), detail = j.optString("disambiguation"), artworkKey = release.optString("id").takeIf { it.matches(Regex("[0-9a-fA-F-]{36}")) }?.let { "release/$it" }.orEmpty())
         synchronized(recordings) { recordings[id] = entry; while (recordings.size > 500) recordings.remove(recordings.keys.first()) }
         return entry
     }
@@ -78,7 +79,7 @@ internal class MusicBrainzCatalog(private val http: AcquisitionHttp = Acquisitio
                 val data = get("recording/?query=${encode("($literal) AND $typeQuery")}&fmt=json&limit=5&offset=$offset")
                 val found = data.optJSONArray("recordings") ?: JSONArray()
                 val entries = (0 until found.length()).mapNotNull { recordingEntry(found.getJSONObject(it)) }
-                if (entries.isEmpty() && offset == 0 && data.optInt("count") == 0) browse(query, "artist") else CatalogPage(entries, offset + found.length() < data.optInt("count", found.length()), offset)
+                if (entries.isEmpty() && offset == 0 && data.optInt("count") == 0) browse(query, "artist") else CatalogPage(entries.sortedWith(compareBy<CatalogEntry> { it.year.toIntOrNull()?.takeIf { y -> y > 0 } ?: Int.MAX_VALUE }.thenBy { it.album.lowercase() }), offset + found.length() < data.optInt("count", found.length()), offset)
             }
             "artist" -> {
                 val found = get("artist/?query=${encode(query)}&fmt=json&limit=5").optJSONArray("artists") ?: JSONArray()
@@ -88,12 +89,32 @@ internal class MusicBrainzCatalog(private val http: AcquisitionHttp = Acquisitio
             }
             "albums" -> {
                 uuid(parent)
-                val data = get("release-group/?query=${encode("arid:$parent AND $typeQuery")}&fmt=json&limit=25&offset=$offset")
-                val found = data.optJSONArray("release-groups") ?: JSONArray()
-                CatalogPage((0 until found.length()).mapNotNull { val j = found.getJSONObject(it)
-                    if (j.optString("primary-type").lowercase() !in allowedTypes) return@mapNotNull null
-                    CatalogEntry(j.getString("id"), j.getString("title"), query, "album", year = j.optString("first-release-date").take(4), detail = j.optString("primary-type"))
-                }, offset + found.length() < data.optInt("count", offset + found.length()), offset)
+                // Sort the whole artist discography before slicing pages, not each relevance page.
+                val cacheKey = "$parent|$query"
+                val all = synchronized(discographies) { discographies[cacheKey] } ?: run {
+                    val entries = mutableListOf<CatalogEntry>()
+                    var start = 0
+                    do {
+                        val data = get("release-group/?query=${encode("arid:$parent AND $typeQuery")}&fmt=json&limit=100&offset=$start")
+                        val found = data.optJSONArray("release-groups") ?: JSONArray()
+                        for (i in 0 until found.length()) {
+                            val j = found.getJSONObject(i)
+                            if (j.optString("primary-type").lowercase() !in allowedTypes) continue
+                            entries += CatalogEntry(j.getString("id"), j.getString("title"), query, "album",
+                                year = j.optString("first-release-date").take(4), detail = j.optString("primary-type"),
+                                artworkKey = "release-group/${j.getString("id")}")
+                        }
+                        start += found.length()
+                        val total = data.optInt("count", start)
+                        require(total <= 10000) { "This discography is too large. Search for a specific album." }
+                        if (found.length() == 0 || start >= total) break
+                    } while (true)
+                    entries.distinctBy { it.id }.sortedWith(compareBy<CatalogEntry> { it.year.toIntOrNull()?.takeIf { y -> y > 0 } ?: Int.MAX_VALUE }
+                        .thenBy { it.title.lowercase() }).also { sorted ->
+                        synchronized(discographies) { discographies[cacheKey] = sorted; while (discographies.size > 10) discographies.remove(discographies.keys.first()) }
+                    }
+                }
+                CatalogPage(all.drop(offset).take(25), offset + 25 < all.size, offset)
             }
             "tracks" -> {
                 uuid(parent)
@@ -116,3 +137,8 @@ internal class MusicBrainzCatalog(private val http: AcquisitionHttp = Acquisitio
         return page
     }
 }
+
+/** Only public Cover Art Archive release identities are accepted, never arbitrary URLs. */
+internal fun catalogArtworkUrl(key: String): String? = key.takeIf {
+    Regex("(release|release-group)/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}").matches(it)
+}?.let { "https://coverartarchive.org/$it/front-250" }

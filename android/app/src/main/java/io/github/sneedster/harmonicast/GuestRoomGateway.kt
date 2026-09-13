@@ -33,6 +33,7 @@ data class RoomShareState(
     val expiresAtMillis: Long = 0,
     val error: String = "",
     val checkingAccess: Boolean = false,
+    val guestEntryUrl: String = "",
     val displayEntryUrl: String = "",
     val displayEntryCode: String = "",
 )
@@ -119,6 +120,16 @@ data class GuestApiResponse(
 )
 
 object GuestWebPage {
+    fun renderEntry(template: String, guest: Boolean): String = template
+        .replace("__ENTRY_KIND__", if (guest) "guest" else "display")
+        .replace("__ENTRY_TITLE__", if (guest) "Join room" else "Open room display")
+        .replace("__ENTRY_LOCATION__", if (guest) "Rooms → Invite guests" else "Rooms → Open room display")
+        .replace("__ENTRY_DESCRIPTION__", if (guest) "four-letter room code" else "four-digit display code")
+        .replace("__ENTRY_LABEL__", if (guest) "Room code" else "Display code")
+        .replace("__ENTRY_TYPE__", if (guest) "text" else "password")
+        .replace("__ENTRY_INPUTMODE__", if (guest) "text" else "numeric")
+        .replace("__ENTRY_BUTTON__", if (guest) "Join room" else "Open display")
+
     fun render(template: String, roomCode: String) = template
         .replace("__ROOM_CODE__", escapeHtml(roomCode))
 
@@ -141,8 +152,25 @@ class RoomCapability private constructor(
     private var lastUsedAtMillis: Long,
 ) {
     @Volatile private var revoked = false
+    private var guestEntryAttempts = 0
+    private var guestEntryWindowAtMillis = lastUsedAtMillis
     private var entryAttempts = 0
     private var entryWindowAtMillis = lastUsedAtMillis
+
+    /** The advertised room code grants guest permissions only, never display controls. */
+    @Synchronized fun exchangeGuestCode(candidate: String, nowMillis: Long): GuestApiResponse {
+        fun error(status: Int, message: String) = GuestApiResponse(status, JSONObject().put("error", message).toString())
+        if (!activeAt(nowMillis)) return error(401, "Room closed. Open a new room on the host.")
+        if (nowMillis - guestEntryWindowAtMillis >= 60_000) {
+            guestEntryAttempts = 0
+            guestEntryWindowAtMillis = nowMillis
+        }
+        if (guestEntryAttempts >= 5) return error(429, "Too many attempts. Wait one minute and try again.")
+        guestEntryAttempts++
+        val normalized = candidate.trim().replace(" ", "").replace("-", "").uppercase(java.util.Locale.ROOT)
+        if (!authorize(normalized, roomCode, nowMillis)) return error(401, "Code does not match. Check the four-letter room code on the host.")
+        return GuestApiResponse(200, JSONObject().put("capability", bearer).toString())
+    }
 
     /** Short codes are separate from the publicly advertised room name. */
     @Synchronized fun exchangeDisplayCode(candidate: String, nowMillis: Long): GuestApiResponse {
@@ -221,6 +249,8 @@ class GuestRoomRouter internal constructor(
     private val displaySkip: () -> Unit = {},
     private val acquisition: AcquisitionCoordinator? = null,
     private val accessAllowed: () -> Boolean = { true },
+    private val displayArtwork: suspend (Song) -> String? = { null },
+    private val catalogArtwork: suspend (String) -> String? = { null },
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
     private val votes = mutableSetOf<Pair<String, String>>()
@@ -246,6 +276,13 @@ class GuestRoomRouter internal constructor(
                     .put("expiresAt", capability.expiresAtMillis)
                     .put("acquisitionAllowed", acquisition?.roomAllowed?.value == true)
                     .put("acquisitionAvailable", acquisition?.checkAccess() == true))
+                "GET" to "/v1/acquisition/artwork" -> {
+                    val service = acquisition ?: return json(403, JSONObject().put("error", "Acquisition unavailable"))
+                    if (!service.roomAllowed.value || !service.checkAccess()) return json(403, JSONObject().put("error", "Acquisition is disabled or unavailable"))
+                    val key = request.query["key"].orEmpty()
+                    require(catalogArtworkUrl(key) != null) { "Invalid artwork selection" }
+                    json(200, JSONObject().put("image", catalogArtwork(key) ?: JSONObject.NULL))
+                }
                 "GET" to "/v1/acquisition/catalog" -> {
                     val service = acquisition ?: return json(403, JSONObject().put("error", "Acquisition unavailable"))
                     if (!service.roomAllowed.value || !service.checkAccess()) return json(403, JSONObject().put("error", "Acquisition is disabled or unavailable"))
@@ -272,6 +309,33 @@ class GuestRoomRouter internal constructor(
                 "GET" to "/v1/acquisition/requests" -> json(200, JSONObject().put("items", JSONArray().apply {
                     acquisition?.visible(participant(request), acquisition.roomId.value)?.forEach { put(it.json(true)) }
                 }))
+                "GET" to "/v1/artwork" -> {
+                    val song = (if (!request.query["album"].isNullOrBlank()) core.library.albumTracks(request.query.getValue("album")).firstOrNull()
+                        else core.library.track(request.query["id"].orEmpty()))
+                        ?: return json(404, JSONObject().put("error", "Track was not found"))
+                    json(200, JSONObject().put("image", displayArtwork(song) ?: JSONObject.NULL))
+                }
+                "GET" to "/v1/picks" -> {
+                    val count = request.query["count"]?.toIntOrNull()?.coerceIn(2, 48) ?: 12
+                    var sampleError: String? = null
+                    var recentError: String? = null
+                    val sample = try { core.library.randomTracks(100).distinctBy(Song::id) }
+                        catch (e: Exception) { sampleError = "These picks could not be loaded. Refresh picks to retry."; emptyList() }
+                    val recent = try { core.library.recentTracks().distinctBy(Song::id) }
+                        catch (e: Exception) { recentError = "Recent additions could not be loaded. Refresh picks to retry."; emptyList() }
+                    fun score(song: Song, underplayed: Boolean) = (song.rating ?: 5.0) * 3 +
+                        (if (underplayed) -1 else 1) * kotlin.math.ln(1.0 + song.viewCount.coerceAtLeast(0))
+                    val shelves = JSONArray()
+                    for ((title, songs) in listOf(
+                        "Crowd favorites" to sample.sortedByDescending { score(it, false) },
+                        "Underplayed gems" to sample.sortedByDescending { score(it, true) },
+                        "Recently added" to recent,
+                        "Wild cards" to sample.shuffled(),
+                    )) shelves.put(JSONObject().put("title", title)
+                        .put("error", (if (title == "Recently added") recentError else sampleError) ?: JSONObject.NULL)
+                        .put("songs", JSONArray().apply { songs.take(count).forEach { put(guestSong(it)) } }))
+                    json(200, JSONObject().put("shelves", shelves))
+                }
                 "GET" to "/v1/now-playing" -> {
                     val state = core.playback.snapshot()
                     json(200, JSONObject().put("song", state.nowPlaying.song?.let(::guestSong) ?: JSONObject.NULL)
@@ -279,10 +343,36 @@ class GuestRoomRouter internal constructor(
                         .put("position", state.positionSeconds))
                 }
                 "GET" to "/v1/queue" -> json(200, JSONArray().apply { core.queue.songs().forEach { put(guestSong(it)) } })
+                "GET" to "/v1/library/search" -> {
+                    val query = request.query["q"].orEmpty().trim()
+                    require(query.isNotBlank() && query.length <= 200) { "Enter a song, album, or artist" }
+                    val artists = core.library.browse(BrowseKind.ARTISTS, BrowseOrder.TITLE, query = query).entries
+                    val exact = artists.firstOrNull { it.title.trim().equals(query, true) } ?: artists.singleOrNull()
+                    if (exact != null) {
+                        val albums = mutableListOf<LibraryEntry>()
+                        var offset = 0
+                        do {
+                            val page = core.library.browse(BrowseKind.ALBUMS, BrowseOrder.TITLE, offset, exact.id)
+                            albums += page.entries
+                            val next = page.nextOffset ?: break
+                            check(next > offset && next <= 10000) { "Album listing is unavailable" }
+                            offset = next
+                        } while (true)
+                        val sorted = albums.distinctBy { it.id }.sortedWith(compareBy<LibraryEntry> { it.year ?: Int.MAX_VALUE }.thenBy { it.title.lowercase() })
+                        json(200, JSONObject().put("kind", "albums").put("artist", exact.title).put("items", JSONArray().apply {
+                            sorted.forEach { put(JSONObject().put("id", it.id).put("title", it.title).put("artist", exact.title).put("year", it.year ?: JSONObject.NULL)) }
+                        }))
+                    } else json(200, JSONObject().put("kind", "tracks").put("items", JSONArray().apply {
+                        core.library.search(query).sortedWith(compareBy<Song> { it.year ?: Int.MAX_VALUE }.thenBy { it.album.lowercase() }).forEach { put(guestSong(it)) }
+                    }))
+                }
+                "GET" to "/v1/library/album" -> json(200, JSONArray().apply {
+                    core.library.albumTracks(request.query["id"].orEmpty()).forEach { put(guestSong(it)) }
+                })
                 "GET" to "/v1/search" -> {
                     val query = request.query["q"].orEmpty().trim()
                     if (query.isBlank()) json(400, JSONObject().put("error", "Search query is required"))
-                    else json(200, JSONArray().apply { core.library.search(query).forEach { put(guestSong(it)) } })
+                    else json(200, JSONArray().apply { core.library.search(query).sortedWith(compareBy<Song> { it.year?.takeIf { year -> year > 0 } ?: Int.MAX_VALUE }.thenBy { it.album.lowercase() }).forEach { put(guestSong(it)) } })
                 }
                 "POST" to "/v1/display/queue" -> {
                     val id = JSONObject(request.body.ifBlank { "{}" }).optString("songId")
@@ -339,7 +429,10 @@ class GuestRoomRouter internal constructor(
         } catch (e: IllegalArgumentException) {
             json(400, JSONObject().put("error", safeAcquisitionError(e)))
         } catch (e: Exception) {
-            json(502, JSONObject().put("error", "Guest operation failed"))
+            // Do not log exception messages or URLs: Plex requests may contain credentials.
+            runCatching { android.util.Log.w("HarmonicastRoom", "${request.method} ${request.path}: ${e.javaClass.simpleName}" +
+                ((e as? PlexRequestFailure)?.let { " status=${it.status}" } ?: "")) }
+            json(502, JSONObject().put("error", if (request.path == "/v1/picks") "Could not read library picks. Check the Plex connection and retry." else "Guest operation failed"))
         }
         return if (accessAllowed()) response
         else json(403, JSONObject().put("error", "Room source is no longer available"))
@@ -362,14 +455,19 @@ class GuestRoomRouter internal constructor(
     private companion object {
         const val MAX_REQUESTS_PER_PARTICIPANT = 5
         val DISPLAY_OPERATIONS = setOf(
+            "GET" to "/v1/artwork",
+            "GET" to "/v1/picks",
             "GET" to "/v1/status",
             "GET" to "/v1/acquisition/catalog",
+            "GET" to "/v1/acquisition/artwork",
             "GET" to "/v1/acquisition/entry",
             "GET" to "/v1/acquisition/requests",
             "POST" to "/v1/acquisition/requests",
             "GET" to "/v1/now-playing",
             "GET" to "/v1/queue",
             "GET" to "/v1/search",
+            "GET" to "/v1/library/search",
+            "GET" to "/v1/library/album",
             "POST" to "/v1/display/queue",
             "POST" to "/v1/display/player/toggle",
             "POST" to "/v1/display/player/skip",
@@ -388,6 +486,7 @@ class GuestRoomGateway(
     private val accessAllowed: () -> Boolean = { true },
 ) {
     private val acquisition = AcquisitionRuntime.get(context)
+    private val libraryScript = context.assets.open("room/library.js").bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
     private val guestPageTemplate = context.assets.open("guest/index.html")
         .bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
     private val displayPageTemplate = context.assets.open("display/index.html")
@@ -418,7 +517,9 @@ class GuestRoomGateway(
         }
         capability = room
         acquisition.roomId.value = "${room.roomCode}:${room.expiresAtMillis}"
-        router = GuestRoomRouter(core, room, displayToggle = displayToggle, displaySkip = displaySkip, acquisition = acquisition, accessAllowed = accessAllowed)
+        router = GuestRoomRouter(core, room, displayToggle = displayToggle, displaySkip = displaySkip, acquisition = acquisition, accessAllowed = accessAllowed, displayArtwork = ::loadDisplayArtwork, catalogArtwork = { key ->
+            catalogArtworkUrl(key)?.let { loadRoomImage(it, catalog = true) }
+        })
         server = socket
         running = true
         thread(name = "harmonicast-room", isDaemon = true) {
@@ -479,6 +580,7 @@ class GuestRoomGateway(
             roomCode = room.roomCode,
             joinUrl = browserJoin,
             displayUrl = displayJoin,
+            guestEntryUrl = base,
             displayEntryUrl = "$base/open",
             displayEntryCode = room.displayEntryCode,
             appJoinUrl = appJoin,
@@ -511,9 +613,13 @@ class GuestRoomGateway(
             }
         }.concatToString()
         val uri = URI(first[1])
-        if (first[0] == "GET" && uri.path in setOf("", "/", "/join", "/display", "/open")) {
+        if (first[0] == "GET" && uri.path == "/room-library.js") {
+            writeResponse(client, GuestApiResponse(200, libraryScript, "application/javascript; charset=utf-8"))
+            return
+        }
+        if (first[0] == "GET" && uri.path in setOf("", "/", "/join", "/display", "/open", "/enter")) {
             val template = when (uri.path) {
-                "/open" -> displayEntryTemplate
+                "/open", "/enter" -> GuestWebPage.renderEntry(displayEntryTemplate, guest = uri.path == "/enter")
                 "/display" -> displayPageTemplate
                 else -> guestPageTemplate
             }
@@ -527,11 +633,13 @@ class GuestRoomGateway(
             )
             return
         }
-        if (first[0] == "POST" && uri.path == "/v1/display/open") {
+        if (first[0] == "POST" && uri.path in setOf("/v1/display/open", "/v1/guest/open")) {
             val response = when {
                 !accessAllowed() -> GuestApiResponse(403, "{\"error\":\"Room source is no longer available\"}")
-                else -> capability?.exchangeDisplayCode(body.take(64), System.currentTimeMillis())
-                    ?: GuestApiResponse(401, "{\"error\":\"Room closed\"}")
+                else -> capability?.let { room ->
+                    if (uri.path == "/v1/guest/open") room.exchangeGuestCode(body.take(64), System.currentTimeMillis())
+                    else room.exchangeDisplayCode(body.take(64), System.currentTimeMillis())
+                } ?: GuestApiResponse(401, "{\"error\":\"Room closed\"}")
             }
             writeResponse(client, response)
             return
@@ -551,11 +659,52 @@ class GuestRoomGateway(
         writeResponse(client, response)
     }
 
+    // Resolve artwork exclusively from a host-owned library track, never a browser URL.
+    private val artworkClient = okhttp3.OkHttpClient.Builder()
+        .callTimeout(8, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
+    private suspend fun loadDisplayArtwork(song: Song): String? {
+        val url = core.library.artworkUrl(song) ?: return null
+        return loadRoomImage(url)
+    }
+    private suspend fun loadRoomImage(url: String, catalog: Boolean = false, redirects: Int = 0): String? {
+        if (redirects > 5) return null
+        if (catalog) {
+            val uri = URI(url)
+            val host = uri.host.orEmpty().lowercase()
+            if (uri.scheme != "https" || !(host == "coverartarchive.org" || host == "archive.org" || host.endsWith(".archive.org"))) return null
+        }
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            artworkClient.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { response ->
+                if (catalog && response.code in listOf(301, 302, 303, 307, 308)) {
+                    val location = response.header("Location") ?: return@use null
+                    val destination = URI(url).resolve(location).toString().replaceFirst("http://", "https://")
+                    response.close()
+                    return@use loadRoomImage(destination, true, redirects + 1)
+                }
+                val body = response.body ?: return@use null
+                val type = body.contentType()?.let { "${it.type}/${it.subtype}" }
+                if (!response.isSuccessful || type !in setOf("image/jpeg", "image/png", "image/webp")) return@use null
+                val bytes = body.byteStream().use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (output.size() <= 2_000_000) {
+                        val count = input.read(buffer, 0, minOf(buffer.size, 2_000_001 - output.size()))
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                }
+                if (bytes.size > 2_000_000) return@use null
+                "data:$type;base64," + Base64.getEncoder().encodeToString(bytes)
+            }
+        }
+    }
+
     private fun writeResponse(client: java.net.Socket, response: GuestApiResponse) {
         val bytes = response.body.toByteArray(StandardCharsets.UTF_8)
         val reason = when (response.status) { 200 -> "OK"; 202 -> "Accepted"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 404 -> "Not Found"; 409 -> "Conflict"; 429 -> "Too Many Requests"; else -> "Bad Gateway" }
         client.getOutputStream().bufferedWriter(StandardCharsets.UTF_8).use { out ->
-            out.write("HTTP/1.1 ${response.status} $reason\r\nContent-Type: ${response.contentType}\r\nContent-Length: ${bytes.size}\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'none'\r\nConnection: close\r\n\r\n")
+            out.write("HTTP/1.1 ${response.status} $reason\r\nContent-Type: ${response.contentType}\r\nContent-Length: ${bytes.size}\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:\r\nConnection: close\r\n\r\n")
             out.write(response.body)
         }
     }
