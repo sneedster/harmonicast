@@ -63,39 +63,52 @@ internal fun validateUpdateIdentity(packageName: String, expectedPackage: String
     check(installedSigners.isNotEmpty() && signers == installedSigners) { "APK signing certificate does not match this installation." }
 }
 
-class AppUpdateViewModel(app: Application) : AndroidViewModel(app) {
+private suspend fun fetchLatestAppRelease(): AppRelease? = withContext(Dispatchers.IO) {
+    val client = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
+    client.newCall(Request.Builder().url("https://api.github.com/repos/sneedster/harmonicast/releases/latest")
+        .header("Accept", "application/vnd.github+json").header("User-Agent", "Harmonicast/${BuildConfig.VERSION_NAME}").build()).execute().use {
+        if (it.code == 403 || it.code == 429) error("GitHub check limit reached. Try again later.")
+        check(it.isSuccessful) { "Could not check GitHub (${it.code})." }
+        parseAppRelease(it.body?.string() ?: error("Empty GitHub response."), BuildConfig.VERSION_NAME)
+    }
+}
+
+class AppUpdateViewModel internal constructor(
+    app: Application,
+    private val fetchLatest: suspend () -> AppRelease?,
+) : AndroidViewModel(app) {
+    constructor(app: Application) : this(app, ::fetchLatestAppRelease)
     private val prefs = app.getSharedPreferences("updates", 0)
     private val http = OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
         .callTimeout(5, TimeUnit.MINUTES).followSslRedirects(false).build()
-    var automatic by mutableStateOf(prefs.getBoolean("automatic", false)); private set
+    var automatic by mutableStateOf(prefs.getBoolean("automatic", true)); private set
     internal var release by mutableStateOf<AppRelease?>(null); private set
     var message by mutableStateOf(""); private set
     var busy by mutableStateOf(false); private set
     var progress by mutableFloatStateOf(0f); private set
     var downloaded by mutableStateOf(false); private set
+    internal var installWhenReady by mutableStateOf(false); private set
     var showPrompt by mutableStateOf(false)
     private var job: Job? = null
     private val apk get() = File(getApplication<Application>().cacheDir, "updates/update.apk")
     init {
         apk.parentFile?.mkdirs()
         apk.delete()
-        if (automatic && System.currentTimeMillis() - prefs.getLong("lastCheck", 0) > 24 * 60 * 60 * 1000L) check()
+        if (automatic) check()
     }
-    fun updateAutomatic(value: Boolean) { automatic = value; prefs.edit().putBoolean("automatic", value).apply() }
+    fun updateAutomatic(value: Boolean) {
+        automatic = value; prefs.edit().putBoolean("automatic", value).apply()
+        if (value) check()
+    }
+    fun dismissPrompt() { showPrompt = false; installWhenReady = false }
+    fun consumeInstallRequest() { installWhenReady = false }
     fun check() {
         if (busy) return
         busy = true; message = "Checking GitHub…"
         prefs.edit().putLong("lastCheck", System.currentTimeMillis()).apply()
         job = viewModelScope.launch {
             try {
-                val found = withContext(Dispatchers.IO) {
-                    http.newCall(Request.Builder().url("https://api.github.com/repos/sneedster/harmonicast/releases/latest")
-                        .header("Accept", "application/vnd.github+json").header("User-Agent", "Harmonicast/${BuildConfig.VERSION_NAME}").build()).execute().use {
-                        if (it.code == 403 || it.code == 429) error("GitHub check limit reached. Try again later.")
-                        check(it.isSuccessful) { "Could not check GitHub (${it.code})." }
-                        parseAppRelease(it.body?.string() ?: error("Empty GitHub response."), BuildConfig.VERSION_NAME)
-                    }
-                }
+                val found = fetchLatest()
                 apk.delete(); downloaded = false; release = found
                 prefs.edit().putLong("lastCheck", System.currentTimeMillis()).apply()
                 message = if (found == null) "You're up to date." else "Version ${found.version} is available."
@@ -105,9 +118,10 @@ class AppUpdateViewModel(app: Application) : AndroidViewModel(app) {
             finally { busy = false }
         }
     }
-    fun download() {
+    fun download(installAfterDownload: Boolean = false) {
         val target = release ?: return
         if (busy) return
+        installWhenReady = installAfterDownload
         busy = true; downloaded = false; progress = 0f; message = "Downloading update…"
         job = viewModelScope.launch {
             try {
@@ -155,7 +169,7 @@ class AppUpdateViewModel(app: Application) : AndroidViewModel(app) {
             PackageInfoCompat.getLongVersionCode(candidate), PackageInfoCompat.getLongVersionCode(installed),
             signatures(candidate), signatures(installed))
     }
-    fun cancel() { job?.cancel() }
+    fun cancel() { installWhenReady = false; job?.cancel() }
     fun install(context: android.content.Context) {
         val target = release ?: return
         if (!downloaded || busy) return
@@ -179,7 +193,7 @@ class AppUpdateViewModel(app: Application) : AndroidViewModel(app) {
     val vm: AppUpdateViewModel = viewModel()
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Installed version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium)
-        SettingsToggle("Check automatically on launch", "Checks GitHub at most once a day. Downloads only when you choose.", vm.automatic, true, vm::updateAutomatic)
+        SettingsToggle("Check automatically on launch", "Checks GitHub on each fresh launch and offers available updates. Downloads only when you choose.", vm.automatic, true, vm::updateAutomatic)
         TextButton(onClick = { vm.check() }, modifier = Modifier.tvFocusFeedback()) { Text("Check for updates") }
         UpdateActions(vm)
     }
@@ -194,17 +208,55 @@ class AppUpdateViewModel(app: Application) : AndroidViewModel(app) {
                 Text("Android will ask you to confirm. Installing restarts Harmonicast.")
                 Button(onClick = { vm.install(context) }, modifier = Modifier.tvFocusFeedback()) { Text("Install update") }
             }
-            else Button(onClick = vm::download, modifier = Modifier.tvFocusFeedback()) { Text("Download ${release.version}") }
+            else Button(onClick = { vm.download() }, modifier = Modifier.tvFocusFeedback()) { Text("Download ${release.version}") }
             TextButton(onClick = { vm.showPrompt = true }, modifier = Modifier.tvFocusFeedback()) { Text("Release notes") }
         }
     }
 }
 @Composable internal fun UpdatePrompt() {
     val vm: AppUpdateViewModel = viewModel()
-    if (vm.showPrompt) vm.release?.let { release ->
-        FocusRestoringAlertDialog(onDismissRequest = { vm.showPrompt = false }, title = { Text("Harmonicast ${release.version}") },
-            text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(release.notes.ifBlank { "A new version is available." }); UpdateActions(vm)
-            } }, confirmButton = { TextButton(onClick = { vm.showPrompt = false }, modifier = Modifier.tvFocusFeedback()) { Text("Close") } })
+    val context = LocalContext.current
+    LaunchedEffect(vm.downloaded, vm.installWhenReady) {
+        if (vm.downloaded && vm.installWhenReady) {
+            vm.consumeInstallRequest()
+            vm.install(context)
+        }
     }
+    if (vm.showPrompt) vm.release?.let { release ->
+        UpdateAvailableDialog(release, vm.message, vm.busy, vm.progress, vm.downloaded,
+            onUpdate = { vm.download(installAfterDownload = true) },
+            onInstall = { vm.install(context) }, onCancel = vm::cancel, onDismiss = vm::dismissPrompt)
+    }
+}
+
+@Composable internal fun UpdateAvailableDialog(
+    release: AppRelease, message: String, busy: Boolean, progress: Float, downloaded: Boolean,
+    onUpdate: () -> Unit, onInstall: () -> Unit, onCancel: () -> Unit, onDismiss: () -> Unit,
+) {
+    FocusRestoringAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Update available") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Harmonicast ${release.version} is available. You're using ${BuildConfig.VERSION_NAME}.")
+                Text("Update now downloads and verifies the update, then opens Android's installer. Installing restarts Harmonicast.")
+                if (release.notes.isNotBlank()) {
+                    Text("What's new", style = MaterialTheme.typography.titleSmall)
+                    Text(release.notes)
+                }
+                if (message.isNotBlank()) Text(message)
+                if (busy) LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            Button(onClick = if (downloaded) onInstall else onUpdate, enabled = !busy, modifier = Modifier.tvFocusFeedback()) {
+                Text(if (downloaded) "Install update" else "Update now")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = if (busy) onCancel else onDismiss, modifier = Modifier.tvFocusFeedback()) {
+                Text(if (busy) "Cancel download" else "Later")
+            }
+        },
+    )
 }

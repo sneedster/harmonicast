@@ -1,5 +1,16 @@
 # Releases
 
+## v1.1.12 — remote Plex connections and startup update prompts
+
+Version code: **74**.
+
+- Plex connections use remote endpoints only, preferring direct access before Relay.
+- Opening the app rediscovers the saved server's remote address using the existing login. Saved queue streams and artwork follow the current endpoint and token.
+- Automatic update checks are enabled by default and run on each fresh launch. Existing opt-outs remain respected.
+- An available update opens a clear Update now / Later prompt. Update now downloads and verifies the APK, then opens Android's installer. Long release notes keep actions visible; downloads support cancellation and retry.
+
+Validation: all 238 tests passed with test-class process isolation, plus debug lint and the strict UI audit. The initial shared-process run hit Compose idle timeouts in the existing swipe suite; that suite also passed independently. Real Wi-Fi-to-cellular playback and Android installer acceptance remain device checks.
+
 ## v1.1.11 — shared Plex access and better library browsing
 
 Version code: **73**.

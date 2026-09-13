@@ -159,8 +159,29 @@ class HarmonicastViewModel : ViewModel() {
         AcquisitionRuntime.get(context).start()
         ready = api.profile.homeReady
         if (ready) {
-            connectPlaybackService()
-            refresh()
+            viewModelScope.launch {
+                loading = true
+                try {
+                    val saved = api.profile.personalSource
+                    if (saved != null) {
+                        val remote = plex.refreshRemoteSource(saved)
+                        // A source change or sign-out during discovery must win.
+                        if (api.profile.personalSource != saved) return@launch
+                        api.profile.savePersonalSource(remote)
+                        core = harmonicastCore(api)
+                        if (remote != saved) context.startService(
+                            Intent(context, HarmonicastMediaService::class.java)
+                                .setAction(HarmonicastMediaService.RELOAD_PROFILE_ACTION)
+                        )
+                    }
+                    connectPlaybackService()
+                    refresh()
+                } catch (e: Exception) {
+                    error = e.message ?: "Could not connect to Plex remotely"
+                } finally {
+                    loading = false
+                }
+            }
         }
     }
 

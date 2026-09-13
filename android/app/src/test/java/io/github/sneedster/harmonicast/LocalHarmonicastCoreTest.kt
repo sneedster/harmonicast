@@ -5,6 +5,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LocalHarmonicastCoreTest {
+    @Test fun savedTrackUrlsFollowTheCurrentRemoteSource() {
+        val source = PersonalPlexSource("fresh", "https://remote:32400", "machine", "Server", "7", "Music")
+        val core = LocalHarmonicastCore(source, MemoryStorage())
+        val song = Song("plex:machine:42", "Track", "Artist",
+            streamUri = "http://local:32400/library/parts/42/file.mp3?X-Plex-Token=old",
+            artworkUri = "http://local:32400/thumb/42?X-Plex-Token=old")
+        assertEquals("https://remote:32400/library/parts/42/file.mp3?X-Plex-Token=fresh", core.library.streamUrl(song))
+        assertEquals("https://remote:32400/thumb/42?X-Plex-Token=fresh", core.library.artworkUrl(song))
+        val radio = song.copy(id = "radio:42", streamUri = "https://radio/live")
+        assertEquals("https://radio/live", core.library.streamUrl(radio))
+    }
+
     private class MemoryStorage : ProfileStorage {
         val values = mutableMapOf<String, String>()
         override fun read(key: String) = values[key]

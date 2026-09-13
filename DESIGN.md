@@ -182,3 +182,16 @@ Recent views and artist-to-album navigation retain their existing behavior.
 Auto search respects requested pagination and server totals across title/artist/
 album filters. A zero-result multiword search can retry using an anchor word and
 compare punctuation-normalized candidates; this is not general spelling correction.
+
+## App update prompt
+
+AppUpdates.kt owns startup checks and the shared update state for Settings and
+UpdatePrompt. Check once per fresh launch by default, preserving an explicit
+opt-out. A newer stable release opens FocusRestoringAlertDialog with Update now
+and Later; no update or a failed background check opens no dialog. Later defers
+for this session, while Settings retains the available release and retry action.
+Update now downloads and verifies the APK before opening Android's installer;
+Android still owns install consent. Long release notes scroll within the dialog
+while actions remain in its footer. Busy downloads disable the primary action
+and offer cancellation. Dismissing the dialog clears automatic installer launch.
+Existing MaterialTheme roles and tvFocusFeedback remain the visual owners.

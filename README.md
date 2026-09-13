@@ -113,8 +113,9 @@ guests can continue using the browser without installing anything.
 ## App updates
 
 Use **Settings → About & updates → Check for updates** to check GitHub Releases.
-Optional automatic checks run on launch at most once a day; downloading is always
-your choice. Harmonicast verifies the APK checksum, package, newer version code
+Automatic checks run on each fresh launch by default; an existing opt-out is
+preserved. Available updates offer **Update now** or **Later**, and downloading
+is always your choice. You can turn automatic checks off in Settings. Harmonicast verifies the APK checksum, package, newer version code
 and matching signing certificate before opening Android’s installer. If prompted,
 allow Harmonicast to install apps, then return and tap **Install update**. Installing
 restarts the app; same-key updates preserve settings and local data.

@@ -129,7 +129,7 @@ class LocalPlexClientTest {
     @Test fun sourceDiscoveryKeepsOwnedAndSharedServersWithTheirAccessMode() = runBlocking {
         val http = FakeHttp().apply {
             responses += """[
-              {"owned":true,"provides":"server","clientIdentifier":"mine","name":"My Plex","connections":[{"uri":"https://mine.plex.direct/","local":true,"relay":false}]},
+              {"owned":true,"provides":"server","clientIdentifier":"mine","name":"My Plex","connections":[{"uri":"https://mine.plex.direct/","local":false,"relay":false}]},
               {"owned":false,"provides":"server","clientIdentifier":"shared","name":"Shared","accessToken":"shared-resource-token","connections":[{"uri":"https://shared"}]}
             ]"""
             responses += """{"MediaContainer":{"machineIdentifier":"mine","friendlyName":"My Plex"}}"""
@@ -145,6 +145,48 @@ class LocalPlexClientTest {
         assertEquals("https://mine.plex.direct", base)
         assertEquals(listOf(PlexLibrary("7", "Music", "u")), client.musicLibraries(base, "owner"))
         assertEquals("account-token", http.calls.first().headers["X-Plex-Token"])
+    }
+
+    @Test fun connectionSkipsLocalAndPrefersDirectRemoteBeforeRelay() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"machineIdentifier":"machine"}}"""
+        }
+        val server = PlexServer("machine", "Server", listOf(
+            PlexConnection("https://local", true, false),
+            PlexConnection("https://relay", false, true),
+            PlexConnection("https://remote", false, false),
+        ))
+        assertEquals("https://remote", LocalPlexClient(MemoryStorage(), http).connect("token", server))
+        assertEquals(listOf("https://remote/"), http.calls.map { it.url })
+    }
+
+    @Test fun connectionFallsBackToRelayButNeverLocal() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"machineIdentifier":"wrong"}}"""
+            responses += """{"MediaContainer":{"machineIdentifier":"machine"}}"""
+        }
+        val server = PlexServer("machine", "Server", listOf(
+            PlexConnection("https://local", true, false),
+            PlexConnection("https://remote", false, false),
+            PlexConnection("https://relay", false, true),
+        ))
+        val client = LocalPlexClient(MemoryStorage(), http)
+        assertEquals("https://relay", client.connect("token", server))
+        assertEquals(listOf("https://remote/", "https://relay/"), http.calls.map { it.url })
+        assertTrue(runCatching { client.connect("token", server.copy(connections = server.connections.take(1))) }.isFailure)
+        assertEquals(2, http.calls.size)
+    }
+
+    @Test fun savedLocalSourceRefreshPreservesLibraryAndAccount() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """[{"clientIdentifier":"machine","name":"Server","provides":"server","accessToken":"resource","connections":[{"uri":"https://local","local":true},{"uri":"https://remote","local":false}]}]"""
+            responses += """{"MediaContainer":{"machineIdentifier":"machine"}}"""
+        }
+        val source = PersonalPlexSource("old", "https://local", "machine", "Server", "7", "Music", "account", false)
+        assertEquals(source.copy(token = "resource", baseUrl = "https://remote"),
+            LocalPlexClient(MemoryStorage(), http).refreshRemoteSource(source))
+        assertEquals("account", http.calls.first().headers["X-Plex-Token"])
+        assertEquals("resource", http.calls.last().headers["X-Plex-Token"])
     }
 
     @Test fun directSearchBuildsPlayableAuthenticatedSongs() = runBlocking {

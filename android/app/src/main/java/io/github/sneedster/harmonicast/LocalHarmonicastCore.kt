@@ -2,6 +2,7 @@ package io.github.sneedster.harmonicast
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.CopyOnWriteArrayList
@@ -43,9 +44,19 @@ class LocalHarmonicastCore(
         override suspend fun playlists() = plex.playlists(source)
         override suspend fun playlistTracks(id: String) = plex.playlistTracks(source, id)
         override suspend fun playlistPage(id: String, offset: Int) = plex.playlistPage(source, id, offset)
-        override fun streamUrl(song: Song) = song.streamUri
+        override fun streamUrl(song: Song) = currentSourceUrl(song, song.streamUri)
             ?: throw IllegalStateException("Plex track needs fresh playback metadata")
-        override fun artworkUrl(song: Song) = song.artworkUri
+        override fun artworkUrl(song: Song) = currentSourceUrl(song, song.artworkUri)
+    }
+
+    // Persisted queue/playback metadata may still contain a previous local endpoint.
+    private fun currentSourceUrl(song: Song, value: String?): String? {
+        val source = configuredSource ?: return value
+        if (value == null || !song.id.startsWith("plex:${java.net.URLEncoder.encode(source.machineIdentifier, "UTF-8")}:")) return value
+        val original = value.toHttpUrlOrNull() ?: return value
+        val base = source.baseUrl.toHttpUrlOrNull() ?: return value
+        return original.newBuilder().scheme(base.scheme).host(base.host).port(base.port)
+            .setQueryParameter("X-Plex-Token", source.token).build().toString()
     }
 
     override val queue: MusicQueue = object : MusicQueue {

@@ -132,12 +132,21 @@ class LocalPlexClient(
     }
 
     suspend fun connect(token: String, server: PlexServer): String {
-        val candidates = server.connections.sortedWith(compareByDescending<PlexConnection> { it.local }.thenBy { it.relay })
+        val candidates = server.connections.filterNot { it.local }.sortedBy { it.relay }
         for (candidate in candidates) {
             val identity = runCatching { serverContainer(candidate.uri, token, "/") }.getOrNull() ?: continue
             if (identity.optString("machineIdentifier") == server.machineIdentifier) return candidate.uri
         }
-        throw IllegalStateException("Could not reach that Plex server")
+        throw IllegalStateException("Could not reach a remote endpoint for that Plex server. Check Plex Remote Access.")
+    }
+
+    /** Upgrade saved local connections without requiring another Plex login. */
+    suspend fun refreshRemoteSource(source: PersonalPlexSource): PersonalPlexSource {
+        val server = accessibleServers(source.accountToken).singleOrNull {
+            it.machineIdentifier == source.machineIdentifier
+        } ?: throw IllegalStateException("The saved Plex server is no longer accessible")
+        val token = server.accessToken ?: source.token
+        return source.copy(baseUrl = connect(token, server), token = token)
     }
 
     /** Confirm the selected server and section with this source's token, never an owner fallback. */
