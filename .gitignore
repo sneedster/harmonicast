@@ -47,3 +47,6 @@ android/gradlew.bat
 /marketing-site/
 /contributions/
 /premium-audit.json
+
+# Local planning document
+/docs/MARKET_SHARE_STRATEGY.md
