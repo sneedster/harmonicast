@@ -3,6 +3,7 @@ package io.github.sneedster.harmonicast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,43 +45,49 @@ import androidx.compose.ui.unit.sp
         return
     }
     val colors = MaterialTheme.colorScheme
-    TrackSwipePage(song.id, vm.isHost, vm.isActivePlayer, vm::nextSong, vm::previousSong) {
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         val wide = maxWidth >= 480.dp && maxWidth > maxHeight
         val compact = wide && maxHeight < 380.dp
         val artSize = if (wide) minOf(maxWidth * .36f, maxHeight - if (compact) 56.dp else 16.dp).coerceAtLeast(64.dp)
-            else minOf(maxWidth - 24.dp, maxHeight * .42f).coerceAtLeast(100.dp)
+            else minOf(maxWidth, maxHeight - 320.dp).coerceAtLeast(100.dp)
         val artwork: @Composable () -> Unit = {
-            Crossfade(song, animationSpec = tween(280), label = "Now playing artwork") { track ->
-                Box(Modifier.shadow(28.dp, RoundedCornerShape(24.dp), spotColor = colors.primary.copy(alpha = .4f))
-                    .background(colors.surfaceVariant, RoundedCornerShape(24.dp))
-                    .pointerInput(track.id, vm.isHost) {
-                        var upward = 0f
-                        detectVerticalDragGestures(onDragStart = { upward = 0f }, onVerticalDrag = { change, amount ->
-                            upward -= amount; change.consume()
-                        }, onDragEnd = {
-                            if (upward > 80.dp.toPx()) { details = true; vm.loadArtistDiscovery(track) }
-                        })
-                    }) { Cover(vm, track, artSize) }
+            TrackSwipePage(song.id, vm.isHost, vm.isActivePlayer, vm::nextSong, vm::previousSong,
+                modifier = Modifier.size(artSize).testTag("now-playing-artwork")) {
+                Crossfade(song, animationSpec = tween(280), label = "Now playing artwork") { track ->
+                    Box(Modifier.shadow(28.dp, RoundedCornerShape(24.dp), spotColor = colors.primary.copy(alpha = .4f))
+                        .background(colors.surfaceVariant, RoundedCornerShape(24.dp))
+                        .pointerInput(track.id, vm.isHost) {
+                            var upward = 0f
+                            detectVerticalDragGestures(onDragStart = { upward = 0f }, onVerticalDrag = { change, amount ->
+                                upward -= amount; change.consume()
+                            }, onDragEnd = {
+                                if (upward > 80.dp.toPx()) { details = true; vm.loadArtistDiscovery(track) }
+                            })
+                        }) { Cover(vm, track, artSize) }
+                }
             }
         }
         val information: @Composable () -> Unit = {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 8.dp)) {
-                if (!compact) Text(if (vm.nowPlaying.isPlaying) "NOW PLAYING" else "PAUSED", color = colors.primary, letterSpacing = 3.sp, fontSize = 11.sp)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(if (vm.nowPlaying.isPlaying) "NOW PLAYING" else "PAUSED", color = colors.primary,
+                        letterSpacing = 3.sp, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                    PlexRatingStars(song.rating)
+                }
                 Text(song.title, fontFamily = FontFamily.Serif,
                     fontSize = if (compact) 24.sp else if (wide) 36.sp else 27.sp,
                     lineHeight = if (compact) 28.sp else if (wide) 40.sp else 31.sp,
-                    minLines = if (compact) 1 else 2,
-                    maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
+                    maxLines = 1, softWrap = false,
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE))
                 Text(song.artist, fontSize = if (compact) 16.sp else 18.sp,
-                    color = colors.primary, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().tvFocusFeedback().clickable { search(song.artist) }
-                        .heightIn(min = 40.dp).wrapContentHeight(Alignment.CenterVertically))
+                    color = colors.primary, maxLines = 1, softWrap = false,
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                        .tvFocusFeedback().clickable { search(song.artist) })
                 if (song.album.isNotBlank()) Text(song.album + (song.year?.let { " · $it" } ?: ""),
-                    color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().tvFocusFeedback().clickable { search(song.album) }
-                        .heightIn(min = 40.dp).wrapContentHeight(Alignment.CenterVertically))
-                PlexRatingStars(song.rating)
+                    color = colors.onSurfaceVariant, maxLines = 1, softWrap = false,
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                        .tvFocusFeedback().clickable { search(song.album) })
             }
         }
         val extraActions: @Composable () -> Unit = {
@@ -115,13 +123,12 @@ import androidx.compose.ui.unit.sp
             // can scroll on shorter screens without pushing buttons below navigation.
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 artwork()
                 information()
             }
             controls()
         }
-    }
     }
 }
 

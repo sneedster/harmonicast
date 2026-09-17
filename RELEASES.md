@@ -1,5 +1,18 @@
 # Releases
 
+## v1.1.14 — continuous sonic radio and a steadier player
+
+Version code: **76**.
+
+- Track Radio refills from the last played song, deduplicates by artist/title, and avoids the last 100 radio-session plays.
+- Settings > Track Radio adds a starting sonic-distance slider (default 0.25). Sparse batches widen by 0.05 at most twice, resetting each batch.
+- Fetch up to 100 candidates for up to 20 distinct songs. Empty sonic results never switch to an unrelated automatic mix; clearing the queue ends radio.
+- Player ratings sit beside playback status. Title, artist, and album use single-line scrolling overflow with consistent spacing.
+- Horizontal skip gestures move only the artwork, keeping metadata and controls stationary. Portrait artwork uses available space while preserving controls.
+
+
+Validation: 265 tests passed with class isolation; the final sizing adjustment also passed 13 focused layout/swipe tests and debug lint. Strict UI audit, signed release assembly, release vital lint, and APK signature verification passed. ADB update installed successfully on Pixel 10 Pro; package manager confirmed 1.1.14 (76). Live listening acceptance remains pending.
+
 ## v1.1.13 — a richer room display and album browsing
 
 Version code: **75**.

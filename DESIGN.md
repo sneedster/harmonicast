@@ -317,3 +317,15 @@ The queue authority persists radio mode and the last 100 played tracks; depletio
 continues from the last played song. Empty sonic results stay empty and report
 through the existing automaticMixStatus text. Clear queue/source reset ends the
 radio session. The preference remains device-local across source resets.
+
+## Phone now-playing layout — v1.1.14
+
+NocturnePlayer places Plex rating stars at the right of the playback-status row.
+Title, artist, and album share a left edge and consistent inter-row spacing;
+each is a single line using Compose basicMarquee for overflow. Portrait artwork
+fills available width when vertical space permits, reserving space for metadata
+and transport on shorter screens. Metadata remains scrollable for large text.
+TrackSwipePage now wraps artwork only: its horizontal translation and hit area
+leave metadata, progress, controls, and navigation stationary. The existing
+vertical artwork gesture still opens discovery. PlayerPalette, MaterialTheme,
+and existing transport components remain the visual owners.

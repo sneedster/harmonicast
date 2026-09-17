@@ -56,7 +56,7 @@ playback sources and a general plugin installer remain outside scope.
   Settings > Track Radio controls the starting distance (default 0.25); batches
   with fewer than ten picks widen by 0.05 at most twice, then keep a shorter queue.
   Each batch resets to the saved distance. Clear queue ends radio mode.
-  The changes are implemented for the next build; phone acceptance is pending.
+  Shipped in the locally installed v1.1.14 Pixel build; live listening acceptance is pending.
   See the [live sonic-distance experiment](docs/experiments/sonic-distance-2026-09-16.md).
 
 - Keep phone and TV browsing responsive, with bounded queries, pagination and retained scroll position.

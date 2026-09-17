@@ -1,5 +1,21 @@
 # Android validation
 
+## v1.1.14 player and radio release checks
+
+The full Android suite passed 265 tests with per-class process isolation, plus
+debug lint and strict UI audit. A final portrait artwork sizing adjustment reserves
+space for artist/album labels on shorter screens; focused layout/swipe tests cover
+all metadata visibility, status/rating alignment, stable controls while dragging
+artwork, and portrait/landscape navigation. All 13 focused layout/swipe tests and
+debug lint passed after that final adjustment. Signed release assembly and release
+vital lint passed; apksigner verified the APK.
+
+ADB installed `harmonicast-1.1.14.apk` with `install -r` successfully on Pixel 10
+Pro. The package manager confirmed versionName 1.1.14 and versionCode 76. No app
+data was cleared. Device listening and interaction acceptance remain with Michael;
+this installation check does not claim a completed live radio-refill audition.
+APK SHA-256: `a1634c06e2929eece705216a9c52a296b9191efaedfc049fcf6a500a2c094e57`.
+
 ## Continuous Track Radio and distance settings — 2026-09-16
 
 Debug assembly, debug lint, and 48 targeted tests passed across TrackRadioTest,

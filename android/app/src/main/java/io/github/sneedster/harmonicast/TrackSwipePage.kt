@@ -33,13 +33,14 @@ internal fun trackSwipeDestination(offset: Float, velocity: Float, width: Float,
     }
 }
 
-/** Translate the whole player while leaving its touch surface stationary. */
+/** Translate the supplied artwork while leaving its touch surface stationary. */
 @Composable internal fun TrackSwipePage(
     trackId: String?,
     canNext: Boolean,
     canPrevious: Boolean,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
+    modifier: Modifier = Modifier.fillMaxSize(),
     content: @Composable () -> Unit,
 ) {
     var width by remember { mutableFloatStateOf(0f) }
@@ -49,7 +50,7 @@ internal fun trackSwipeDestination(offset: Float, velocity: Float, width: Float,
     val currentTrack by rememberUpdatedState(trackId)
     val next by rememberUpdatedState(onNext)
     val previous by rememberUpdatedState(onPrevious)
-    Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged { width = it.width.toFloat() }
+    Box(modifier.clipToBounds().onSizeChanged { width = it.width.toFloat() }
         .pointerInput(canNext, canPrevious, width) {
             val tracker = VelocityTracker()
             var accepted = false

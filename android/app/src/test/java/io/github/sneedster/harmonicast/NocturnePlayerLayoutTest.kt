@@ -53,6 +53,10 @@ class NocturnePlayerLayoutTest {
         compose.onNodeWithContentDescription("Vote down").assertIsDisplayed()
         if (name.startsWith("portrait")) compose.onNodeWithText(" Discover").assertIsDisplayed()
         else compose.onNodeWithContentDescription("Discover").assertIsDisplayed()
+        if (name.startsWith("portrait")) {
+            compose.onNodeWithText("Artist with a longer name").assertIsDisplayed()
+            compose.onNodeWithText("The Album with a Longer Name").assertIsDisplayed()
+        }
         if (frame && name.startsWith("portrait")) compose.onNodeWithText("7.0 / 10").performScrollTo()
         compose.onNodeWithText("7.0 / 10").assertIsDisplayed()
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
@@ -84,6 +88,20 @@ class NocturnePlayerLayoutTest {
                 }
             }
             check(compose.onNodeWithText(" Discover").getUnclippedBoundsInRoot() == discoveryBounds)
+            val status = compose.onNodeWithText("PAUSED").getUnclippedBoundsInRoot()
+            val rating = compose.onNodeWithText("7.0 / 10").getUnclippedBoundsInRoot()
+            check(rating.left > status.right && rating.top < status.bottom && rating.bottom > status.top)
+            // Moving artwork must not translate the metadata or transport.
+            val titleBounds = compose.onNodeWithText("Short title").getUnclippedBoundsInRoot()
+            compose.onNodeWithTag("now-playing-artwork").performTouchInput {
+                down(androidx.compose.ui.geometry.Offset(width * .8f, centerY))
+                moveTo(androidx.compose.ui.geometry.Offset(width * .2f, centerY), 500)
+            }
+            check(compose.onNodeWithText("Short title").getUnclippedBoundsInRoot() == titleBounds)
+            controlBounds.forEach { (description, bounds) ->
+                check(compose.onNodeWithContentDescription(description).getUnclippedBoundsInRoot() == bounds)
+            }
+            compose.onNodeWithTag("now-playing-artwork").performTouchInput { cancel() }
         }
         val output = File("build/reports/player-layout/$name.png").apply { parentFile?.mkdirs() }
         compose.runOnIdle {
