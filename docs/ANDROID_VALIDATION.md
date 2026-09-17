@@ -12,8 +12,9 @@ vital lint passed; apksigner verified the APK.
 
 ADB installed `harmonicast-1.1.14.apk` with `install -r` successfully on Pixel 10
 Pro. The package manager confirmed versionName 1.1.14 and versionCode 76. No app
-data was cleared. Device listening and interaction acceptance remain with Michael;
-this installation check does not claim a completed live radio-refill audition.
+data was cleared. Michael accepted the updated player layout and authorized
+publication. Longer-term Track Radio listening evaluation continues; this does not
+claim a completed live radio-refill audition.
 APK SHA-256: `a1634c06e2929eece705216a9c52a296b9191efaedfc049fcf6a500a2c094e57`.
 
 ## Continuous Track Radio and distance settings — 2026-09-16

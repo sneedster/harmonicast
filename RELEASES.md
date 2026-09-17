@@ -11,7 +11,7 @@ Version code: **76**.
 - Horizontal skip gestures move only the artwork, keeping metadata and controls stationary. Portrait artwork uses available space while preserving controls.
 
 
-Validation: 265 tests passed with class isolation; the final sizing adjustment also passed 13 focused layout/swipe tests and debug lint. Strict UI audit, signed release assembly, release vital lint, and APK signature verification passed. ADB update installed successfully on Pixel 10 Pro; package manager confirmed 1.1.14 (76). Live listening acceptance remains pending.
+Validation: 265 tests passed with class isolation; the final sizing adjustment also passed 13 focused layout/swipe tests and debug lint. Strict UI audit, signed release assembly, release vital lint, and APK signature verification passed. ADB update installed successfully on Pixel 10 Pro; package manager confirmed 1.1.14 (76). Michael accepted the updated player layout on Pixel; longer-term Track Radio listening evaluation continues.
 
 ## v1.1.13 — a richer room display and album browsing
 
