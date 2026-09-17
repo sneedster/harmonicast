@@ -140,11 +140,11 @@ class LocalHarmonicastCore(
         }
         override suspend fun radio(): Int = QueueTransactions.mutex.withLock {
             val current = playback.snapshot().nowPlaying.song ?: return@withLock 0
-            val existing = songs().mapTo(mutableSetOf(), Song::id)
-            val additions = plex.related(source, current.id).filter { existing.add(it.id) }
+            val queued = songs()
+            val additions = distinctRadioTracks(current, queued, plex.related(source, current.id))
                 .map { it.copy(isManual = false, isRadio = true) }
             if (additions.isNotEmpty()) {
-                writeSongs("local.queue", songs() + additions)
+                writeSongs("local.queue", queued + additions)
                 LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
             }
             return@withLock additions.size

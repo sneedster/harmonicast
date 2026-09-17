@@ -1,5 +1,24 @@
 # Android validation
 
+## Track Radio duplicate guard — 2026-09-16
+
+Track Radio requests up to 20 tracks from Plex's sonic `metadata/nearest` endpoint
+with `maxDistance=0.25`, as described in the [official Plex API](https://developer.plex.tv/pms/).
+It does not fill short responses with repeats or fall back to artist/genre matching.
+The new guard compares Plex IDs and normalized artist/title pairs against the
+playing song, existing queue, and accepted candidates. Album names do not make
+copies distinct; explicit live/remix title qualifiers remain distinct. Missing
+artist/title tags fall back to ID comparison. Existing manual queue entries are
+preserved. This does not retroactively clean an existing queue.
+
+Regression coverage includes four album copies yielding one suggestion, seed and
+queued aliases, case/spacing/typographic punctuation, explicit versions and covers,
+missing tags, repeated radio requests, and persisted queue flags/order. Debug
+assembly and the targeted TrackRadio/LocalHarmonicastCore tests passed (30 tests).
+The phone's installed release is not debuggable, so its private queue could not
+be inspected through ADB. Duplicate library copies are a plausible cause, not a
+confirmed diagnosis of that device's queue. No new APK has been installed yet.
+
 ## Accepted baseline
 
 The owner accepted release testing on 2026-09-07. Phone and Shield observations

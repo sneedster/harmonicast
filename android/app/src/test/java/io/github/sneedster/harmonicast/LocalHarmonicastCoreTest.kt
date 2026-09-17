@@ -5,6 +5,35 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LocalHarmonicastCoreTest {
+    @Test fun radioQueuesUniqueSongsAndPreservesExistingManualRequests() = runBlocking {
+        val storage = MemoryStorage()
+        val http = object : PlexHttp {
+            override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+                assertTrue(url.contains("/library/metadata/1/nearest?"))
+                val tracks = listOf(2 to "Song 1", 3 to "Song 9", 4 to "New track", 5 to "New track", 6 to "New track", 7 to "New track")
+                return org.json.JSONObject().put("MediaContainer", org.json.JSONObject().put("Metadata",
+                    org.json.JSONArray().apply {
+                        tracks.forEach { (id, title) -> put(org.json.JSONObject()
+                            .put("type", "track").put("ratingKey", id.toString()).put("librarySectionID", "7")
+                            .put("title", title).put("grandparentTitle", "Artist").put("parentTitle", "Album $id")
+                            .put("Media", org.json.JSONArray().put(org.json.JSONObject().put("Part",
+                                org.json.JSONArray().put(org.json.JSONObject().put("key", "/part/$id")))))) }
+                    })).toString()
+            }
+        }
+        val core = LocalHarmonicastCore(source, storage, LocalPlexClient(storage, http))
+        core.playback.publish(song("1"), false, false)
+        core.queue.addAll(listOf(song("9")), false)
+        assertEquals(1, core.queue.radio())
+        val queued = core.queue.songs()
+        assertEquals(listOf("plex:machine:9", "plex:machine:4"), queued.map(Song::id))
+        assertTrue(queued.first().isManual)
+        assertTrue(queued.last().isRadio)
+        assertFalse(queued.last().isManual)
+        assertEquals(0, core.queue.radio())
+        assertEquals(queued, core.queue.songs())
+    }
+
     @Test fun savedTrackUrlsFollowTheCurrentRemoteSource() {
         val source = PersonalPlexSource("fresh", "https://remote:32400", "machine", "Server", "7", "Music")
         val core = LocalHarmonicastCore(source, MemoryStorage())

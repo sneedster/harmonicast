@@ -48,6 +48,11 @@ playback sources and a general plugin installer remain outside scope.
 
 ## Ongoing quality
 
+- Track Radio stays within Plex and uses sonic track similarity (`metadata/nearest`),
+  not similar-artist recommendations. Artist/title deduplication now excludes album
+  copies of the seed, queued tracks, and other suggestions; a short result stays short.
+  The fix is implemented for the next build; phone acceptance is still pending.
+
 - Keep phone and TV browsing responsive, with bounded queries, pagination and retained scroll position.
 - Maintain the Nocturne design and persistent Nocturne, Aurora and Ember palettes.
 - Check playback, queue ordering, room teardown, transfer and Android Auto when their code changes.

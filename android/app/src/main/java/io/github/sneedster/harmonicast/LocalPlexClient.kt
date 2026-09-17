@@ -408,6 +408,8 @@ class LocalPlexClient(
     }
 
     suspend fun related(source: PersonalPlexSource, id: String, limit: Int = 20): List<Song> {
+        // Plex documents metadata/nearest as sonic track similarity, not similar-artist metadata.
+        // https://developer.plex.tv/pms/ — Get nearest tracks to metadata item.
         val ratingKey = ratingKey(source, id)
         return songs(
             source,
