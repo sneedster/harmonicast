@@ -299,3 +299,21 @@ was observed timing out on the live host. Categories report failures separately,
 so one unavailable source does not discard successful categories.
 
 Acquisition submissions allow three minutes for source validation and show in-progress feedback; uncertain responses direct listeners to request history. Acquisition recent-library checks use the Plex album date index and include all fetched tracks, avoiding the expensive global track-date sort.
+
+## Continuous sonic Track Radio
+
+SettingsScreen owns a Track Radio category using existing MaterialTheme text,
+SettingsDescription, Material Slider, and tvFocusFeedback controls. The starting
+sonic distance is a device-local host preference, 0.05–0.30 in 0.01 increments,
+default 0.25. Minus/plus buttons provide precise TV and non-drag operation; the
+slider saves on completion. Changes affect the next batch, not queued songs.
+No palette, typography, or global navigation conventions change.
+
+TrackRadioSettings owns persistence/validation; radioBatch owns candidate
+selection and bounded widening. Start at the saved distance for each batch,
+request 100 candidates, filter seed/queue/recent artist-title duplicates, and
+queue up to 20 tracks. If fewer than ten remain, widen by 0.05 at most twice.
+The queue authority persists radio mode and the last 100 played tracks; depletion
+continues from the last played song. Empty sonic results stay empty and report
+through the existing automaticMixStatus text. Clear queue/source reset ends the
+radio session. The preference remains device-local across source resets.

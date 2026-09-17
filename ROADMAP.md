@@ -51,7 +51,13 @@ playback sources and a general plugin installer remain outside scope.
 - Track Radio stays within Plex and uses sonic track similarity (`metadata/nearest`),
   not similar-artist recommendations. Artist/title deduplication now excludes album
   copies of the seed, queued tracks, and other suggestions; a short result stays short.
-  The fix is implemented for the next build; phone acceptance is still pending.
+  Continuous radio now refills from the last played track, excludes the last 100
+  radio-session plays, and requests 100 candidates for up to 20 distinct picks.
+  Settings > Track Radio controls the starting distance (default 0.25); batches
+  with fewer than ten picks widen by 0.05 at most twice, then keep a shorter queue.
+  Each batch resets to the saved distance. Clear queue ends radio mode.
+  The changes are implemented for the next build; phone acceptance is pending.
+  See the [live sonic-distance experiment](docs/experiments/sonic-distance-2026-09-16.md).
 
 - Keep phone and TV browsing responsive, with bounded queries, pagination and retained scroll position.
 - Maintain the Nocturne design and persistent Nocturne, Aurora and Ember palettes.

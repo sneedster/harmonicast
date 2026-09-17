@@ -2,8 +2,46 @@ package io.github.sneedster.harmonicast
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 class TrackRadioTest {
+    @Test fun distanceSettingPersistsClampsAndRecoversInvalidStoredValues() {
+        val values = mutableMapOf<String, String>()
+        val storage = object : ProfileStorage {
+            override fun read(key: String) = values[key]
+            override fun write(updates: Map<String, String>) { values.putAll(updates) }
+        }
+        assertEquals(0.25, TrackRadioSettings(storage).distance, 0.0)
+        TrackRadioSettings(storage).distance = 0.15
+        assertEquals(0.15, TrackRadioSettings(storage).distance, 0.0)
+        TrackRadioSettings(storage).distance = 1.0
+        assertEquals(0.30, TrackRadioSettings(storage).distance, 0.0)
+        values["local.radioDistance"] = "NaN"
+        assertEquals(0.25, TrackRadioSettings(storage).distance, 0.0)
+    }
+    @Test fun wideningCountsDistinctSongsAndStopsAtTen() = runBlocking {
+        val calls = mutableListOf<Double>()
+        val selected = radioBatch(current, emptyList(), startDistance = 0.10) { distance ->
+            calls += distance
+            val count = if (distance < 0.15) 4 else 12
+            (1..count).flatMap { n -> (1..4).map { copy -> Song("$n-$copy", "Track $n", "Artist") } }
+        }
+        assertEquals(listOf(0.10, 0.15), calls)
+        assertEquals(12, selected.size)
+    }
+
+    @Test fun wideningHasCeilingAndRestartsForEachBatch() = runBlocking {
+        val calls = mutableListOf<Double>()
+        repeat(2) {
+            val selected = radioBatch(current, emptyList()) { distance ->
+                calls += distance
+                listOf(Song("one", "Track", "Artist"))
+            }
+            assertEquals(1, selected.size)
+        }
+        assertEquals(listOf(0.25, 0.30, 0.35, 0.25, 0.30, 0.35), calls)
+    }
+
     private val current = Song("seed", "Seed", "Artist")
 
     @Test fun fourAlbumCopiesProduceOneSuggestionWithoutPadding() {

@@ -407,7 +407,7 @@ class LocalPlexClient(
         return PlexJukeboxPools(rated, unrated, fallback)
     }
 
-    suspend fun related(source: PersonalPlexSource, id: String, limit: Int = 20): List<Song> {
+    suspend fun related(source: PersonalPlexSource, id: String, limit: Int = 20, maxDistance: Double = 0.25): List<Song> {
         // Plex documents metadata/nearest as sonic track similarity, not similar-artist metadata.
         // https://developer.plex.tv/pms/ — Get nearest tracks to metadata item.
         val ratingKey = ratingKey(source, id)
@@ -416,7 +416,7 @@ class LocalPlexClient(
             serverContainer(
                 source.baseUrl,
                 source.token,
-                "/library/metadata/$ratingKey/nearest?limit=${limit.coerceIn(1, 100)}&maxDistance=0.25",
+                "/library/metadata/$ratingKey/nearest?limit=${limit.coerceIn(1, 100)}&maxDistance=$maxDistance",
             ),
         ).filter { it.id != id }
     }

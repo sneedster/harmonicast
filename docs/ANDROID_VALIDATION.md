@@ -1,5 +1,25 @@
 # Android validation
 
+## Continuous Track Radio and distance settings — 2026-09-16
+
+Debug assembly, debug lint, and 48 targeted tests passed across TrackRadioTest,
+RadioContinuationTest, LocalHarmonicastCoreTest, AppProfileTest, and the new
+SettingsScreen slider test. Strict UI audit returned zero findings. The Compose
+phone render was visually checked; [screenshot](experiments/track-radio-settings.png)
+shows the test setting of 0.15 (the shipping default remains 0.25).
+
+Coverage verifies persisted distance, invalid-value recovery, 100-candidate
+fetches yielding at most 20 distinct picks, widening based on distinct counts,
+two-step ceiling/reset, last-played seeding across core recreation, recent-track
+exclusions, no unrelated fallback on empty results, retained seed for retry,
+serialized refills, manual requests during refill, and session reset on clear/source
+change. The slider saves 0.15 and Restore default returns it to 0.25.
+
+These changes have not been installed on the phone. Continuous audible playback,
+network-loss recovery, Android Auto, and TV acceptance remain device checks.
+[Read-only server experiment](experiments/sonic-distance-2026-09-16.md) records actual
+sonic distances and duplicate copies observed before this implementation.
+
 ## Track Radio duplicate guard — 2026-09-16
 
 Track Radio requests up to 20 tracks from Plex's sonic `metadata/nearest` endpoint

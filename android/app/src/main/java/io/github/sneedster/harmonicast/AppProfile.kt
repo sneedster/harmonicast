@@ -61,6 +61,9 @@ class HomeProfileStore(private val storage: ProfileStorage) {
         ))
     }
     fun clearPersonalPlaybackState() = storage.write(mapOf(
+        "local.radioActive" to "false",
+        "local.radioSeed" to "",
+        "local.radioRecent" to "[]",
         "local.queue" to "[]",
         "local.playback" to "",
         "local.playbackHistory" to "[]",
@@ -82,6 +85,9 @@ class HomeProfileStore(private val storage: ProfileStorage) {
             "local.playback" to "",
             "local.playbackHistory" to "[]",
             "local.recentTrackPlays" to "{}",
+            "local.radioActive" to "false",
+            "local.radioSeed" to "",
+            "local.radioRecent" to "[]",
             "local.automaticMixStatus" to "",
             "local.jukeboxMixIndex" to "",
         ))

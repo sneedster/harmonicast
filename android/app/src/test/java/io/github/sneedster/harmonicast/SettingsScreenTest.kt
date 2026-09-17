@@ -31,6 +31,21 @@ import java.io.File
 @Config(sdk = [35], qualifiers = "w390dp-h760dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SettingsScreenTest {
+    @Test fun trackRadioDistanceSliderSavesAndRestoresDefault() {
+        setup()
+        open("Track Radio")
+        compose.onNodeWithContentDescription("Starting sonic distance")
+            .performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(0.15f) }
+        compose.runOnIdle {
+            assertEquals(0.15, vm.trackRadioDistance, 0.0001)
+            val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("harmonicast", Context.MODE_PRIVATE)
+            assertEquals(0.15, TrackRadioSettings(AppStorage(prefs).storage).distance, 0.0001)
+        }
+        screenshot("track-radio-phone")
+        compose.onNodeWithText("Restore default distance").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(0.25, vm.trackRadioDistance, 0.0001) }
+    }
+
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val restoration by lazy { StateRestorationTester(compose) }
     private lateinit var vm: HarmonicastViewModel

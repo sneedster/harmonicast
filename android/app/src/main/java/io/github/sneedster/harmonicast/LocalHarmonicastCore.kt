@@ -136,13 +136,18 @@ class LocalHarmonicastCore(
         }
         override suspend fun clear() = QueueTransactions.mutex.withLock {
             writeSongs("local.queue", emptyList())
+            storage.write(mapOf("local.radioActive" to "false", "local.radioSeed" to "", "local.radioRecent" to "[]"))
             LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
         }
         override suspend fun radio(): Int = QueueTransactions.mutex.withLock {
             val current = playback.snapshot().nowPlaying.song ?: return@withLock 0
             val queued = songs()
-            val additions = distinctRadioTracks(current, queued, plex.related(source, current.id))
+            val additions = radioBatch(current, queued + readSongs("local.radioRecent"), TrackRadioSettings(storage).distance) { distance ->
+                plex.related(source, current.id, limit = 100, maxDistance = distance)
+            }
                 .map { it.copy(isManual = false, isRadio = true) }
+            storage.write(mapOf("local.radioActive" to "true", "local.radioSeed" to encodeSong(current).toString()))
+            rememberRadioSong(current)
             if (additions.isNotEmpty()) {
                 writeSongs("local.queue", queued + additions)
                 LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
@@ -150,6 +155,26 @@ class LocalHarmonicastCore(
             return@withLock additions.size
         }
         override suspend fun enableAutomaticPlayback() {
+            // Keep radio continuity separate from the general automatic mix. The mutex
+            // makes simultaneous refill callers observe one batch, and clear cannot
+            // be undone by an in-flight refill.
+            val radioHandled = QueueTransactions.mutex.withLock {
+                if (storage.read("local.radioActive") != "true") return@withLock false
+                if (songs().isNotEmpty()) return@withLock true
+                val seed = playback.snapshot().nowPlaying.song
+                    ?: storage.read("local.radioSeed")?.takeIf { it.isNotBlank() }?.let { decodeSong(JSONObject(it)) }
+                val additions = if (seed == null) emptyList() else
+                    radioBatch(seed, readSongs("local.radioRecent"), TrackRadioSettings(storage).distance) { distance ->
+                        plex.related(source, seed.id, limit = 100, maxDistance = distance)
+                    }
+                        .map { it.copy(isManual = false, isRadio = true) }
+                writeSongs("local.queue", additions)
+                storage.write(mapOf(ReplayWindow.STATUS_KEY to if (additions.isEmpty())
+                    "No fresh sonic matches found. Start Track Radio from another song or clear the queue to leave radio." else ""))
+                LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
+                true
+            }
+            if (radioHandled) return
             if (songs().isEmpty()) {
                 val cutoff = replayWindow.cutoff(nowMillis())
                 val local = recentPlays.snapshot(nowMillis())
@@ -159,6 +184,8 @@ class LocalHarmonicastCore(
                 val selection = chooseJukeboxTracks(pools, 5, share, start, MusicTuningStore(storage).read())
                 // Preserve requests added during candidate loading.
                 QueueTransactions.mutex.withLock {
+                // A user may have started radio while the general mix was loading.
+                if (storage.read("local.radioActive") == "true") return@withLock
                 writeSongs("local.queue", songs() + selection.songs.map { it.copy(isManual = false) })
                 storage.write(mapOf(ReplayWindow.STATUS_KEY to if (selection.songs.isEmpty() && songs().isEmpty())
                     ReplayWindow.EMPTY_MESSAGE else ""))
@@ -208,6 +235,12 @@ class LocalHarmonicastCore(
                 .put("isAutoQueue", isAutoQueue)
                 .put("position", if (previous.nowPlaying.song?.id == persistedSong?.id) previous.positionSeconds else 0.0)
             storage.write(mapOf("local.playback" to value.toString()))
+            if (displayedSong != null && isPlaying) QueueTransactions.mutex.withLock {
+                if (storage.read("local.radioActive") == "true") {
+                    storage.write(mapOf("local.radioSeed" to encodeSong(displayedSong).toString()))
+                    rememberRadioSong(displayedSong)
+                }
+            }
             LocalCoreEvents.publish(CoreEvent.CHANGED)
         }
         override suspend fun savePosition(seconds: Double) {
@@ -291,6 +324,13 @@ class LocalHarmonicastCore(
         state.put("song", encodeSong(song.copy(rating = rating)))
         storage.write(mapOf("local.playback" to state.toString()))
         LocalCoreEvents.publish(CoreEvent.CHANGED)
+    }
+
+    // Bounded radio-session memory; source changes and queue clear reset it.
+    // Caller holds QueueTransactions.mutex.
+    private fun rememberRadioSong(song: Song) {
+        val recent = readSongs("local.radioRecent").filterNot { it.id == song.id }
+        writeSongs("local.radioRecent", (recent + song).takeLast(100))
     }
 
     private fun readSongs(key: String): List<Song> = storage.read(key)?.let {

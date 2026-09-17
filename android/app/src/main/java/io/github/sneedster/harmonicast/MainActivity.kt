@@ -114,6 +114,7 @@ class HarmonicastViewModel : ViewModel() {
     internal var musicTuning by mutableStateOf(MusicTuning()); private set
     var automaticPlexRatings by mutableStateOf(false); private set
     var replayWindowDays by mutableIntStateOf(7); private set
+    var trackRadioDistance by mutableDoubleStateOf(0.25); private set
     var automaticMixStatus by mutableStateOf(""); private set
     var ratedTrackShare by mutableIntStateOf(8); private set
     var settingsSaving by mutableStateOf(false); private set
@@ -152,6 +153,7 @@ class HarmonicastViewModel : ViewModel() {
         keepScreenOnWhileCharging = context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE)
             .getBoolean("ui.keepScreenOnWhileCharging", false)
         replayWindowDays = ReplayWindow(api.storage).days
+        trackRadioDistance = TrackRadioSettings(api.storage).distance
         musicTuning = MusicTuningStore(api.storage).read()
         automaticPlexRatings = AutomaticPlexRatings(api.storage).enabled
         plex = LocalPlexClient(api.storage)
@@ -368,6 +370,7 @@ class HarmonicastViewModel : ViewModel() {
                     nowPlaying = state.nowPlaying
                     playbackPosition = state.positionSeconds.toFloat().coerceAtLeast(0f)
                     replayWindowDays = ReplayWindow(api.storage).days
+                    trackRadioDistance = TrackRadioSettings(api.storage).distance
                     automaticMixStatus = api.storage.read(ReplayWindow.STATUS_KEY).orEmpty()
                     musicTuning = MusicTuningStore(api.storage).read()
                     automaticPlexRatings = AutomaticPlexRatings(api.storage).enabled
@@ -681,6 +684,14 @@ class HarmonicastViewModel : ViewModel() {
             musicTuning = current
             error = e.message ?: "Could not save music tuning"
         }
+    }
+
+    fun saveTrackRadioDistance(distance: Double) {
+        if (!isPersonalMode || !isHost) return
+        try {
+            TrackRadioSettings(api.storage).distance = distance
+            trackRadioDistance = TrackRadioSettings(api.storage).distance
+        } catch (e: Exception) { error = e.message ?: "Could not save Track Radio distance" }
     }
 
     fun saveReplayWindow(days: Int) {

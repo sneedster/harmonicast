@@ -34,6 +34,7 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
     APPEARANCE("Appearance", Icons.Default.Palette),
     PLAYBACK("Playback", Icons.Default.PlayCircle),
     MIX("Automatic mix", Icons.Default.Shuffle),
+    RADIO("Track Radio", Icons.Default.Radio),
     RATINGS("Automatic ratings", Icons.Default.Star),
     ACQUISITION("Music acquisition", Icons.Default.CloudDownload),
     PLEX("Plex account", Icons.Default.AccountCircle),
@@ -95,6 +96,7 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
                                 SettingsCategory.APPEARANCE -> vm.colorSchemeName
                                 SettingsCategory.PLAYBACK -> if (television) "Playback on this TV" else if (vm.keepScreenOnWhileCharging) "Stay awake while charging" else "Screen & background playback"
                                 SettingsCategory.MIX -> "${vm.ratedTrackShare} rated / ${10 - vm.ratedTrackShare} unrated · ${selectionLabels[vm.musicTuning.selection]}"
+                                SettingsCategory.RADIO -> "Sonic distance ${String.format(Locale.ROOT, "%.2f", vm.trackRadioDistance)}"
                                 SettingsCategory.RATINGS -> if (!vm.automaticPlexRatings) "Off" else if (vm.musicTuning.defaultRatings) "On · Default tuning" else "On · Custom tuning"
                                 SettingsCategory.ACQUISITION -> "Connect an existing MusicGrabber service"
                                 SettingsCategory.PLEX -> vm.plexSourceLabel.ifBlank { "Connect your music library" }
@@ -151,6 +153,10 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
                                 SettingsCategory.APPEARANCE -> AppearanceSettings(vm)
                                 SettingsCategory.PLAYBACK -> PlaybackSettings(vm)
                                 SettingsCategory.MIX -> MixSettings(vm)
+                                SettingsCategory.RADIO -> {
+                                    TrackRadioSettingsContent(vm.trackRadioDistance, vm.isPersonalMode && vm.isHost, vm::saveTrackRadioDistance)
+                                    if (vm.automaticMixStatus.isNotBlank()) SettingsDescription(vm.automaticMixStatus)
+                                }
                                 SettingsCategory.RATINGS -> RatingSettings(vm)
                                 SettingsCategory.ACQUISITION -> AcquisitionSettings(vm, isActive)
                                 SettingsCategory.PLEX -> PlexAccountSettings(vm)
@@ -218,6 +224,31 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
 }
 
 private val strengthLabels = listOf("Off", "Half", "Normal", "Strong", "Double")
+
+@Composable internal fun TrackRadioSettingsContent(distance: Double, enabled: Boolean, save: (Double) -> Unit) {
+    var draft by remember(distance) { mutableFloatStateOf(distance.toFloat()) }
+    Text("Starting sonic distance", style = MaterialTheme.typography.titleMedium)
+    SettingsDescription("Find songs by how they sound in your Plex library. Lower values keep matches closer; higher values allow more variety.")
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedIconButton(onClick = { save(distance - 0.01) }, enabled = enabled && distance > 0.05, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Remove, "Decrease sonic distance") }
+        Text(String.format(Locale.ROOT, "%.2f", draft), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+        OutlinedIconButton(onClick = { save(distance + 0.01) }, enabled = enabled && distance < 0.30, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Add, "Increase sonic distance") }
+    }
+    Slider(value = draft, onValueChange = { draft = it }, onValueChangeFinished = {
+        save(draft.toDouble())
+        draft = distance.toFloat()
+    }, valueRange = 0.05f..0.30f, steps = 24, enabled = enabled,
+        modifier = Modifier.fillMaxWidth().tvFocusFeedback().semantics { contentDescription = "Starting sonic distance" })
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("Close matches", style = MaterialTheme.typography.bodySmall)
+        Text("More variety", style = MaterialTheme.typography.bodySmall)
+    }
+    SettingsDescription("If fewer than 10 distinct songs remain, radio widens by 0.05, up to twice. Each new batch starts at your chosen distance and queues up to 20 songs. At ${String.format(Locale.ROOT, "%.2f", distance)}, the widest attempt is ${String.format(Locale.ROOT, "%.2f", distance + 0.10)}.")
+    SettingsDescription("When the queue ends, radio follows the last song played. It avoids the last 100 songs played during radio and keeps a shorter queue if there are not enough fresh matches. Clear the queue to end radio.")
+    SettingsDescription("Changes apply to the next batch. Songs already queued stay in place. Default: 0.25. Distance is not a percentage.")
+    OutlinedButton(onClick = { save(0.25) }, enabled = enabled && distance != 0.25, modifier = Modifier.tvFocusFeedback()) { Text("Restore default distance") }
+    if (!enabled) SettingsDescription("Only the host can change Track Radio settings for this device.")
+}
 private val selectionLabels = listOf("Equal chance", "Mild", "Normal", "Strong", "Very strong")
 
 @Composable internal fun SteppedSetting(title: String, description: String, value: Int, labels: List<String>, enabled: Boolean, change: (Int) -> Unit) {
