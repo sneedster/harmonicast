@@ -6,7 +6,7 @@
 - Show the rating out of 10 (or Unrated) alongside the artist and refresh it when the current rating changes.
 - Disable rating actions without a playing selection or writable Plex source. Android Auto controls button placement, including More.
 
-Validation: debug APK built; all 32 focused rating/core/browser regression tests, debug lint, and strict UI audit passed. Physical Android Auto validation remains pending; no ADB device was connected.
+Validation: debug APK built; all 32 focused rating/core/browser regression tests, debug lint, and strict UI audit passed. Signed device-test build `1.1.14-auto-ratings` (76) installed over the existing app on Pixel 10 Pro via wireless ADB on September 19, 2026; package manager confirmed the version. Physical Android Auto validation remains pending. This build has not been published as a release.
 
 ## v1.1.14 — continuous sonic radio and a steadier player
 
