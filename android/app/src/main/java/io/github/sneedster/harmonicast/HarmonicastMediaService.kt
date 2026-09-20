@@ -97,6 +97,10 @@ class HarmonicastMediaService : MediaLibraryService() {
         private const val PLAY_PLAYLIST_PREFIX = "harmonicast:play-playlist:"
         private const val SHUFFLE_PLAYLIST_PREFIX = "harmonicast:shuffle-playlist:"
         private const val COMMAND_PLAY_SIMILAR = "io.github.sneedster.harmonicast.PLAY_SIMILAR"
+        private const val COMMAND_VOTE_UP = "io.github.sneedster.harmonicast.VOTE_UP"
+        private const val COMMAND_VOTE_DOWN = "io.github.sneedster.harmonicast.VOTE_DOWN"
+        private val VOTE_UP_COMMAND = SessionCommand(COMMAND_VOTE_UP, Bundle())
+        private val VOTE_DOWN_COMMAND = SessionCommand(COMMAND_VOTE_DOWN, Bundle())
         private const val COMMAND_CLEAR_QUEUE = "io.github.sneedster.harmonicast.CLEAR_QUEUE"
         const val CLAIM_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.CLAIM_PLAYBACK"
         const val START_RANDOM_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.START_RANDOM_PLAYBACK"
@@ -162,6 +166,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 }
                 if (mediaItem != null) playbackHistory.record(HistoryItem(mediaItem, currentIsAuto.get()))
                 previousMediaItem = mediaItem
+                updateCustomLayout(radioQueueActive)
                 syncCurrentPlaybackState(player.isPlaying)
             }
         })
@@ -267,6 +272,8 @@ class HarmonicastMediaService : MediaLibraryService() {
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_LIBRARY_ROOT)
                     .add(PLAY_SIMILAR_COMMAND)
                     .add(CLEAR_QUEUE_COMMAND)
+                    .add(VOTE_UP_COMMAND)
+                    .add(VOTE_DOWN_COMMAND)
                     .build()
 
                 val availablePlayerCommands = ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
@@ -568,6 +575,12 @@ class HarmonicastMediaService : MediaLibraryService() {
                 return scope.future {
                     try {
                         when (customCommand.customAction) {
+                            COMMAND_VOTE_UP, COMMAND_VOTE_DOWN -> {
+                                if (!canRateCurrentTrack()) return@future SessionResult(SessionError.ERROR_INVALID_STATE)
+                                core.guests.vote(customCommand.customAction == COMMAND_VOTE_UP)
+                                refreshCurrentRating()
+                                SessionResult(SessionResult.RESULT_SUCCESS)
+                            }
                             COMMAND_PLAY_SIMILAR -> {
                                 Log.d("HarmonicastMedia", "Android Auto requested Track Radio queue")
                                 val added = core.queue.radio()
@@ -969,6 +982,8 @@ class HarmonicastMediaService : MediaLibraryService() {
                 Log.d("HarmonicastMedia", "Core event: $event")
                 if (event == CoreEvent.FORCE_SKIP) {
                     advance("skip")
+                } else if (event == CoreEvent.CHANGED) {
+                    scope.launch { refreshCurrentRating() }
                 } else if (event == CoreEvent.QUEUE_CHANGED) {
                     refreshAndroidAutoQueue()
                 } else if (event == CoreEvent.PLAYER_SESSION_CHANGED) {
@@ -1091,6 +1106,18 @@ class HarmonicastMediaService : MediaLibraryService() {
 
     @OptIn(UnstableApi::class)
     private fun customLayout(radioQueueActive: Boolean) = listOf(
+        CommandButton.Builder(CommandButton.ICON_THUMB_UP_UNFILLED)
+            .setSessionCommand(VOTE_UP_COMMAND)
+            .setDisplayName("Thumbs up")
+            .setEnabled(canRateCurrentTrack())
+            .setSlots(CommandButton.SLOT_OVERFLOW)
+            .build(),
+        CommandButton.Builder(CommandButton.ICON_THUMB_DOWN_UNFILLED)
+            .setSessionCommand(VOTE_DOWN_COMMAND)
+            .setDisplayName("Thumbs down")
+            .setEnabled(canRateCurrentTrack())
+            .setSlots(CommandButton.SLOT_OVERFLOW)
+            .build(),
         CommandButton.Builder(if (radioQueueActive) CommandButton.ICON_CHECK_CIRCLE_FILLED else CommandButton.ICON_RADIO)
             .setSessionCommand(PLAY_SIMILAR_COMMAND)
             .setDisplayName(if (radioQueueActive) "Radio queue ready" else "Queue Track Radio")
@@ -1110,7 +1137,31 @@ class HarmonicastMediaService : MediaLibraryService() {
                 .setIsPlayable(true).setIsBrowsable(false).setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).build()
         ).build()
 
+    private var radioQueueActive = false
+
+    private fun canRateCurrentTrack() = player.currentMediaItem != null &&
+        api.profile.personalSource?.canWriteToPlex == true
+
+    private suspend fun refreshCurrentRating() {
+        try {
+            val activeCore = core
+            val song = activeCore.playback.snapshot().nowPlaying.song ?: return
+            if (core !== activeCore) return
+            val item = player.currentMediaItem ?: return
+            if (item.mediaId != song.id) return
+            val metadata = AutoTrackRating.apply(item.mediaMetadata, song.rating)
+            if (metadata != item.mediaMetadata) {
+                player.replaceMediaItem(player.currentMediaItemIndex, item.buildUpon().setMediaMetadata(metadata).build())
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("HarmonicastMedia", "Could not refresh track rating", e)
+        }
+    }
+
     private fun updateCustomLayout(radioQueueActive: Boolean) {
+        this.radioQueueActive = radioQueueActive
         mediaLibrarySession?.setCustomLayout(customLayout(radioQueueActive))
     }
 
@@ -1365,7 +1416,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         return MediaItem.Builder()
             .setMediaId(song.id)
             .setUri(streamUri)
-            .setMediaMetadata(metadataBuilder.build())
+            .setMediaMetadata(AutoTrackRating.apply(metadataBuilder.build(), song.rating))
             .setRequestMetadata(
                 MediaItem.RequestMetadata.Builder()
                     .setMediaUri(streamUri)

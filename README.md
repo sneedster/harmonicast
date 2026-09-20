@@ -18,7 +18,7 @@ native playback; Plex rating/history writes still require server owner access.
 - Albums, singles, EPs, artists, biographies, live search, and paged Plex playlists.
 - Voice input through Android speech recognition and remote-friendly TV focus.
 - Request-first queues, configurable automatic mix, adaptive ratings, and Track Radio.
-- Android Auto library browsing, artwork grids, and playback.
+- Android Auto library browsing, artwork grids, playback, thumbs up/down, and track ratings (controls may appear under More).
 - Temporary nearby rooms, requests/votes, and bundled browser guest/display pages.
 - Owner-controlled native room playback transfer and take-back.
 - Optional **Stay awake while charging** while Harmonicast is open.

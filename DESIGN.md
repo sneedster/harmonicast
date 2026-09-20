@@ -329,3 +329,16 @@ TrackSwipePage now wraps artwork only: its horizontal translation and hit area
 leave metadata, progress, controls, and navigation stationary. The existing
 vertical artwork gesture still opens discovery. PlayerPalette, MaterialTheme,
 and existing transport components remain the visual owners.
+
+## Android Auto track ratings
+
+HarmonicastMediaService owns the Media3 custom actions. Thumbs up/down precede
+Track Radio and Clear queue; Android Auto owns placement and may use More.
+Reuse core.guests.vote so each press changes Plex by one point and thumbs down
+retains the existing automatic-track skip rule. Disable rating actions without a
+current track or writable personal Plex source; the core rechecks write access.
+AutoTrackRating preserves title/artist/album identity, adds the rating or Unrated
+to the display subtitle, and supplies a five-star Media3 user rating from Plex's
+ten-point value. Core changes refresh current-item metadata without reloading the
+stream; track/source checks prevent applying a late result to another item.
+No custom car layout, palette, font, or separate rating storage is introduced.

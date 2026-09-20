@@ -1,5 +1,13 @@
 # Releases
 
+## Unreleased — Android Auto track ratings
+
+- Add thumbs-up/down playback actions using the same Plex rating and automatic-track skip behavior as the phone.
+- Show the rating out of 10 (or Unrated) alongside the artist and refresh it when the current rating changes.
+- Disable rating actions without a playing selection or writable Plex source. Android Auto controls button placement, including More.
+
+Validation: debug APK built; all 32 focused rating/core/browser regression tests, debug lint, and strict UI audit passed. Physical Android Auto validation remains pending; no ADB device was connected.
+
 ## v1.1.14 — continuous sonic radio and a steadier player
 
 Version code: **76**.
