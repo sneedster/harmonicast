@@ -249,7 +249,9 @@ class HarmonicastMediaService : MediaLibraryService() {
                 session: MediaSession,
                 controller: MediaSession.ControllerInfo
             ): ConnectionResult {
-                Log.d("HarmonicastMedia", "onConnect from: ${controller.packageName}")
+                val allowed = MediaControllerAccess.allowed(this@HarmonicastMediaService, controller)
+                Log.i("HarmonicastMedia", "Controller ${controller.packageName} uid=${controller.uid} allowed=$allowed")
+                if (!allowed) return ConnectionResult.reject()
 
                 // The car is the authoritative playback endpoint while it is
                 // connected. Claim immediately instead of leaving a phone or
@@ -366,13 +368,13 @@ class HarmonicastMediaService : MediaLibraryService() {
                         try {
                             val nodes = AutoLibraryBrowser(core.library).children(parentId)
                             val items = nodes.map { node -> node.song?.let(::createMediaItem) ?: MediaItem.Builder()
-                                .setMediaId(node.id).setMediaMetadata(MediaMetadata.Builder().setTitle(node.title)
-                                    .setSubtitle(node.subtitle).setIsBrowsable(true).setIsPlayable(false)
+                                .setMediaId(SessionMediaItems.id(node.id)).setMediaMetadata(MediaMetadata.Builder().setTitle(SessionMediaItems.text(node.title))
+                                    .setSubtitle(SessionMediaItems.text(node.subtitle)).setIsBrowsable(true).setIsPlayable(false)
                                     .setExtras(Bundle().apply {
                                         putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", if (node.id.contains("/browse/")) 2 else 1)
                                         putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1)
                                     })
-                                    .setArtworkUri(node.artwork?.let(Uri::parse))
+                                    .setArtworkUri(MediaArtworkProvider.uri(this@HarmonicastMediaService, node.artwork))
                                     .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED).build()).build() }
                             LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                         } catch (_: Exception) { LibraryResult.ofError(SessionError.ERROR_UNKNOWN) }
@@ -393,8 +395,8 @@ class HarmonicastMediaService : MediaLibraryService() {
                     return scope.future {
                         try {
                             val items = core.library.playlists().map { playlist ->
-                                MediaItem.Builder().setMediaId(PLAYLIST_ID_PREFIX + encode(playlist.id)).setMediaMetadata(
-                                    MediaMetadata.Builder().setTitle(playlist.title).setDisplayTitle(playlist.title)
+                                MediaItem.Builder().setMediaId(SessionMediaItems.id(PLAYLIST_ID_PREFIX + encode(playlist.id))).setMediaMetadata(
+                                    MediaMetadata.Builder().setTitle(SessionMediaItems.text(playlist.title)).setDisplayTitle(SessionMediaItems.text(playlist.title))
                                         .setSubtitle(if (playlist.trackCount > 0) "${playlist.trackCount} tracks" else "Playlist")
                                         .setIsPlayable(false).setIsBrowsable(true)
                                         .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST).build()
@@ -471,7 +473,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             ): ListenableFuture<MutableList<MediaItem>> {
                 Log.d("HarmonicastMedia", "onAddMediaItems: ${mediaItems.size} items")
                 if (mediaItems.any { it.mediaId.startsWith(PLAY_PLAYLIST_PREFIX) || it.mediaId.startsWith(SHUFFLE_PLAYLIST_PREFIX) }) {
-                    return Futures.immediateFuture(mediaItems)
+                    return Futures.immediateFuture(mediaItems.map { playlistActionItem(it.mediaId, SessionMediaItems.text(it.mediaMetadata.title?.toString().orEmpty())) }.toMutableList())
                 }
                 return scope.future {
                     // Android Auto often sends only a media ID when a user
@@ -1027,7 +1029,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun isAndroidAutoController(controller: MediaSession.ControllerInfo) =
-        controller.packageName == "com.google.android.projection.gearhead"
+        controller.packageName == MediaControllerAccess.ANDROID_AUTO && MediaControllerAccess.allowed(this, controller)
 
     private fun claimAndroidAutoPlayback() {
         if (nativeOutput != null) {
@@ -1131,7 +1133,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     )
 
     private fun playlistActionItem(id: String, title: String) = MediaItem.Builder()
-        .setMediaId(id)
+        .setMediaId(SessionMediaItems.id(id))
         .setMediaMetadata(
             MediaMetadata.Builder().setTitle(title).setDisplayTitle(title)
                 .setIsPlayable(true).setIsBrowsable(false).setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).build()
@@ -1392,40 +1394,18 @@ class HarmonicastMediaService : MediaLibraryService() {
         }
     }
 
-    private fun coverArtUri(coverArt: String): Uri? {
-        if (coverArt.isEmpty()) return null
-        return null
-    }
+    private fun createMediaItem(song: Song): MediaItem = SessionMediaItems.track(
+        this, song, core.library.streamUrl(song), core.library.artworkUrl(song),
+    )
 
-    private fun createMediaItem(song: Song): MediaItem {
-        val streamUri = Uri.parse(core.library.streamUrl(song))
-        val artworkUri = core.library.artworkUrl(song)?.let(Uri::parse) ?: coverArtUri(song.coverArt)
-        val metadataBuilder = MediaMetadata.Builder()
-            .setExtras(Bundle().apply { putString("harmonicast.coverArt", song.coverArt) })
-            .setTitle(song.title)
-            .setArtist(song.artist)
-            .setAlbumTitle(song.album)
-            .setDisplayTitle(song.title)
-            .setSubtitle(song.artist)
-            .setIsPlayable(true)
-            .setIsBrowsable(false)
-            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-        if (artworkUri != null) {
-            metadataBuilder.setArtworkUri(artworkUri)
-        }
-        return MediaItem.Builder()
-            .setMediaId(song.id)
-            .setUri(streamUri)
-            .setMediaMetadata(AutoTrackRating.apply(metadataBuilder.build(), song.rating))
-            .setRequestMetadata(
-                MediaItem.RequestMetadata.Builder()
-                    .setMediaUri(streamUri)
-                    .build()
-            )
-            .build()
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
+        // Media3's legacy onBind uses an anonymous placeholder before the actual browser is known.
+        // This permits selecting the binder only; onConnect authenticates the real caller afterward.
+        val allowed = MediaControllerAccess.legacySessionLookup(controllerInfo) ||
+            MediaControllerAccess.allowed(this, controllerInfo)
+        if (!allowed) Log.i("HarmonicastMedia", "Denied session ${controllerInfo.packageName} uid=${controllerInfo.uid}")
+        return mediaLibrarySession.takeIf { allowed }
     }
-
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaLibrarySession
 
     override fun onDestroy() {
         if (::carConnection.isInitialized) carConnection.type.removeObserver(carConnectionObserver)

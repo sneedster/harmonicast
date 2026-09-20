@@ -22,6 +22,10 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <queries>
+        <package android:name="com.google.android.projection.gearhead" />
+        <package android:name="com.android.systemui" />
+        <package android:name="com.android.bluetooth" />
+        <package android:name="android" />
         <intent><action android:name="android.speech.RecognitionService" /></intent>
         <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH" /></intent>
     </queries>
@@ -34,6 +38,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Harmonicast"
         android:usesCleartextTraffic="true">
+
+        <!-- Opaque read-only artwork handles expose re-encoded pixels, never Plex URLs. -->
+        <provider android:name=".MediaArtworkProvider"
+            android:authorities="${applicationId}.media-artwork" android:exported="true" />
 
         <provider android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true">

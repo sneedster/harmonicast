@@ -1,5 +1,13 @@
 # Releases
 
+## Unreleased — P0 media-session privacy
+
+- Authenticate media controllers by package ownership plus app, Google production signer, or named OS identity; reject unrelated and package-spoofing clients.
+- Replace authenticated Plex artwork URLs with app-owned, read-only image handles and remove stream URLs from request metadata. Playback credentials remain private to the local player.
+- Verified on Pixel 10 Pro with the foreign-controller probe, authorized metadata inspection, and real Android Auto through DHU: no token markers in 67 inspected items, artwork and playback working, queue selection and pause/resume working. One new regression test and four existing tests passed; debug lint and signed release assembly succeeded.
+
+See [the P0 verification report](docs/security/media-session-p0-2026-09-20.md) for identity assumptions, exact checks, limitations, and evidence. Signed device-test build `1.1.14-p0-media-privacy` (76) is installed locally; it is not a published release. Plex authorization has not been rotated or revoked.
+
 ## Unreleased — Android Auto track ratings
 
 - Add thumbs-up/down playback actions using the same Plex rating and automatic-track skip behavior as the phone.
