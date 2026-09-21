@@ -1142,7 +1142,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     private var radioQueueActive = false
 
     private fun canRateCurrentTrack() = player.currentMediaItem != null &&
-        api.profile.personalSource?.canWriteToPlex == true
+        PlexAccessPolicy.forSource(api.profile.personalSource).canRateTracks
 
     private suspend fun refreshCurrentRating() {
         try {

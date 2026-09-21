@@ -1,5 +1,33 @@
 # Android validation
 
+## Shared-user rating test build — 2026-09-20
+
+52 focused tests passed across `LocalHarmonicastCoreTest`, `PlexAccessPolicyTest`,
+`SettingsScreenTest`, and `AutoTrackRatingTest`; existing tests were updated,
+with no new test methods. Checks cover shared-token reads/writes, manual up/down,
+automatic completion/skip after opt-in and no automatic writes while off,
+confirmed rating refresh, shared-host room reactions, owner-only capabilities,
+and shared-user settings/tuning. Debug assembly and debug lint passed (zero
+lint errors, 39 warnings). The strict UI audit had zero findings. The shared-user
+rating settings screenshot was inspected for layout and enabled controls.
+
+Command: `./android/build-debug.sh :app:testDebugUnitTest --tests
+'*LocalHarmonicastCoreTest' --tests '*PlexAccessPolicyTest' --tests
+'*SettingsScreenTest' --tests '*AutoTrackRatingTest' :app:lintDebug`.
+
+The rating transport tests use an injected Plex HTTP fixture, not a live shared
+account. Michael confirmed account-separated ratings in Plex; live shared-account
+rating write/readback from this app and a fresh Android Auto DHU interaction
+remain user trial checks. Controller authentication and metadata privacy code
+are unchanged except the rating-button capability gate.
+
+Signed test build `1.1.15-shared-ratings` (77) passed release vital lint and APK
+signature verification with the existing certificate. ADB `install -r` succeeded
+on Pixel 10 Pro, PackageManager confirmed the test version, and activity launch
+returned `Status: ok`. App data was not cleared. APK SHA-256:
+`dba25857c853d8184f0d140d1860018882af7e10b6f62589ebac146011dc1b85`.
+This is a local trial build; the published v1.1.15 release is unchanged.
+
 ## v1.1.15 security and Android Auto release — 2026-09-20
 
 All **270 tests in 38 classes passed**, with zero failures, errors, or skips,

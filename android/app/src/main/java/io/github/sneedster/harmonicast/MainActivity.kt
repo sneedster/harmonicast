@@ -135,6 +135,7 @@ class HarmonicastViewModel : ViewModel() {
     val isPersonalMode: Boolean get() = ::api.isInitialized && api.profile.mode == HomeMode.PERSONAL_PLEX
     val canWriteToPlex: Boolean get() = api.profile.personalSource?.canWriteToPlex == true
     internal val plexAccess: PlexAccessPolicy get() = PlexAccessPolicy.forSource(if (::api.isInitialized) api.profile.personalSource else null)
+    val canRateTracks: Boolean get() = isPersonalMode && plexAccess.canRateTracks
     val personalSetupCanCancel: Boolean get() = ::api.isInitialized && api.profile.homeReady
     private var personalPin: PlexPin? = null
     private var personalAuthJob: kotlinx.coroutines.Job? = null
@@ -656,8 +657,8 @@ class HarmonicastViewModel : ViewModel() {
     fun add(song: Song) = coreAction { core.queue.add(song); refresh() }
     fun remove(song: Song) = coreAction { core.queue.remove(song.id); refresh() }
     fun vote(up: Boolean) {
-        if (isPersonalMode && !canWriteToPlex) {
-            notice = "Ratings are unavailable on a shared read-only Plex server"
+        if (isPersonalMode && !canRateTracks) {
+            notice = "Connect a personal Plex library to rate tracks"
             return
         }
         coreAction { core.guests.vote(up) }
@@ -665,7 +666,7 @@ class HarmonicastViewModel : ViewModel() {
     fun claim() = coreAction { core.playback.claim(); refresh() }
     fun clearQueue() = coreAction { core.queue.clear(); refresh() }
     fun saveAutomaticPlexRatings(enabled: Boolean) {
-        if (!isPersonalMode || !canWriteToPlex) return
+        if (!canRateTracks) return
         try {
             AutomaticPlexRatings(api.storage).enabled = enabled
             automaticPlexRatings = enabled
@@ -675,7 +676,7 @@ class HarmonicastViewModel : ViewModel() {
     internal fun saveMusicTuning(value: MusicTuning) {
         if (!isPersonalMode || !isHost) return
         val current = MusicTuningStore(api.storage).read()
-        val allowed = if (canWriteToPlex && automaticPlexRatings) value
+        val allowed = if (canRateTracks && automaticPlexRatings) value
             else current.copy(selection = value.selection)
         try {
             MusicTuningStore(api.storage).write(allowed)
@@ -1286,7 +1287,7 @@ class MainActivity : ComponentActivity() {
                     onClick = { vm.choosePlexServer(server) },
                     modifier = Modifier.tvFocusFeedback().then(Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(firstChoice) else Modifier)),
                 ) {
-                    Text(if (server.owned) server.name else "${server.name} · Shared read-only")
+                    Text(if (server.owned) server.name else "${server.name} · Shared")
                 }
             }
         }
@@ -1465,7 +1466,7 @@ class MainActivity : ComponentActivity() {
                     LinearProgressIndicator(progress = { (vm.playbackPosition / song.duration.toFloat()).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                     Text("${formatDuration(vm.playbackPosition.toInt())} / ${formatDuration(song.duration.toInt())}")
                 }
-                if (song != null && vm.canWriteToPlex) {
+                if (song != null && vm.canRateTracks) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TvAction("Vote down") { vm.vote(false) }
                         TvAction("Vote up") { vm.vote(true) }
@@ -1695,7 +1696,7 @@ class MainActivity : ComponentActivity() {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (vm.canWriteToPlex) {
+                if (vm.canRateTracks) {
                     IconButton(onClick = { vm.vote(false) }, modifier = Modifier.tvFocusFeedback().then(Modifier.size(48.dp))) {
                         Icon(Icons.Default.ThumbDown, "Vote down")
                     }
@@ -1709,7 +1710,7 @@ class MainActivity : ComponentActivity() {
                 IconButton(onClick = { vm.nextSong() }, enabled = vm.isHost, modifier = Modifier.tvFocusFeedback().then(Modifier.size(48.dp))) {
                     Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(32.dp))
                 }
-                if (vm.canWriteToPlex) {
+                if (vm.canRateTracks) {
                     IconButton(onClick = { vm.vote(true) }, modifier = Modifier.tvFocusFeedback().then(Modifier.size(48.dp))) {
                         Icon(Icons.Default.ThumbUp, "Vote up")
                     }

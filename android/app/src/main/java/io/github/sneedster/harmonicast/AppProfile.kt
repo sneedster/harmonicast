@@ -11,6 +11,7 @@ data class PersonalPlexSource(
     val libraryKey: String,
     val libraryName: String,
     val accountToken: String = token,
+    // Server-owner authority, not permission to update the signed-in user's ratings.
     val canWriteToPlex: Boolean = true,
 )
 

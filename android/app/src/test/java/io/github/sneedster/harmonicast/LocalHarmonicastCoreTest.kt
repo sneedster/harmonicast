@@ -108,19 +108,40 @@ class LocalHarmonicastCoreTest {
         assertFalse(calls.any { it.contains("/:/rate?") })
     }
 
-    @Test fun readOnlySourceCannotAutoRateEvenWithOptIn() = runBlocking {
+    @Test fun sharedSourceRatesWithItsOwnTokenOnlyAfterOptIn() = runBlocking {
         val storage = MemoryStorage()
-        AutomaticPlexRatings(storage).enabled = true
         val calls = mutableListOf<String>()
         val http = object : PlexHttp {
             override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+                assertEquals("shared-token", headers["X-Plex-Token"])
                 calls += url
-                error("Read-only source must not contact Plex for automatic ratings")
+                if (url.contains("/:/rate?")) {
+                    assertEquals("PUT", method)
+                    assertTrue(url.contains("X-Plex-Token=shared-token"))
+                }
+                return """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"1","librarySectionID":"7","title":"Song","userRating":5,"Media":[{"Part":[{"key":"/part/1"}]}]}]}}"""
             }
         }
-        LocalHarmonicastCore(source.copy(canWriteToPlex = false), storage, LocalPlexClient(storage, http))
-            .playback.recordEvent(song("1"), "complete", 1.0)
+        val core = LocalHarmonicastCore(source.copy(token = "shared-token", canWriteToPlex = false), storage, LocalPlexClient(storage, http))
+        core.playback.recordEvent(song("1"), "complete", 1.0)
         assertTrue(calls.isEmpty())
+        AutomaticPlexRatings(storage).enabled = true
+        core.playback.recordEvent(song("1"), "complete", 1.0)
+        assertTrue(calls.any { it.contains("/:/rate?") && it.contains("rating=5.1") })
+        calls.clear()
+        core.playback.recordEvent(song("1"), "skip", 0.0)
+        assertTrue(calls.any { it.contains("/:/rate?") && it.contains("rating=4.7") })
+        AutomaticPlexRatings(storage).enabled = false
+        calls.clear()
+        core.playback.recordEvent(song("1"), "complete", 1.0)
+        assertTrue(calls.isEmpty())
+        core.playback.publish(song("1"), true, false)
+        core.guests.vote(true)
+        assertTrue(calls.any { it.contains("/:/rate?") && it.contains("rating=6.0") })
+        assertEquals(6.0, core.playback.snapshot().nowPlaying.song!!.rating!!, 0.001)
+        calls.clear()
+        core.guests.vote(false)
+        assertTrue(calls.any { it.contains("/:/rate?") && it.contains("rating=4.0") })
     }
 
     @Test fun confirmedVoteRefreshesSnapshotAndSurvivesPlaybackCallbacks() = runBlocking {
@@ -260,7 +281,7 @@ class LocalHarmonicastCoreTest {
         } finally { subscription.close() }
     }
 
-    @Test fun sharedReadOnlyCoreKeepsLocalPlaybackButSuppressesPlexWrites() = runBlocking {
+    @Test fun sharedCoreKeepsLocalPlaybackAndScrobblePolicy() = runBlocking {
         val storage = MemoryStorage()
         val readOnly = LocalHarmonicastCore(source.copy(canWriteToPlex = false), storage)
         val track = song("shared")
@@ -271,10 +292,6 @@ class LocalHarmonicastCoreTest {
 
         assertEquals(track.id, readOnly.playback.snapshot().nowPlaying.song?.id)
         assertTrue(storage.values["local.playbackHistory"].orEmpty().contains("completed"))
-        val error = assertThrows(IllegalStateException::class.java) {
-            runBlocking { readOnly.guests.vote(true) }
-        }
-        assertTrue(error.message.orEmpty().contains("read-only"))
     }
 
     @Test fun ratedTrackShareSurvivesCoreRecreation() = runBlocking {

@@ -258,7 +258,7 @@ class LocalHarmonicastCore(
         override suspend fun recordEvent(song: Song, event: String, progress: Double) {
             if (event == "complete" || event == "skip") recentPlays.record(song.id, nowMillis())
             try {
-                if (source.canWriteToPlex && AutomaticPlexRatings(storage).enabled && event in setOf("complete", "skip")) {
+                if (PlexAccessPolicy.forSource(configuredSource, joinedGuest = false).canRateTracks && AutomaticPlexRatings(storage).enabled && event in setOf("complete", "skip")) {
                     LocalCoreEvents.ratingMutex.withLock {
                         if (AutomaticPlexRatings(storage).enabled) {
                             val current = plex.track(source, song.id)
@@ -304,7 +304,7 @@ class LocalHarmonicastCore(
             if (shouldSkipAfterVote(up, state.isAutoQueue)) LocalCoreEvents.publish(CoreEvent.FORCE_SKIP)
         }
         override suspend fun vote(up: Boolean) = LocalCoreEvents.ratingMutex.withLock {
-            check(source.canWriteToPlex) { "Ratings are unavailable on a shared read-only Plex server" }
+            check(PlexAccessPolicy.forSource(configuredSource, joinedGuest = false).canRateTracks) { "Connect a personal Plex library to rate tracks" }
             val state = playback.snapshot()
             val current = state.nowPlaying.song
                 ?: throw IllegalStateException("No song is currently playing")

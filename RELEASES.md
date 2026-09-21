@@ -1,5 +1,10 @@
 # Releases
 
+## Unreleased — shared-user ratings
+
+- Enable personal thumbs-up/down ratings and opt-in automatic ratings for shared Plex users, including phone, TV, and Android Auto controls. Writes use the signed-in user’s selected server token.
+- Keep server-owner setup/acquisition permissions and room-guest reaction rules unchanged.
+
 ## v1.1.15 — media-session privacy and Android Auto ratings
 
 Version code: **77**.

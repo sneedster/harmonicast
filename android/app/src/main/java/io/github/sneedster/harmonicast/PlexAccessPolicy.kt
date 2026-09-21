@@ -7,6 +7,7 @@ internal data class PlexAccessPolicy(
     val canWriteToPlex: Boolean,
     val canManageAcquisition: Boolean,
     val canSubmitAcquisition: Boolean,
+    val canRateTracks: Boolean = false,
 ) {
     companion object {
         fun forSource(source: PersonalPlexSource?, joinedGuest: Boolean = NearbyGuestParticipation.active): PlexAccessPolicy {
@@ -17,7 +18,7 @@ internal data class PlexAccessPolicy(
                 } }.getOrDefault(false)
             val personal = usable && !joinedGuest
             val owner = personal && source?.canWriteToPlex == true
-            return PlexAccessPolicy(personal, usable, owner, owner, owner || personal && SharedAcquisitionAccess.available(source))
+            return PlexAccessPolicy(personal, usable, owner, owner, owner || personal && SharedAcquisitionAccess.available(source), personal)
         }
     }
 }

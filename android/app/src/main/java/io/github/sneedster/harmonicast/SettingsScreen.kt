@@ -284,11 +284,11 @@ private val selectionLabels = listOf("Equal chance", "Mild", "Normal", "Strong",
 
 @Composable private fun RatingSettings(vm: HarmonicastViewModel) {
     val tuning = vm.musicTuning
-    val enabled = vm.isPersonalMode && vm.canWriteToPlex && vm.automaticPlexRatings && vm.isHost
-    SettingsToggle("Enable automatic rating changes", "Let completions and skips adjust your Plex song ratings from listening on this device. Off by default.", vm.automaticPlexRatings, vm.isPersonalMode && vm.canWriteToPlex, vm::saveAutomaticPlexRatings)
+    val enabled = vm.isPersonalMode && vm.canRateTracks && vm.automaticPlexRatings && vm.isHost
+    SettingsToggle("Enable automatic rating changes", "Let completions and skips adjust your Plex song ratings from listening on this device. Off by default.", vm.automaticPlexRatings, vm.isPersonalMode && vm.canRateTracks, vm::saveAutomaticPlexRatings)
     SettingsDescription("These changes are saved to Plex, can replace ratings you set yourself, and are visible in other apps using the same account. Turning this off stops future automatic changes; it does not restore earlier ratings.")
-    SettingsDescription("Explicit thumbs-up/down votes still change Plex ratings. Play counts and listening history continue to be recorded.")
-    if (!vm.canWriteToPlex) SettingsDescription("Automatic ratings are unavailable on a shared read-only source. Sign in with an owner account to use them.")
+    SettingsDescription("Explicit thumbs-up/down votes still change your Plex ratings when automatic changes are off.")
+    if (!vm.canRateTracks) SettingsDescription("Connect your personal Plex library to enable automatic ratings.")
     else if (!vm.automaticPlexRatings) SettingsDescription("Enable automatic rating changes to adjust the controls below. Your saved tuning is retained while off.")
     HorizontalDivider()
     SteppedSetting("Completion boost", "How much finishing a song raises its rating.", tuning.completion, strengthLabels, enabled) { vm.saveMusicTuning(tuning.copy(completion = it)) }
@@ -321,7 +321,7 @@ private fun decimal(value: Double) = String.format(Locale.getDefault(), "%.1f", 
         PlexAccountIdentity(vm)
         HorizontalDivider()
         Text(vm.plexSourceLabel.ifBlank { "Personal Plex library" }, style = MaterialTheme.typography.titleMedium)
-        if (!vm.canWriteToPlex) SettingsDescription("Shared read-only server · playback and local queues are available; Plex ratings and guest hosting are disabled.")
+        if (!vm.canWriteToPlex) SettingsDescription("Shared Plex library · ratings are saved for your Plex account. Server administration remains with the owner.")
         Button(onClick = vm::beginPersonalSourceChange, enabled = !vm.loading, modifier = Modifier.tvFocusFeedback()) { Text("Change Plex server or library") }
         HorizontalDivider()
         TextButton(onClick = { signOut = true }, modifier = Modifier.tvFocusFeedback()) { Text("Sign out of Plex", color = MaterialTheme.colorScheme.error) }

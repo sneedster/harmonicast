@@ -9,6 +9,7 @@ class PlexAccessPolicyTest {
     @Test fun sharedCanHostAndOfferWithoutWriteOrAcquisitionAuthority() {
         val policy = PlexAccessPolicy.forSource(shared, false)
         assertTrue(policy.canHostRoom)
+        assertTrue(policy.canRateTracks)
         assertTrue(policy.canOfferPlayback)
         assertFalse(policy.canWriteToPlex)
         assertFalse(policy.canManageAcquisition)
@@ -18,6 +19,7 @@ class PlexAccessPolicyTest {
     @Test fun ownerRetainsPersonalCapabilities() {
         val policy = PlexAccessPolicy.forSource(shared.copy(canWriteToPlex = true), false)
         assertTrue(policy.canHostRoom)
+        assertTrue(policy.canRateTracks)
         assertTrue(policy.canOfferPlayback)
         assertTrue(policy.canWriteToPlex)
         assertTrue(policy.canManageAcquisition)
@@ -29,6 +31,7 @@ class PlexAccessPolicyTest {
             val policy = PlexAccessPolicy.forSource(source, true)
             assertTrue(policy.canOfferPlayback)
             assertFalse(policy.canHostRoom)
+            assertFalse(policy.canRateTracks)
             assertFalse(policy.canWriteToPlex)
             assertFalse(policy.canManageAcquisition)
             assertFalse(policy.canSubmitAcquisition)

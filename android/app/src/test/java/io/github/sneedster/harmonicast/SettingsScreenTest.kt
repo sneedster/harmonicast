@@ -260,11 +260,16 @@ class SettingsScreenTest {
         compose.onNodeWithText("Plex account").assertExists()
     }
 
-    @Test fun readOnlyAccountCannotEnableRatingsButCanTuneSelection() {
+    @Test fun sharedAccountCanOptIntoRatingsAndTuneSelection() {
         setup(readOnly = true)
         open("Automatic ratings")
-        compose.onNodeWithContentDescription("Enable automatic rating changes").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Enable automatic rating changes").assertIsEnabled()
         compose.onNodeWithContentDescription("Increase Completion boost").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Enable automatic rating changes").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Increase Completion boost").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(3, vm.musicTuning.completion); assertTrue(vm.automaticPlexRatings) }
+        screenshot("phone-shared-ratings")
+        compose.onNodeWithContentDescription("Enable automatic rating changes").performScrollTo().performClick()
         compose.onNodeWithText("Back").performScrollTo().performClick()
         open("Automatic mix")
         compose.onNodeWithContentDescription("Increase Prefer higher ratings").performScrollTo().performClick()

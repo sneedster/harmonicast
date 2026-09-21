@@ -463,3 +463,13 @@ Live acceptance remains: owner enters the dedicated password in the setup UI,
 reviews publication, then verifies approved-recipient discovery and one download
 through Plex indexing/queue fulfillment. Test a separate unapproved account,
 revocation, restart/reconnect and a nearby guest before calling rollout complete.
+
+## Personal ratings enabled — 2026-09-20
+
+Michael confirmed shared users have their own Plex ratings. Personal thumbs-up/down
+and opt-in automatic ratings now use a separate `canRateTracks` capability for
+configured personal libraries, including shared sources. All requests continue to
+use the selected user token. Server ownership (`canWriteToPlex`) still gates
+owner-only setup/acquisition; shared-host room reactions and scrobbling retain
+their existing policy. This supersedes the earlier personal-rating restriction,
+not the room-guest reaction rules.
