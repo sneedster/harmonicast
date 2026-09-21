@@ -23,8 +23,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Keep the published APK version reproducible from source.
-        versionCode = providers.gradleProperty("versionCode").orElse("76").get().toInt()
-        versionName = providers.gradleProperty("versionName").orElse("1.1.14").get()
+        versionCode = providers.gradleProperty("versionCode").orElse("77").get().toInt()
+        versionName = providers.gradleProperty("versionName").orElse("1.1.15").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

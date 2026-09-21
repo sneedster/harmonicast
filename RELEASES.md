@@ -1,20 +1,17 @@
 # Releases
 
-## Unreleased — P0 media-session privacy
+## v1.1.15 — media-session privacy and Android Auto ratings
 
-- Authenticate media controllers by package ownership plus app, Google production signer, or named OS identity; reject unrelated and package-spoofing clients.
-- Replace authenticated Plex artwork URLs with app-owned, read-only image handles and remove stream URLs from request metadata. Playback credentials remain private to the local player.
-- Verified on Pixel 10 Pro with the foreign-controller probe, authorized metadata inspection, and real Android Auto through DHU: no token markers in 67 inspected items, artwork and playback working, queue selection and pause/resume working. One new regression test and four existing tests passed; debug lint and signed release assembly succeeded.
+Version code: **77**.
 
-See [the P0 verification report](docs/security/media-session-p0-2026-09-20.md) for identity assumptions, exact checks, limitations, and evidence. Signed device-test build `1.1.14-p0-media-privacy` (76) is installed locally; it is not a published release. Plex authorization has not been rotated or revoked.
+- Fix a security issue that allowed unrelated Android apps to connect to HarmoniCast's media service and retrieve Plex credentials from media URLs. Controller access now validates package ownership and approved app, signing, or OS identities.
+- Keep Plex credentials out of shared media metadata. Track and album artwork use app-owned image handles, and stream URLs remain private to local playback.
+- Add Android Auto thumbs-up/down actions and display each track's Plex rating out of 10 (or Unrated) alongside the artist. Ratings refresh when changed; Auto determines button placement, including More.
+- Preserve playback, artwork, queue selection, and pause/resume in Android Auto. Rating controls require a playing track and writable Plex source.
 
-## Unreleased — Android Auto track ratings
+The P0 fix was verified on Pixel 10 Pro and the real Android Auto app through DHU: foreign modern/legacy controllers and package-spoofing attempts were rejected; 67 serialized MediaItems and 23 legacy descriptions had no credential markers; artwork and playback worked. See the [verification report](docs/security/media-session-p0-2026-09-20.md) for details and limitations.
 
-- Add thumbs-up/down playback actions using the same Plex rating and automatic-track skip behavior as the phone.
-- Show the rating out of 10 (or Unrated) alongside the artist and refresh it when the current rating changes.
-- Disable rating actions without a playing selection or writable Plex source. Android Auto controls button placement, including More.
-
-Validation: debug APK built; all 32 focused rating/core/browser regression tests, debug lint, and strict UI audit passed. Signed device-test build `1.1.14-auto-ratings` (76) installed over the existing app on Pixel 10 Pro via wireless ADB on September 19, 2026; package manager confirmed the version. Physical Android Auto validation remains pending. This build has not been published as a release.
+Validation: all 270 Android tests passed with per-class process isolation; debug lint, release vital lint, signed release assembly, and APK signature checks passed. The signed 1.1.15 (77) APK installed over the existing Pixel app and launched successfully. See [Android validation](docs/ANDROID_VALIDATION.md) for the full record.
 
 ## v1.1.14 — continuous sonic radio and a steadier player
 

@@ -1,5 +1,35 @@
 # Android validation
 
+## v1.1.15 security and Android Auto release — 2026-09-20
+
+All **270 tests in 38 classes passed**, with zero failures, errors, or skips,
+using per-class process isolation. The initial shared-process release gate hit
+the previously documented Compose idle timeouts in `TrackSwipePageTest`; the
+isolated rerun changed no app or test code. A temporary Gradle init script set
+`tasks.withType(Test).configureEach { forkEvery = 1; maxParallelForks = 1 }`.
+The full `:app:testDebugUnitTest` and `:app:lintDebug` tasks then passed through
+`android/build-debug.sh --init-script /tmp/harmonicast-release-isolation.gradle`.
+
+After that successful full gate, `HARMONICAST_SKIP_RELEASE_CHECKS=1
+./android/build-release.sh` built the signed release without repeating the
+known shared-process runner issue. Release vital lint and APK signature
+verification passed. No new tests were added for packaging this release.
+
+The APK is `io.github.sneedster.harmonicast`, version **1.1.15 (77)**, minimum
+SDK 26, target SDK 35, signed with the existing HarmoniCast certificate:
+`dfc39bdbf60bed1f1fb1135b9a19a007fd194b001fd2461e8ff046415b7f13f8`.
+APK SHA-256: `9fb290c4b8943a98d7201340bb12312ac0c9fb4ac5de3edd9168060b75b01e83`.
+
+ADB `install -r` successfully updated the connected Pixel 10 Pro; PackageManager
+confirmed 1.1.15 / 77 and the activity launch returned `Status: ok`. No app data
+was cleared. Runtime controller rejection, metadata privacy, artwork, playback,
+and actual Android Auto DHU checks were completed immediately before release
+packaging against the same implementation in the version-76 security build;
+see the [P0 verification report](security/media-session-p0-2026-09-20.md).
+The packaging changes only advance the version and update release records.
+This does not claim another physical-car, Shield, or listening acceptance run.
+Plex authorization was not rotated or revoked.
+
 ## v1.1.14 player and radio release checks
 
 The full Android suite passed 265 tests with per-class process isolation, plus
