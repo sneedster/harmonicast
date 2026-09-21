@@ -1,9 +1,13 @@
 # Releases
 
-## Unreleased — shared-user ratings
+## v1.1.16 — shared-user ratings
+
+Version code: **78**.
 
 - Enable personal thumbs-up/down ratings and opt-in automatic ratings for shared Plex users, including phone, TV, and Android Auto controls. Writes use the signed-in user’s selected server token.
 - Keep server-owner setup/acquisition permissions and room-guest reaction rules unchanged.
+
+Validation: all 270 Android tests passed with per-class process isolation; debug lint passed. Shared-token rating requests and opt-in behavior are covered by automated tests. Live shared-account rating write/readback remains a user trial check.
 
 ## v1.1.15 — media-session privacy and Android Auto ratings
 

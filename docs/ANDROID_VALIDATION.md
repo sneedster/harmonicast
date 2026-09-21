@@ -1,5 +1,25 @@
 # Android validation
 
+## v1.1.16 shared-user ratings release — 2026-09-20
+
+All 270 tests in 38 classes passed, with zero failures, errors, or skips, using
+`android/build-debug.sh --init-script /tmp/harmonicast-release-isolation.gradle
+:app:testDebugUnitTest :app:lintDebug`. The temporary init script uses the same
+per-class isolation documented for v1.1.15. Debug lint passed.
+
+After that full gate, `HARMONICAST_SKIP_RELEASE_CHECKS=1
+./android/build-release.sh` built the signed release. Release vital lint and
+signature verification passed. The APK is version 1.1.16 (78), signed with the
+existing HarmoniCast certificate. SHA-256:
+`92b3e8be0df58d762cdae174040a42e91164f7bde142b090b8bff200aa5b53c4`.
+
+ADB `install -r` updated the Pixel 10 Pro without clearing app data. PackageManager
+confirmed 1.1.16 (78), and activity launch returned `Status: ok`.
+
+The shared-account transport and settings coverage below applies unchanged.
+Live shared-account write/readback and a fresh Android Auto DHU interaction
+were not performed for this packaging release.
+
 ## Shared-user rating test build — 2026-09-20
 
 52 focused tests passed across `LocalHarmonicastCoreTest`, `PlexAccessPolicyTest`,
