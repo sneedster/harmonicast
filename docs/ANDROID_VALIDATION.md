@@ -1,5 +1,49 @@
 # Android validation
 
+## Track artist across Now Playing — 2026-09-23 — v1.1.17 (79)
+
+The Plex parser previously chose grandparentTitle before originalTitle. The
+[Python PlexAPI track contract](https://python-plexapi.readthedocs.io/en/stable/modules/audio.html#plexapi.audio.Track)
+identifies those as album artist and track artist respectively. The parser now
+prefers a nonblank track artist, falls back to album artist, then Unknown artist.
+Album collection browsing retains its Plex parentTitle and collection identity.
+
+Surface audit: NocturnePlayer (phone/tablet), MainActivity player/mini-player/TV
+metadata, nearby room summaries, and paired receiver text consume Song.artist
+or Media3 artist. SessionMediaItems supplies artist and subtitle for Android
+Auto, notification and lock screen, with albumArtist separate. GuestRoomRouter
+supplies the same track artist to browser guest, display, and idle attract mode.
+No layout changes were required.
+
+All 276 tests in 38 classes passed with no failures/errors/skips using
+`android/build-debug.sh --init-script /tmp/harmonicast-artist-tests.gradle
+:app:testDebugUnitTest :app:lintDebug`; the init script sets forkEvery = 1 and
+maxParallelForks = 1. Debug assembly and lint passed.
+
+Regression coverage includes compilation metadata with differing artists, blank/
+missing/null fields, album browse identity, persistence, legacy queue/resume
+metadata, offline fallback/cancellation, Media3 IPC and guest/display API payloads.
+The updated kiosk browser script uses the tracked public icon instead of the
+separate marketing checkout and asserts compilation artist text in guest, display
+and attract screens. Its full Chromium fixture run passed, including keyboard,
+phone/desktop layouts, queue/search, empty/error/recovery and reduced motion.
+The phone display screenshot was inspected. These are simulated room API results,
+not a live Plex server or Android device trial.
+
+Design document lint: zero errors, one existing orphaned-token warning. The
+strict UI audit reports 13 baseline findings in unchanged browser HTML (12
+actionless-button detections and an undocumented native-select ownership choice).
+The display navigation/attract/search and guest vote handlers are exercised by
+the passing browser script; no claim of a clean repository-wide UI audit is made.
+Audit JSON: local ignored premium-audit.json.
+
+Signed release assembly and release vital lint passed. APK manifest confirms
+1.1.17 (79); apksigner verification passed and the certificate SHA-256 matches
+the published 1.1.16 APK. SHA-256:
+`f3e4d3ce1aa2035ddd89add63c314f9bb42bb57cd4809391dc5780dd4cbc2834`.
+No device installation, physical playback or DHU verification was performed.
+
+
 ## v1.1.16 shared-user ratings release — 2026-09-20
 
 All 270 tests in 38 classes passed, with zero failures, errors, or skips, using

@@ -15,6 +15,19 @@ import org.robolectric.Shadows.shadowOf
 
 @RunWith(RobolectricTestRunner::class)
 class MediaSessionPrivacyTest {
+    @Test fun compilationTrackArtistSurvivesMediaSessionIpcWithSeparateAlbumArtist() {
+        val context: Context = RuntimeEnvironment.getApplication()
+        val song = Song("plex:machine:42", "Compilation track", "Guest Performer", "Compilation", rating = 7.0,
+            albumArtist = "Various Artists")
+        val remote = MediaItem.fromBundle(SessionMediaItems.track(context, decodeSong(encodeSong(song)),
+            "https://plex/track", null).toBundle())
+        assertEquals("Guest Performer", remote.mediaMetadata.artist.toString())
+        assertTrue(remote.mediaMetadata.subtitle.toString().startsWith("Guest Performer"))
+        assertFalse(remote.mediaMetadata.subtitle.toString().contains("Various Artists"))
+        assertEquals("Various Artists", remote.mediaMetadata.albumArtist.toString())
+        assertEquals("Compilation", remote.mediaMetadata.albumTitle.toString())
+    }
+
     @Test fun foreignIdentityCannotAuthorizeAndSerializedItemsContainNoPlexCredentials() {
         val context: Context = RuntimeEnvironment.getApplication()
         val pm = shadowOf(context.packageManager)
@@ -59,7 +72,7 @@ class MediaSessionPrivacyTest {
         assertEquals(item.mediaMetadata.artworkUri, remote.mediaMetadata.artworkUri)
         // Also guard values copied into text and extras, independently of connection policy.
         val poisoned = SessionMediaItems.track(context,
-            song.copy(title = artwork, artist = artwork, album = artwork, coverArt = artwork), stream, artwork)
+            song.copy(title = artwork, artist = artwork, album = artwork, albumArtist = artwork, coverArt = artwork), stream, artwork)
         inspect(poisoned.toBundle())
     }
 }

@@ -507,7 +507,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                                 metadata.artist?.toString().orEmpty(),
                                 metadata.albumTitle?.toString().orEmpty(),
                             )
-                        createMediaItem(song)
+                        createMediaItem(core.library.refreshLegacyArtist(song))
                     }.toMutableList()
                 }
             }
@@ -551,7 +551,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
                 val state = core.playback.snapshot()
                 val saved = state.nowPlaying.song?.let { song ->
-                    val playable = if (runCatching { core.library.streamUrl(song) }.isSuccess) song
+                    val playable = if (runCatching { core.library.streamUrl(song) }.isSuccess) core.library.refreshLegacyArtist(song)
                         else core.library.track(song.id)
                     playable?.let(::createMediaItem)
                 }
@@ -1086,7 +1086,7 @@ class HarmonicastMediaService : MediaLibraryService() {
      */
     private suspend fun resumeSharedPlayback() {
         val state = core.playback.snapshot()
-        val song = state.nowPlaying.song ?: return
+        val song = state.nowPlaying.song?.let { core.library.refreshLegacyArtist(it) } ?: return
         if (song.id.isBlank()) return
 
         currentIsAuto.set(state.isAutoQueue)
@@ -1365,7 +1365,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 val savedSong = state.nowPlaying.song
                 if (savedSong != null) {
                     val playable = if (runCatching { core.library.streamUrl(savedSong) }.isSuccess) {
-                        savedSong
+                        core.library.refreshLegacyArtist(savedSong)
                     } else {
                         core.library.track(savedSong.id)
                     }

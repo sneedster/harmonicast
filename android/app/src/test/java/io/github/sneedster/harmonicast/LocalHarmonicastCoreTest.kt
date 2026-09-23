@@ -5,6 +5,51 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LocalHarmonicastCoreTest {
+    @Test fun legacyQueuedAndRestoredCompilationArtistsRefreshWithoutLosingPlaybackState() = runBlocking {
+        val storage = MemoryStorage()
+        val old = encodeSong(song("1").copy(artist = "Various Artists", addedByEmail = "Guest", isRadio = true)).apply { remove("albumArtist") }
+        storage.write(mapOf("local.queue" to org.json.JSONArray().put(old).toString()))
+        val http = FakeHttp().apply {
+            repeat(2) { responses += """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"1","librarySectionID":"7","title":"Song 1","originalTitle":"Guest Performer","grandparentTitle":"Various Artists"}]}}""" }
+        }
+        val core = LocalHarmonicastCore(source, storage, LocalPlexClient(storage, http))
+        val selected = core.queue.dequeue().song!!
+        assertEquals("Guest Performer", selected.artist)
+        assertEquals("Various Artists", selected.albumArtist)
+        assertEquals("Guest", selected.addedByEmail)
+        assertTrue(selected.isRadio)
+        assertEquals(song("1").streamUri, selected.streamUri)
+        // Playback callbacks can reuse legacy saved metadata with valid stream URLs.
+        core.playback.publish(decodeSong(old), false, false)
+        core.playback.savePosition(42.0)
+        val restored = core.playback.snapshot()
+        assertEquals("Guest Performer", restored.nowPlaying.song!!.artist)
+        assertEquals(42.0, restored.positionSeconds, 0.0)
+        assertFalse(restored.nowPlaying.isPlaying)
+        assertEquals(2, http.calls.size)
+        core.library.refreshLegacyArtist(restored.nowPlaying.song!!)
+        assertEquals(2, http.calls.size)
+    }
+
+    @Test fun unavailablePlexPreservesLegacyTrackAndCancellationPropagates() = runBlocking {
+        val old = song("1").copy(albumArtist = null)
+        val http = object : PlexHttp {
+            override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+                throw java.io.IOException("Offline")
+            }
+        }
+        val core = LocalHarmonicastCore(source, MemoryStorage(), LocalPlexClient(MemoryStorage(), http))
+        assertEquals(old, core.library.refreshLegacyArtist(old))
+        val cancelledHttp = object : PlexHttp {
+            override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+                throw kotlinx.coroutines.CancellationException("Stopped")
+            }
+        }
+        val cancelled = LocalHarmonicastCore(source, MemoryStorage(), LocalPlexClient(MemoryStorage(), cancelledHttp))
+        try { cancelled.library.refreshLegacyArtist(old); fail("Cancellation must propagate") }
+        catch (_: kotlinx.coroutines.CancellationException) { }
+    }
+
     @Test fun radioQueuesUniqueSongsAndPreservesExistingManualRequests() = runBlocking {
         val storage = MemoryStorage()
         val http = object : PlexHttp {
@@ -44,6 +89,15 @@ class LocalHarmonicastCoreTest {
         assertEquals("https://remote:32400/thumb/42?X-Plex-Token=fresh", core.library.artworkUrl(song))
         val radio = song.copy(id = "radio:42", streamUri = "https://radio/live")
         assertEquals("https://radio/live", core.library.streamUrl(radio))
+    }
+
+    private class FakeHttp : PlexHttp {
+        val calls = mutableListOf<String>()
+        val responses = ArrayDeque<String>()
+        override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+            calls += url
+            return responses.removeFirst()
+        }
     }
 
     private class MemoryStorage : ProfileStorage {

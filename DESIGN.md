@@ -351,3 +351,16 @@ joined guests retain room-reaction behavior. Phone, TV, Auto, and rating setting
 reuse existing controls and feedback. Automatic changes remain opt-in and use
 the selected user token; owner-only setup/acquisition and room-vote rules remain
 unchanged. This follows Michael's September 20 confirmation of per-user Plex ratings.
+
+
+## Track artist across Now Playing
+
+LocalPlexClient owns artist interpretation: nonblank Plex originalTitle is the
+track artist, falling back to grandparentTitle and then Unknown artist. Song.artist
+is the shared playback label for phone/tablet/TV players, mini-player, Media3
+(Android Auto, notification and lock screen), paired receivers, nearby room
+summaries, browser guests, and display/attract mode. Song.albumArtist separately
+retains grandparentTitle; album/artist browse continues using Plex collection
+metadata and IDs. SessionMediaItems publishes both fields without mixing them.
+Saved legacy metadata refreshes when selected/resumed; a Plex outage preserves
+the playable saved track until a later refresh. Existing layout and tokens apply.

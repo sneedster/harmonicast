@@ -4,6 +4,7 @@ package io.github.sneedster.harmonicast
 data class Song(
     val id: String,
     val title: String,
+    /** Track artist used by all playback surfaces. */
     val artist: String,
     val album: String = "",
     val duration: Int = 0,
@@ -18,6 +19,8 @@ data class Song(
     val viewCount: Int = 0,
     /** Plex lastViewedAt converted from epoch seconds; null means no known Plex play. */
     val lastPlayedAtMillis: Long? = null,
+    /** Plex album organization; null identifies metadata saved before track-artist separation. */
+    val albumArtist: String? = "",
 )
 data class NowPlaying(val song: Song? = null, val isPlaying: Boolean = false)
 data class ArtistDiscovery(val name: String, val bio: String, val genres: List<String>, val similarArtists: List<String>, val albumName: String, val albumYear: Int?, val albumSummary: String)

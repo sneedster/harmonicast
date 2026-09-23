@@ -1,5 +1,14 @@
 # Releases
 
+## v1.1.17 — track artists in Now Playing
+
+Version code: **79**.
+
+- Show track artists on every Now Playing surface, including compilation tracks; retain album artist for album organization and Media3 album metadata.
+- Refresh older saved artist metadata when playback resumes or a queued track is selected.
+
+Validation: all 276 Android tests passed with per-class isolation; debug assembly and lint passed. Browser guest/display/attract compilation checks passed. No physical-device or Android Auto DHU verification was performed for this change.
+
 ## v1.1.16 — shared-user ratings
 
 Version code: **78**.

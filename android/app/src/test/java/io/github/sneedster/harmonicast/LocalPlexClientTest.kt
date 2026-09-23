@@ -5,6 +5,36 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LocalPlexClientTest {
+    @Test fun trackArtistOverridesAlbumArtistAndFallsBackForMissingMetadata() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"Metadata":[
+                {"type":"track","ratingKey":"1","title":"Compilation track","originalTitle":"  Guest Performer  ","grandparentTitle":"Various Artists","parentTitle":"Compilation"},
+                {"type":"track","ratingKey":"2","title":"Ordinary track","grandparentTitle":"Album Performer"},
+                {"type":"track","ratingKey":"3","title":"Blank track artist","originalTitle":"  ","grandparentTitle":"Album Performer"},
+                {"type":"track","ratingKey":"4","title":"Missing artists"},
+                {"type":"track","ratingKey":"5","title":"Null artists","originalTitle":null,"grandparentTitle":null},
+                {"type":"track","ratingKey":"6","title":"Blank artists","originalTitle":"  ","grandparentTitle":"  "},
+                {"type":"track","ratingKey":"7","title":"Track only","originalTitle":"Solo Performer"}
+            ]}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val tracks = LocalPlexClient(MemoryStorage(), http).random(source, 7)
+        assertEquals(listOf("Guest Performer", "Album Performer", "Album Performer", "Unknown artist", "Unknown artist", "Unknown artist", "Solo Performer"), tracks.map { it.artist })
+        assertEquals("Various Artists", tracks.first().albumArtist)
+        assertEquals("Compilation", tracks.first().album)
+        assertEquals("", tracks.last().albumArtist)
+        assertEquals(tracks.first(), decodeSong(encodeSong(tracks.first())))
+    }
+
+    @Test fun compilationAlbumBrowsingRetainsAlbumArtist() = runBlocking {
+        val http = FakeHttp().apply {
+            responses += """{"MediaContainer":{"Metadata":[{"type":"album","ratingKey":"91","title":"Compilation","parentTitle":"Various Artists"}],"totalSize":1}}"""
+        }
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val album = LocalPlexClient(MemoryStorage(), http).browse(source, BrowseKind.ALBUMS, BrowseOrder.TITLE).entries.single()
+        assertEquals("Various Artists", album.subtitle)
+    }
+
     @Test fun acquisitionRecentTracksUseAlbumIndexAndIncludeLaterTracks() = runBlocking {
         val http = FakeHttp().apply {
             responses += """{"MediaContainer":{"Metadata":[{"type":"album","ratingKey":"7"}]}}"""

@@ -112,3 +112,17 @@ interface HarmonicastCore {
     val playback: PlaybackState
     val guests: GuestControl
 }
+
+/** Upgrade saved compilation metadata on playback; a temporary Plex failure must not discard a track. */
+internal suspend fun MusicLibrary.refreshLegacyArtist(song: Song): Song {
+    if (song.albumArtist != null) return song
+    return try {
+        track(song.id)?.let { fresh ->
+            song.copy(artist = fresh.artist, albumArtist = fresh.albumArtist)
+        } ?: song
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        song
+    }
+}

@@ -75,7 +75,7 @@ class LocalHarmonicastCore(
                 }
                 val cutoff = replayWindow.cutoff(nowMillis())
                 val automatic = !candidate.isManual && !candidate.isRadio
-                var selected: Song? = candidate
+                var selected: Song? = library.refreshLegacyArtist(candidate)
                 if (automatic && cutoff != null) {
                     val local = recentPlays.snapshot(nowMillis())
                     selected = if (!eligibleForAutomaticMix(candidate, cutoff, local)) null
@@ -225,7 +225,8 @@ class LocalHarmonicastCore(
                     ?: plex.track(source, value.id) ?: value
             }
             // Playback callbacks can carry metadata captured before a vote finished.
-            val displayedSong = persistedSong?.let { current ->
+            val displayedSong = persistedSong?.let { persisted ->
+                val current = library.refreshLegacyArtist(persisted)
                 previous.nowPlaying.song?.takeIf { it.id == current.id }
                     ?.let { current.copy(rating = it.rating) } ?: current
             }

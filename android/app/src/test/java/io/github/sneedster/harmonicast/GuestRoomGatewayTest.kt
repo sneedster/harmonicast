@@ -9,6 +9,18 @@ import java.nio.charset.StandardCharsets
 import java.util.Base64
 
 class GuestRoomGatewayTest {
+    @Test fun guestAndDisplayNowPlayingUseTrackArtist() = runBlocking {
+        val core = FakeCore()
+        val capability = RoomCapability.create(nowMillis = 1000)
+        val router = GuestRoomRouter(core, capability) { 2000 }
+        for (bearer in listOf(capability.bearer, capability.displayBearer)) {
+            val response = router.route(GuestApiRequest("GET", "/v1/now-playing", bearer))
+            assertEquals(200, response.status)
+            assertEquals(core.track.artist, JSONObject(response.body).getJSONObject("song").getString("artist"))
+            assertFalse(response.body.contains("Various Artists"))
+        }
+    }
+
     @Test fun displayEntryCodeIsPrivateRateLimitedAndExpiresWithRoom() {
         val room = RoomCapability.create(nowMillis = 1000, idleTimeoutMillis = 120000)
         assertTrue(room.displayEntryCode.matches(Regex("[0-9]{4}")))
@@ -113,6 +125,7 @@ class GuestRoomGatewayTest {
             id = "plex:server:42",
             title = "Safe Song",
             artist = "Artist",
+            albumArtist = "Various Artists",
             streamUri = "https://plex.example/library/parts/42?X-Plex-Token=owner-secret",
             artworkUri = "https://plex.example/photo?X-Plex-Token=owner-secret",
         )

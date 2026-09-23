@@ -16,6 +16,7 @@ internal object SessionMediaItems {
         val metadata = MediaMetadata.Builder()
             .setExtras(Bundle().apply { putString("harmonicast.coverArt", text(song.coverArt)) })
             .setTitle(text(song.title)).setArtist(text(song.artist)).setAlbumTitle(text(song.album))
+            .setAlbumArtist(text(song.albumArtist.orEmpty()))
             .setDisplayTitle(text(song.title)).setSubtitle(text(song.artist))
             .setIsPlayable(true).setIsBrowsable(false).setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             .setArtworkUri(MediaArtworkProvider.uri(context, artworkUrl))

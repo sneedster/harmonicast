@@ -546,10 +546,13 @@ class LocalPlexClient(
         val title = item.optString("title")
         if (!key.matches(Regex("\\d+")) || title.isBlank()) return null
         val year = item.optInt("parentYear").takeIf { it > 0 } ?: item.optInt("year").takeIf { it > 0 }
+        val albumArtist = item.optString("grandparentTitle").trim()
+        val trackArtist = item.optString("originalTitle").trim().ifBlank { albumArtist }.ifBlank { "Unknown artist" }
         return Song(
             id = "plex:${encodePlex(source.machineIdentifier)}:$key",
             title = title,
-            artist = item.optString("grandparentTitle").ifBlank { item.optString("originalTitle", "Unknown artist") },
+            artist = trackArtist,
+            albumArtist = albumArtist,
             album = item.optString("parentTitle"),
             duration = (item.optLong("duration").coerceAtLeast(0) / 1000).toInt(),
             coverArt = "plex:${encodePlex(source.machineIdentifier)}:$key",

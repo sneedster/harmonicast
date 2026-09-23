@@ -16,9 +16,10 @@ internal fun decodeSong(item: JSONObject) = Song(
     item.optString("artworkUri").takeIf { it.isNotBlank() },
     item.optInt("viewCount").coerceAtLeast(0),
     item.optLong("lastPlayedAtMillis").takeIf { it > 0 },
+    if (item.has("albumArtist") && !item.isNull("albumArtist")) item.optString("albumArtist") else null,
 )
 internal fun encodeSong(song: Song) = JSONObject().put("id", song.id).put("title", song.title)
-    .put("artist", song.artist).put("album", song.album).put("year", song.year)
+    .put("artist", song.artist).put("albumArtist", song.albumArtist).put("album", song.album).put("year", song.year)
     .put("duration", song.duration).put("coverArt", song.coverArt)
     .put("rating", song.rating ?: JSONObject.NULL).put("addedByEmail", song.addedByEmail)
     .put("isManual", song.isManual).put("isRadio", song.isRadio)
