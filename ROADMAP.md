@@ -46,14 +46,15 @@ playback sources and a general plugin installer remain outside scope.
   acquisition and deployed acceptance remain outstanding; no target release or
   delivery date assigned.
 
-## Curve equalizer — preview
+## 10-band equalizer — preview
 
-- Device-local parametric EQ with a draggable response curve, up to eight points,
-  precise frequency/gain/width controls, TV remote alternatives, bypass and reset.
-- Normal playback and paired receivers share the processing implementation, with
-  independent filter history and receiving-device settings. Default off.
-- This is a trial feature, not a published release. Digital DSP/UI checks and
-  physical-device trial status are recorded in [CURVE_EQUALIZER.md](docs/CURVE_EQUALIZER.md).
+- Replaces the initial point editor with ten independent fixed-frequency sliders,
+  a smooth visual line through their positions, bypass and reset to flat.
+- Defaults off; settings belong to the playing device. Normal playback and paired
+  receivers share the DSP engine with independent sample histories.
+- Local transport now connects independently of Plex discovery and reconnects
+  missing/stale controllers, avoiding silent play/pause taps.
+- This remains a trial, not a published release. See [validation](docs/EQUALIZER.md).
 
 ## Ongoing quality
 

@@ -380,27 +380,36 @@ limited to the header so scrolling the text cannot close the page. MaterialTheme
 playerColors, and tvFocusFeedback remain the visual and focus owners.
 
 
-## Device-local curve equalizer
+## Device-local 10-band equalizer
 
-SettingsScreen owns the Equalizer category and scrolling, following Track Radio.
-EqualizerSettings uses the existing Material typography, SettingsToggle,
-SettingsDescription, native Material sliders/chips/buttons and tvFocusFeedback.
-PlayerPalette remains the only color owner. The signature is a logarithmic
-frequency plot with directly movable control points and the calculated response
-of the same filters used by playback. No decorative waveform or arbitrary spline
-stands in for audio behavior. The vertical scale expands for overlapping bands.
+The initial movable-point editor was replaced at Michael's request with ten
+traditional fixed bands: 31.5, 63, 125, 250, 500 Hz, 1, 2, 4, 8 and 16 kHz.
+SettingsScreen owns navigation/scrolling; EqualizerSettings owns the fader bank.
+MaterialTheme, PlayerPalette, SettingsToggle and tvFocusFeedback stay canonical.
+Each band has one vertical Material slider, a frequency label and a dB value.
+There are no frequency, Q, add/remove, point selection or linking controls.
 
-Canonical direct-manipulation owner: EqualizerGraph. Every gesture has a point
-selector and frequency/gain/width sliders plus minus/plus buttons; accessible
-value descriptions use Hz, dB and Q rather than the slider's logarithmic values.
-Add/remove/reset controls remain reachable in the parent's scroll container.
-Off is explicitly labeled as a curve preview; users can edit while bypassed.
-Empty curves explain how to start, and the eight-point limit disables Add point.
-Reset is a reversible local edit, so it does not require a confirmation dialog.
+A smooth line joins the fader positions as a visual guide. It represents the
+chosen settings, not the song waveform or the calculated filter response.
+Bands remain independent, as Michael accepted after clarifying the spline idea.
+On phones the faders form two rows of five; at 600 dp of available content width,
+all ten fit in one row. Every band remains accessible without horizontal scrolling.
+Native slider semantics support accessible value changes; left/right moves focus
+between controls and up/down adjusts by 0.5 dB. Focus can leave the bank normally.
+Reset to flat is immediate; bypass retains settings and editing remains available.
 
-EqualizerStore owns validated immutable settings and immediate local persistence;
-this form has no server/loading/session dependency. Settings are separate from
-Plex profiles, never serialized into rooms, and excluded from Android backup and
-device transfer. The receiver applies its own saved curve. The engine reserves
-headroom for boosts; the UI distinguishes tonal response from the resulting
-volume reduction. Default is off with four flat points.
+Settings default off with ten neutral bands. EqualizerStore stores only fixed-band
+gains in a new graphic_v1 record, separate from the retired curve. Upgrading from
+the point editor starts flat/off rather than approximating a curve with different
+filters; the old record is retained for rollback. Settings remain device-local,
+excluded from backup/transfer, and never go into room messages. The receiver uses
+its own settings. The existing PCM engine and automatic boost headroom remain.
+
+## Playback controls during connection recovery
+
+Local playback connects before Plex endpoint discovery. PlaybackConnection owns
+one connection attempt, pending transport commands, stale-connection replacement,
+and release after sign-out, receiver mode or ViewModel disposal. A tap during
+reconnection is queued instead of silently discarded. Failures use the existing
+notice area with a retry instruction. Normal player, mini-player and TV controls
+continue to use the same ViewModel actions and authenticated MediaController.

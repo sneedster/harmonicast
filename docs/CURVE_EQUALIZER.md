@@ -1,4 +1,7 @@
-# Curve equalizer preview
+# Curve equalizer preview (superseded)
+
+The movable-point interface below was replaced by the [10-band equalizer](EQUALIZER.md)
+after Michael found it confusing. This page records the original trial only.
 
 Implemented at Michael's request on 2026-09-23. The feature belongs to the Android
 player on each device. Room transfer selects the receiver's own EQ; it never

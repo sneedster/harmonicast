@@ -31,20 +31,20 @@ import java.io.File
 @Config(sdk = [35], qualifiers = "w390dp-h760dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SettingsScreenTest {
-    @Test fun equalizerCategoryPersistsDeviceLocalCurve() {
+    @Test fun equalizerCategoryPersistsDeviceLocalBands() {
         setup()
         val store = EqualizerStore.get(RuntimeEnvironment.getApplication())
         compose.runOnIdle { store.update(EqSettings()) }
         open("Equalizer")
         compose.onNodeWithContentDescription("Enable equalizer").performClick()
-        compose.onNodeWithContentDescription("Increase Gain").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("31.5 Hz").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(0.5f) }
         compose.runOnIdle {
             assertTrue(store.state.value.enabled)
             assertEquals(0.5, EqualizerStore(RuntimeEnvironment.getApplication()).state.value.points[0].gain, 0.0)
         }
         compose.onNodeWithText("Back").performScrollTo().performClick()
         open("Equalizer")
-        compose.onNodeWithText("Your sound").assertExists()
+        compose.onNodeWithText("10-band equalizer").assertExists()
         screenshot("equalizer-phone")
     }
 
@@ -53,9 +53,9 @@ class SettingsScreenTest {
         setup(tv = true)
         compose.runOnIdle { EqualizerStore.get(RuntimeEnvironment.getApplication()).update(EqSettings()) }
         open("Equalizer")
-        compose.onNodeWithContentDescription("Increase Gain").performScrollTo().performClick()
-        compose.onNodeWithText("Add point").performScrollTo().performClick()
-        compose.runOnIdle { assertEquals(5, EqualizerStore.get(RuntimeEnvironment.getApplication()).state.value.points.size) }
+        compose.onNodeWithContentDescription("31.5 Hz").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(0.5f) }
+        compose.onNodeWithContentDescription("16k Hz").performScrollTo().assertExists()
+        compose.runOnIdle { assertEquals(10, EqualizerStore.get(RuntimeEnvironment.getApplication()).state.value.points.size) }
         compose.onAllNodesWithText("Back").onLast().performScrollTo()
         screenshot("equalizer-tv")
     }

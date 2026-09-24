@@ -11,7 +11,7 @@ class CurveEqualizerTest {
             assertEquals(gain, 20 * log10(coefficient.magnitude(1500.0, rate)), 1e-8)
         }
     }
-    @Test fun responsePlotMatchesProcessedSineIncludingHeadroom() {
+    @Test fun calculatedResponseMatchesProcessedSineIncludingHeadroom() {
         val rate = 48000
         val settings = EqSettings(true, listOf(EqPoint(700.0, 5.0, 1.3), EqPoint(2300.0, -7.0, 0.5)))
         for (frequency in listOf(80.0, 700.0, 2300.0, 11000.0)) {
@@ -26,6 +26,19 @@ class CurveEqualizerTest {
             }
             assertEquals(eqResponseDb(settings, frequency, rate) - settings.headroomDb, 10 * log10(outputEnergy / inputEnergy), 0.01)
         }
+    }
+    @Test fun tenthBandIsProcessed() {
+        val rate = 48000
+        val settings = EqSettings(true, EqSettings.defaults.mapIndexed { i, band -> if (i == 9) band.copy(gain = -6.0) else band })
+        val bank = EqFilterBank(settings.validated(), rate, 1)
+        var inputEnergy = 0.0
+        var outputEnergy = 0.0
+        repeat(rate) { i ->
+            val input = sin(2 * PI * 16000 * i / rate)
+            val output = bank.sample(input, 0)
+            if (i > rate / 2) { inputEnergy += input * input; outputEnergy += output * output }
+        }
+        assertEquals(-6.0, 10 * log10(outputEnergy / inputEnergy), 0.01)
     }
     @Test fun bypassAndFlatAreIdentityAndChannelsStayIndependent() {
         for (settings in listOf(EqSettings(), EqSettings(true))) {
@@ -55,10 +68,9 @@ class CurveEqualizerTest {
     }
     @Test fun malformedValuesAreBoundedAndBoostsReserveHeadroom() {
         val safe = EqSettings(true, List(12) { EqPoint(Double.NaN, 999.0, -1.0) }).validated()
-        assertEquals(8, safe.points.size)
+        assertEquals(10, safe.points.size)
         assertEquals(EqPoint(1000.0, 12.0, 0.25), safe.points.first())
-        assertEquals(96.0, safe.headroomDb, 0.0)
+        assertEquals(120.0, safe.headroomDb, 0.0)
         assertEquals(0.0, safe.copy(enabled = false).headroomDb, 0.0)
-        assertEquals(1000.0, eqFrequency(eqX(1000.0)), 0.001)
     }
 }

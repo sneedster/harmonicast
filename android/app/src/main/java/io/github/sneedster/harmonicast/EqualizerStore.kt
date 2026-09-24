@@ -6,17 +6,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Deliberately separate from Plex profiles, room messages and transferred playback state. */
+/** Device-local. The retired curve key is retained for rollback, never applied to fixed bands. */
 internal class EqualizerStore(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("device_equalizer", Context.MODE_PRIVATE)
-    private val mutable = MutableStateFlow(decode(preferences.getString("curve", null)))
+    private val mutable = MutableStateFlow(decode(preferences.getString("graphic_v1", null)))
     val state = mutable.asStateFlow()
     val sampleRate = MutableStateFlow(48000)
     fun update(settings: EqSettings) {
-        val safe = settings.validated()
+        val safe = EqSettings(settings.enabled, EqSettings.defaults.mapIndexed { index, band ->
+            band.copy(gain = settings.points.getOrElse(index) { band }.validated().gain)
+        })
         mutable.value = safe
-        val points = JSONArray().apply { safe.points.forEach { put(JSONObject().put("hz", it.frequency).put("db", it.gain).put("q", it.q)) } }
-        preferences.edit().putString("curve", JSONObject().put("enabled", safe.enabled).put("points", points).toString()).apply()
+        val gains = JSONArray().apply { safe.points.forEach { put(it.gain) } }
+        preferences.edit().putString("graphic_v1", JSONObject().put("enabled", safe.enabled).put("gains", gains).toString()).apply()
     }
     companion object {
         @Volatile private var instance: EqualizerStore? = null
@@ -26,10 +28,10 @@ internal class EqualizerStore(context: Context) {
         internal fun decode(raw: String?): EqSettings = runCatching {
             if (raw == null) return EqSettings()
             val json = JSONObject(raw)
-            val points = json.getJSONArray("points")
-            EqSettings(json.optBoolean("enabled", false), (0 until minOf(8, points.length())).map {
-                val p = points.getJSONObject(it)
-                EqPoint(p.getDouble("hz"), p.getDouble("db"), p.getDouble("q")).validated()
+            val gains = json.getJSONArray("gains")
+            require(gains.length() == EqSettings.defaults.size)
+            EqSettings(json.optBoolean("enabled", false), EqSettings.defaults.mapIndexed { index, band ->
+                band.copy(gain = gains.getDouble(index)).validated()
             })
         }.getOrDefault(EqSettings())
     }

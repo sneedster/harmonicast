@@ -11,13 +11,13 @@ internal data class EqPoint(val frequency: Double, val gain: Double = 0.0, val q
     )
 }
 internal data class EqSettings(val enabled: Boolean = false, val points: List<EqPoint> = defaults) {
-    fun validated() = copy(points = points.take(8).map { it.validated() })
+    fun validated() = copy(points = points.take(10).map { it.validated() })
     // Conservative bound on combined steady-state boost, including overlapping bands.
     val headroomDb: Double get() = if (enabled) points.sumOf { max(0.0, it.gain) } else 0.0
-    companion object { val defaults = listOf(80.0, 350.0, 1500.0, 6500.0).map { EqPoint(it) } }
+    companion object { val defaults = listOf(31.5, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0).map { EqPoint(it, q = 1.4) } }
 }
 
-/** RBJ peaking biquad, shared by the renderer and response plot. */
+/** RBJ peaking biquad, used by the fixed-band software equalizer. */
 internal data class EqCoefficients(val b0: Double, val b1: Double, val b2: Double, val a1: Double, val a2: Double) {
     fun magnitude(frequency: Double, sampleRate: Int): Double {
         val w = 2 * PI * frequency / sampleRate

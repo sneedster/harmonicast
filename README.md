@@ -34,19 +34,17 @@ Settings has nine categories: **Appearance**, **Playback**, **Equalizer**, **Aut
 per category; larger displays keep the category list beside the selected page.
 The mini-player remains available.
 
-### Curve equalizer (preview)
+### 10-band equalizer (preview)
 
-Open **Settings → Equalizer** to shape this device's sound. Enable the EQ, drag
-points on the curve, or tap an empty spot to add one (up to eight). Select a point
-for frequency, gain and width controls; sliders and minus/plus buttons also work
-with a TV remote. Bypass keeps the saved curve; **Reset to flat** restores four
-neutral points. Changes apply while playing and save automatically.
+Open **Settings → Equalizer** for ten fixed frequency bands from 31.5 Hz to
+16 kHz. Move a slider up to boost that range or down to cut it, up to ±12 dB.
+A smooth line connects the slider positions. Each slider adjusts independently.
+**Reset to flat** centers all ten; switching EQ off keeps the saved settings.
+Phone controls use two rows of five, while wide screens show one row of ten.
+TV remote left/right selects a control and up/down adjusts the selected band.
 
-The curve plots the actual parametric filter response, before automatic gain
-headroom. Boosts can reduce overall volume. Each physical device owns its curve,
-including when receiving transferred playback; settings are excluded from backup
-and device migration. See [EQ implementation and validation](docs/CURVE_EQUALIZER.md)
-for processing tradeoffs and trial status.
+Settings save on this device and apply to local or received playback. The earlier
+curve-editor preview starts flat/off on upgrade. See [implementation and validation](docs/EQUALIZER.md).
 
 ### Rooms
 

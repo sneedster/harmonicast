@@ -66,7 +66,6 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.media3.common.MediaItem
 import coil.compose.AsyncImage
-import com.google.common.util.concurrent.MoreExecutors
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -128,6 +127,7 @@ class HarmonicastViewModel : ViewModel() {
     var searchLoading by mutableStateOf(false); private set
     private var searchGeneration = 0
     var controller by mutableStateOf<MediaController?>(null); private set
+    private var playbackConnection: PlaybackConnection<MediaController>? = null
     var personalSetupActive by mutableStateOf(false); private set
     val isPersonalMode: Boolean get() = ::api.isInitialized && api.profile.mode == HomeMode.PERSONAL_PLEX
     val canWriteToPlex: Boolean get() = api.profile.personalSource?.canWriteToPlex == true
@@ -159,6 +159,8 @@ class HarmonicastViewModel : ViewModel() {
         AcquisitionRuntime.get(context).start()
         ready = api.profile.homeReady
         if (ready) {
+            // Local transport must remain usable even when Plex discovery is slow or fails.
+            connectPlaybackService()
             viewModelScope.launch {
                 loading = true
                 try {
@@ -185,25 +187,30 @@ class HarmonicastViewModel : ViewModel() {
         }
     }
 
-    private fun connectPlaybackService() {
-        if (controller != null) return
-        try {
-            context.startService(Intent(context, HarmonicastMediaService::class.java))
-        } catch (e: Exception) {
-            android.util.Log.e("Harmonicast", "Playback service startup failed", e)
-            error = "Playback service could not start"
-        }
+    private fun localPlaybackConnection(): PlaybackConnection<MediaController> = playbackConnection
+        ?: PlaybackConnection(
+            create = {
+                context.startService(Intent(context, HarmonicastMediaService::class.java))
+                val token = SessionToken(context, ComponentName(context, HarmonicastMediaService::class.java))
+                MediaController.Builder(context, token).buildAsync()
+            },
+            connected = { it.isConnected },
+            release = { MediaController.releaseFuture(com.google.common.util.concurrent.Futures.immediateFuture(it)) },
+            changed = { controller = it },
+            failed = {
+                android.util.Log.e("Harmonicast", "Playback control connection failed", it)
+                showTemporaryNotice("Playback controls could not connect. Tap again to retry.")
+            },
+            executor = ContextCompat.getMainExecutor(context),
+        ).also { playbackConnection = it }
 
-        val sessionToken = SessionToken(context, ComponentName(context, HarmonicastMediaService::class.java))
-        val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
-        controllerFuture.addListener({
-            try {
-                controller = controllerFuture.get()
-            } catch (e: Exception) {
-                android.util.Log.e("Harmonicast", "Playback service connection failed", e)
-                error = "Playback service could not start"
-            }
-        }, MoreExecutors.directExecutor())
+    private fun connectPlaybackService() {
+        if (ready && !offeringRoomPlayback) localPlaybackConnection().connect()
+    }
+
+    private fun withPlaybackController(command: (MediaController) -> Unit) {
+        if (!ready || !isActivePlayer || offeringRoomPlayback) return
+        localPlaybackConnection().connect(command)
     }
 
     fun artworkUrl(song: Song) = core.library.artworkUrl(song)
@@ -288,6 +295,7 @@ class HarmonicastViewModel : ViewModel() {
         socketReconnectJob?.cancel()
         socket?.close()
         socket = null
+        playbackConnection?.close()
         api.profile.clearPersonalSource()
         personalToken = ""
         personalServerToken = ""
@@ -466,8 +474,7 @@ class HarmonicastViewModel : ViewModel() {
     fun offerRoomPlayback() {
         if (!NativePlaybackProtocol.playbackEligible(context) || !nearbyRoomState.connected || nearbyRoomState.busy) return
         offeringRoomPlayback = true
-        controller?.let { MediaController.releaseFuture(com.google.common.util.concurrent.Futures.immediateFuture(it)) }
-        controller = null
+        playbackConnection?.close()
         context.stopService(Intent(context, HarmonicastMediaService::class.java))
         context.startService(Intent(context, NativePlaybackReceiver::class.java))
         viewModelScope.launch {
@@ -746,11 +753,14 @@ class HarmonicastViewModel : ViewModel() {
 
     fun toggle() {
         nowPlaying.song ?: return
-        if (nowPlaying.isPlaying) controller?.pause() else controller?.play()
+        // Queue the explicit button intent while a lost/missing controller reconnects.
+        val pause = controller?.takeIf { it.isConnected && !HarmonicastMediaService.nativeOutputActive.value }
+            ?.playWhenReady ?: nowPlaying.isPlaying
+        withPlaybackController { if (pause) it.pause() else it.play() }
     }
 
     fun previousSong() {
-        if (isActivePlayer) controller?.seekToPrevious()
+        withPlaybackController { it.seekToPrevious() }
     }
 
     fun nextSong() {
@@ -765,11 +775,13 @@ class HarmonicastViewModel : ViewModel() {
     }
     fun playQueued(song: Song) {
         if (!isActivePlayer) return
-        controller?.setMediaItem(MediaItem.Builder().setMediaId(song.id).build())
-        controller?.prepare()
-        controller?.play()
+        withPlaybackController {
+            it.setMediaItem(MediaItem.Builder().setMediaId(song.id).build())
+            it.prepare()
+            it.play()
+        }
     }
-    fun seekTo(seconds: Float) { controller?.seekTo((seconds.coerceAtLeast(0f) * 1_000).toLong()) }
+    fun seekTo(seconds: Float) { withPlaybackController { it.seekTo((seconds.coerceAtLeast(0f) * 1_000).toLong()) } }
 
     fun loadArtistDiscovery(song: Song) {
         viewModelScope.launch {
@@ -799,7 +811,7 @@ class HarmonicastViewModel : ViewModel() {
         socket?.close()
         stopOfferingRoomPlayback()
         nearbyRoomClient?.close()
-        controller?.let { MediaController.releaseFuture(com.google.common.util.concurrent.Futures.immediateFuture(it)) }
+        playbackConnection?.close()
         super.onCleared()
     }
 

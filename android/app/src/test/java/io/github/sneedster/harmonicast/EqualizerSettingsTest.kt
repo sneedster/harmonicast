@@ -38,7 +38,7 @@ class EqualizerSettingsTest {
                 Surface(Modifier.fillMaxSize()) {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         SettingsHeading("Equalizer")
-                        EqualizerContent(current, 48000) { current = it }
+                        EqualizerContent(current) { current = it }
                     }
                 }
             }
@@ -53,47 +53,57 @@ class EqualizerSettingsTest {
             File("build/reports/equalizer/$name.png").apply { parentFile?.mkdirs() }.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
     }
-    @Test fun enableTuneBypassAndResetPreserveExpectedState() {
+    @Test fun tenFixedBandsBypassAndReset() {
         setup()
-        compose.onNodeWithText("Curve preview · bypassed").assertExists()
+        eqBandLabels.forEach { compose.onNodeWithContentDescription("$it Hz").assertExists() }
+        compose.onNodeWithText("Add point").assertDoesNotExist()
+        compose.onNodeWithText("Width").assertDoesNotExist()
         compose.onNodeWithContentDescription("Enable equalizer").performClick()
-        compose.onNodeWithContentDescription("Increase Gain").performScrollTo().performClick()
-        compose.runOnIdle { assertTrue(current.enabled); assertEquals(0.5, current.points[0].gain, 0.0) }
-        compose.onNodeWithContentDescription("Width").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(0.0f) }
-        compose.runOnIdle { assertEquals(1.0, current.points[0].q, 0.001) }
-        compose.onNodeWithContentDescription("Enable equalizer").performScrollTo().performClick()
-        compose.runOnIdle { assertEquals(0.5, current.points[0].gain, 0.0); assertFalse(current.enabled) }
-        screenshot("phone-bypassed")
-        compose.onNodeWithText("Reset to flat").performScrollTo().performClick()
-        compose.runOnIdle { assertEquals(EqSettings.defaults, current.points) }
+        compose.onNodeWithContentDescription("63 Hz").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(4f) }
+        compose.runOnIdle {
+            assertTrue(current.enabled)
+            assertEquals(4.0, current.points[1].gain, 0.0)
+            assertEquals(EqSettings.defaults.map { it.frequency }, current.points.map { it.frequency })
+        }
+        screenshot("graphic-phone")
+        compose.onNodeWithContentDescription("Enable equalizer").performClick()
+        compose.runOnIdle { assertFalse(current.enabled); assertEquals(4.0, current.points[1].gain, 0.0) }
+        compose.onNodeWithText("Reset to flat").performClick()
+        compose.runOnIdle { assertEquals(EqSettings.defaults, current.points); assertFalse(current.enabled) }
     }
-    @Test fun graphDragAndTapEditRealSettings() {
+    @Test fun verticalDragBoostsAndCutsOnlyItsBand() {
         setup()
-        compose.onNodeWithContentDescription("Enable equalizer").performClick()
-        val graph = compose.onNodeWithContentDescription("Equalizer response curve.", substring = true)
-        graph.performScrollTo().performTouchInput { swipe(center.copy(y = center.y - 35f), center.copy(y = center.y - 75f), 400) }
-        compose.runOnIdle { assertEquals(5, current.points.size); assertTrue(current.points.last().gain > 8) }
-        screenshot("phone-curve")
+        val band = compose.onNodeWithContentDescription("125 Hz")
+        band.performTouchInput { swipe(center, center.copy(y = top + 12f), 400) }
+        compose.runOnIdle { assertTrue("Up must boost: ${current.points[2].gain}", current.points[2].gain > 5) }
+        band.performTouchInput { swipe(center, center.copy(y = bottom - 12f), 400) }
+        compose.runOnIdle {
+            assertTrue("Down must cut: ${current.points[2].gain}", current.points[2].gain < -5)
+            assertTrue(current.points.filterIndexed { i, _ -> i != 2 }.all { it.gain == 0.0 })
+        }
     }
-    @Test fun eightPointLimitAndEmptyCurveHaveReachableRecovery() {
-        current = EqSettings(true, emptyList())
+    @Test @Config(qualifiers = "w320dp-h640dp-mdpi")
+    fun narrowPhoneKeepsEveryBandReachable() {
         setup("Aurora")
-        compose.onNodeWithText("Flat response.", substring = true).assertExists()
-        repeat(8) { compose.onNodeWithText("Add point").performScrollTo().performClick() }
-        compose.onNodeWithText("Add point").assertIsNotEnabled()
-        compose.onNodeWithText("Remove point").performScrollTo().performClick()
-        compose.onNodeWithText("Add point").performScrollTo().assertIsEnabled()
-        compose.runOnIdle { assertEquals(7, current.points.size) }
+        eqBandLabels.forEach { compose.onNodeWithContentDescription("$it Hz").performScrollTo().assertIsDisplayed() }
+        compose.onNodeWithContentDescription("16k Hz").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(-3f) }
+        compose.runOnIdle { assertEquals(-3.0, current.points[9].gain, 0.0) }
+        screenshot("graphic-narrow")
     }
     @Test @Config(qualifiers = "w960dp-h720dp-mdpi")
-    fun keyboardCanChangeSelectedPointWithoutDragging() {
+    fun keyboardAdjustsAndCanLeaveBands() {
         setup("Ember", keyboard = true)
-        val gain = compose.onNodeWithContentDescription("Gain", substring = false)
-        gain.performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { it() }
-        gain.assertIsFocused()
-        gain.performKeyInput { pressKey(Key.DirectionRight) }
-        compose.runOnIdle { assertTrue(current.points[0].gain > 0) }
-        compose.onNodeWithContentDescription("Enable equalizer").performScrollTo().performClick()
-        screenshot("wide-ember")
+        val first = compose.onNodeWithContentDescription("31.5 Hz")
+        first.performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { it() }
+        first.performKeyInput { pressKey(Key.DirectionUp) }
+        compose.runOnIdle { assertEquals(0.5, current.points[0].gain, 0.0) }
+        first.performKeyInput { pressKey(Key.DirectionRight) }
+        val second = compose.onNodeWithContentDescription("63 Hz")
+        second.assertIsFocused().performKeyInput { pressKey(Key.DirectionDown) }
+        compose.runOnIdle { assertEquals(-0.5, current.points[1].gain, 0.0) }
+        second.performKeyInput { pressKey(Key.DirectionLeft) }
+        first.assertIsFocused().performKeyInput { pressKey(Key.DirectionLeft) }
+        compose.onNodeWithText("Reset to flat").assertIsFocused()
+        screenshot("graphic-wide")
     }
 }

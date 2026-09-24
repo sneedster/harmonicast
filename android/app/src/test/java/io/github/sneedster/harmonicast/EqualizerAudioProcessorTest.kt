@@ -59,7 +59,7 @@ class EqualizerAudioProcessorTest {
         val p = EqualizerAudioProcessor({ state })
         p.configure(AudioProcessor.AudioFormat(48000, 1, C.ENCODING_PCM_16BIT)); p.flush()
         repeat(30) { step ->
-            state = EqSettings(true, List(8) { EqPoint(1000.0 + step * 50, if (step % 2 == 0) 12.0 else -12.0, 8.0) })
+            state = EqSettings(true, List(10) { EqPoint(1000.0 + step * 50, if (step % 2 == 0) 12.0 else -12.0, 8.0) })
             val result = output(p, ShortArray(256) { if (it % 2 == 0) 32767 else -32768 })
             assertEquals(256, result.size)
         }
@@ -82,15 +82,27 @@ class EqualizerAudioProcessorTest {
         assertFalse(sink.getFormatOffloadSupport(encoded).isFormatSupported)
         sink.reset()
     }
+    @Test fun legacyCurveStartsOffAndAllTenBandsSurviveReload() {
+        val context = RuntimeEnvironment.getApplication()
+        val prefs = context.getSharedPreferences("device_equalizer", Context.MODE_PRIVATE)
+        prefs.edit().clear().putString("curve", "{\"enabled\":true,\"points\":[{\"hz\":240,\"db\":12,\"q\":0.8}]}").commit()
+        val store = EqualizerStore(context)
+        assertEquals(EqSettings(), store.state.value)
+        val settings = EqSettings(true, EqSettings.defaults.mapIndexed { i, band -> band.copy(gain = i - 4.5) })
+        store.update(settings)
+        assertEquals(settings, EqualizerStore(context).state.value)
+        assertTrue(prefs.contains("curve"))
+        assertEquals(10, EqualizerStore(context).state.value.points.size)
+    }
     @Test fun settingsPersistSeparatelyFromSourceAndCorruptionFallsBackOff() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("device_equalizer", Context.MODE_PRIVATE).edit().clear().commit()
-        val settings = EqSettings(true, listOf(EqPoint(240.0, -4.0, 1.2)))
+        val settings = EqSettings(true, EqSettings.defaults.map { it.copy(gain = -4.0) })
         EqualizerStore(context).update(settings)
         context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE).edit().clear().commit()
         assertEquals(settings, EqualizerStore(context).state.value)
         assertEquals(EqSettings(), EqualizerStore.decode("broken"))
         assertFalse(EqualizerStore.decode(null).enabled)
-        assertTrue(EqualizerStore.decode("{\"enabled\":true,\"points\":[]}").points.isEmpty())
+        assertEquals(EqSettings(), EqualizerStore.decode("{\"enabled\":true,\"gains\":[]}"))
     }
 }
