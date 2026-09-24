@@ -1,5 +1,15 @@
 # Releases
 
+## v1.1.19 — equalizer and playback controls
+
+Version code: **81**.
+
+- Add a ten-band equalizer with a single interactive graph, built-in presets, and precise band controls.
+- Adjust preamp separately, with live equalizer changes and settings saved on this device. The equalizer is off by default.
+- Fix local playback controls failing to respond after connection discovery or controller disconnection.
+
+Validation: all 328 Android tests and debug lint passed. Signed release assembly, release vital lint, APK version, and same-certificate verification passed. No physical-device installation was performed for this release.
+
 ## v1.1.18 — artist and album reading tabs
 
 Version code: **80**.
