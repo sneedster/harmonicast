@@ -14,16 +14,54 @@ class LocalPlexClientTest {
             Triple("7", """[{"Part":[{"file":"/music/song.flac"}]},{}]""", false),
             Triple("7", """[{"Part":[{"key":"/stream"}]}]""", false),
         )) {
-            val http = FakeHttp().apply { responses += """{"MediaContainer":{"Metadata":[{"ratingKey":"1","librarySectionID":"$section","Media":$media}]}}""" }
-            val result = runCatching { LocalPlexClient(MemoryStorage(), http).maintenanceFile(source, "plex:machine:1") }
+            val http = FakeHttp().apply { responses += """{"MediaContainer":{"Metadata":[{"ratingKey":"1","type":"track","librarySectionID":"$section","Media":$media}]}}""" }
+            val result = runCatching { LocalPlexClient(MemoryStorage(), http).badFile(source, "plex:machine:1") }
             assertEquals(allowed, result.isSuccess)
-            if (allowed) assertEquals("/music/song.flac", result.getOrThrow())
+            if (allowed) assertEquals("/music/song.flac", result.getOrThrow().path)
         }
         val http = FakeHttp()
-        assertTrue(runCatching { LocalPlexClient(MemoryStorage(), http).maintenanceFile(source.copy(canWriteToPlex = false), "plex:machine:1") }.isFailure)
+        assertTrue(runCatching { LocalPlexClient(MemoryStorage(), http).badFile(source.copy(canWriteToPlex = false), "plex:machine:1") }.isFailure)
         assertTrue(http.calls.isEmpty())
-        assertTrue(runCatching { LocalPlexClient(MemoryStorage(), http).maintenanceFile(source, "plex:other:1") }.isFailure)
+        assertTrue(runCatching { LocalPlexClient(MemoryStorage(), http).badFile(source, "plex:other:1") }.isFailure)
         assertTrue(http.calls.isEmpty())
+    }
+
+    @Test fun deletionTargetsOnlyTheRevalidatedTrack() = runBlocking {
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val data = """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"42","librarySectionID":"7","Media":[{"Part":[{"file":"/music/song.flac","id":"9","size":"100"}]}]}]}}"""
+        val http = FakeHttp().apply { responses += data; responses += data; responses += "" }
+        val plex = LocalPlexClient(MemoryStorage(), http)
+        val original = plex.badFile(source, "plex:machine:42")
+        plex.deleteBadFile(source, original)
+        assertEquals(listOf("GET", "GET", "DELETE"), http.calls.map { it.method })
+        assertEquals("https://plex/library/metadata/42", http.calls.last().url)
+        assertEquals("token", http.calls.last().headers["X-Plex-Token"])
+        val changed = FakeHttp().apply { responses += data.replace("100", "200") }
+        assertTrue(runCatching { LocalPlexClient(MemoryStorage(), changed).deleteBadFile(source, original) }.isFailure)
+        assertTrue(changed.calls.none { it.method == "DELETE" })
+        val switched = FakeHttp().apply { responses += data }
+        assertTrue(runCatching { LocalPlexClient(MemoryStorage(), switched).deleteBadFile(source, original) { false } }.isFailure)
+        assertTrue(switched.calls.none { it.method == "DELETE" })
+    }
+
+    @Test fun deletionVerificationDoesNotMistakeAccessFailureForMissingFile() = runBlocking {
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val original = BadPlexFile("plex:machine:42", "/music/song.flac", "9", "100")
+        for (status in listOf(404, 401, 403, 500)) {
+            val http = object : PlexHttp {
+                override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String = throw PlexRequestFailure(status)
+            }
+            val result = runCatching { LocalPlexClient(MemoryStorage(), http).badFileDeleted(source, original) }
+            if (status == 404) assertEquals(true, result.getOrThrow()) else assertTrue(result.isFailure)
+        }
+        for ((body, expected) in listOf(
+            """{"MediaContainer":{"size":0}}""" to true,
+            """{"MediaContainer":{"Metadata":[{"librarySectionID":"8"}]}}""" to false,
+            """{"MediaContainer":{}}""" to false,
+        )) {
+            val http = FakeHttp().apply { responses += body }
+            assertEquals(expected, LocalPlexClient(MemoryStorage(), http).badFileDeleted(source, original))
+        }
     }
 
     @Test fun artistDiscoveryPrefersBackgroundAndFallsBackToThumbnail() = runBlocking {

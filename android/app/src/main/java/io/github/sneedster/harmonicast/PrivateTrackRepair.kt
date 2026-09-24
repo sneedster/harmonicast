@@ -4,127 +4,173 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
-import java.util.UUID
+import java.security.MessageDigest
 
-internal data class RepairChoice(val id: Int, val title: String, val artist: String, val source: String, val quality: String)
+internal class PrivateRepairSwitch(private val storage: ProfileStorage) {
+    private var taps = 0
+    private var last = 0L
+    val enabled get() = storage.read("privateRepair.enabled") == "true"
+    fun tap(now: Long): Boolean? {
+        if (now - last > 4_000) taps = 0
+        last = now
+        if (++taps < 7) return null
+        taps = 0
+        return (!enabled).also { storage.write(mapOf("privateRepair.enabled" to it.toString())) }
+    }
+}
+
 internal data class RepairState(
-    val enabled: Boolean = false, val id: String = "", val status: String = "idle",
-    val title: String = "", val artist: String = "", val message: String = "",
-    val choices: List<RepairChoice> = emptyList(), val working: Boolean = false,
+    val status: String = "idle", val title: String = "", val artist: String = "",
+    val message: String = "", val working: Boolean = false,
 )
 
-/** No public setting: only an explicitly configured server/account exposes this capability. */
+/** Delete through Plex, then use the ordinary upstream MusicGrabber import API. */
 internal class PrivateTrackRepair(
-    private val source: PersonalPlexSource,
     private val storage: ProfileStorage,
-    private val connection: String,
+    private val scope: String,
     private val valid: () -> Boolean,
-    private val file: suspend (String) -> String,
+    private val checkAccount: suspend () -> Boolean,
+    private val file: suspend (String) -> BadPlexFile,
+    private val delete: suspend (BadPlexFile) -> Unit,
+    private val deleted: suspend (BadPlexFile) -> Boolean,
     private val call: suspend (String, String, JSONObject?) -> JSONObject,
     private val pause: suspend () -> Unit = { delay(3_000) },
 ) {
     val state = MutableStateFlow(RepairState())
-    private val key = "privateRepair.pending"
-    private val scope = "$connection|${plexIdentity(source)}"
-
-    suspend fun checkEnabled() {
-        try {
-            requireValid()
-            val response = call("/api/private-repair/capability", "GET", null)
-            requireValid()
-            state.value = state.value.copy(enabled = response.optBoolean("enabled") &&
-                response.optString("machine") == source.machineIdentifier && response.optString("library") == source.libraryKey)
-        } catch (e: CancellationException) { throw e }
-        catch (_: Exception) { state.value = state.value.copy(enabled = false) }
+    private var saved = JSONObject()
+    private var key = ""
+    private var target: BadPlexFile? = null
+    private var line = ""
+    private fun requireValid() { require(valid()) { "Connection changed. Reopen the player." } }
+    private fun save(status: String, message: String) {
+        saved.put("status", status).put("message", message)
+        storage.write(mapOf(key to saved.toString()))
+        state.value = state.value.copy(status = status, message = message)
     }
-
-    private fun requireValid() {
-        require(source.canWriteToPlex && valid()) { "Connection changed. Reopen the player." }
-    }
-    private fun pending(): String? = runCatching {
-        val value = JSONObject(storage.read(key).orEmpty())
-        value.optString("id").takeIf { value.optString("scope") == scope && it.isNotBlank() }
-    }.getOrNull()
 
     suspend fun open(song: Song) {
-        val saved = pending()
-        if (saved != null) refresh(saved) else search(song)
-    }
-
-    suspend fun search(song: Song) {
-        if (!state.value.enabled || state.value.working || state.value.status in setOf("replacing", "unknown", "unconfirmed")) return
-        state.value = state.value.copy(working = true, status = "locating", title = song.title, artist = song.artist, choices = emptyList(), message = "Checking the current file…")
-        var submitted = false
+        if (state.value.working) return
+        key = "privateRepair.track." + MessageDigest.getInstance("SHA-256")
+            .digest("$scope|${song.id}".toByteArray()).joinToString("") { "%02x".format(it) }
+        saved = runCatching { JSONObject(storage.read(key).orEmpty()) }.getOrElse { JSONObject() }
+        line = ""
+        target = null
+        state.value = RepairState(title = song.title, artist = song.artist, working = true, message = "Checking track…")
         try {
             requireValid()
-            val path = file(song.id)
-            requireValid()
-            val id = UUID.randomUUID().toString()
-            // Save before submitting: leaving the player or losing a response must
-            // recover the same operation, never blindly issue a second replacement.
-            storage.write(mapOf(key to JSONObject().put("scope", scope).put("id", id).toString()))
-            state.value = state.value.copy(id = id)
-            val body = JSONObject().put("request_id", id).put("machine", source.machineIdentifier)
-                .put("library", source.libraryKey).put("path", path).put("artist", song.artist).put("title", song.title)
-            submitted = true
-            accept(call("/api/private-repair/requests", "POST", body))
-            poll()
+            line = acquisitionLine(CatalogEntry("replacement", song.title, song.artist))
+            if (saved.has("status")) {
+                target = BadPlexFile(song.id, saved.getString("path"), saved.optString("partId"), saved.optString("size"))
+                val status = when (saved.getString("status")) {
+                    "deleting" -> "delete_unknown"
+                    "submitting" -> "request_unknown"
+                    else -> saved.getString("status")
+                }
+                state.value = state.value.copy(status = status, message = when (status) {
+                    "delete_unknown" -> "Deletion was interrupted. Check status before continuing."
+                    "request_unknown" -> "The file was deleted, but the download request could not be confirmed. Check MusicGrabber before requesting it again."
+                    else -> saved.optString("message")
+                })
+            } else {
+                check(checkAccount()) { "Connect MusicGrabber first" }
+                requireValid()
+                target = file(song.id)
+                requireValid()
+                state.value = state.value.copy(status = "ready", message = "Delete this bad file permanently and ask MusicGrabber for a fresh copy.")
+            }
         } catch (e: CancellationException) { throw e }
-        catch (_: Exception) { fail(submitted) }
+        catch (_: Exception) { state.value = state.value.copy(status = "blocked", message = "Could not prepare replacement. Check Plex ownership, a single file for this track, and your MusicGrabber connection.") }
         finally { state.value = state.value.copy(working = false) }
     }
 
-    suspend fun replace(choice: Int) {
-        if (!state.value.enabled || state.value.working || state.value.status != "ready" || state.value.choices.none { it.id == choice }) return
-        state.value = state.value.copy(working = true, message = "Starting replacement…")
+    suspend fun replace() {
+        if (state.value.working || state.value.status != "ready") return
+        state.value = state.value.copy(working = true)
         try {
             requireValid()
-            accept(call("/api/private-repair/requests/${state.value.id}/replace", "POST", JSONObject().put("choice", choice)))
-            poll()
+            check(checkAccount())
+            requireValid()
+            val original = target ?: error("No track selected")
+            saved = JSONObject().put("path", original.path).put("partId", original.partId).put("size", original.size)
+            save("deleting", "Deleting the bad file…")
+            delete(original)
+            requireValid()
+            check(deleted(original))
+            save("deleted", "Bad file deleted. Requesting a fresh copy…")
+            submit()
         } catch (e: CancellationException) { throw e }
-        catch (_: Exception) { fail(true) }
+        catch (_: Exception) { failure() }
         finally { state.value = state.value.copy(working = false) }
     }
 
-    suspend fun refresh(id: String = state.value.id) {
-        if (!state.value.enabled || state.value.working || id.isBlank()) return
-        state.value = state.value.copy(id = id, working = true, message = "Checking request…")
+    suspend fun refresh() {
+        if (state.value.working) return
+        state.value = state.value.copy(working = true)
         try {
             requireValid()
-            accept(call("/api/private-repair/requests/$id", "GET", null))
-            poll()
+            when (state.value.status) {
+                "delete_unknown", "deleting" -> {
+                    if (deleted(target ?: error("No track selected"))) {
+                        save("deleted", "Bad file deleted. Requesting a fresh copy…")
+                        submit()
+                    } else save("delete_unknown", "Plex still shows the file. No new download has been requested; check Plex before trying again.")
+                }
+                "deleted", "request_failed" -> submit()
+                "acquiring" -> poll()
+            }
         } catch (e: CancellationException) { throw e }
-        catch (e: AcquisitionFailure) {
-            if (e.status == 404) {
-                state.value = state.value.copy(status = "failed", message = "Request is unavailable. Check MusicGrabber before starting a new search.")
-            } else fail(true)
-        } catch (_: Exception) { fail(true) }
+        catch (_: Exception) { failure() }
         finally { state.value = state.value.copy(working = false) }
     }
 
-    private suspend fun poll() {
-        while (state.value.status in setOf("searching", "replacing")) {
-            pause()
-            requireValid()
-            accept(call("/api/private-repair/requests/${state.value.id}", "GET", null))
-        }
-    }
-    private fun accept(value: JSONObject) {
+    private suspend fun submit() {
         requireValid()
-        require(value.getString("id") == state.value.id) { "Unexpected repair response" }
-        val items = value.optJSONArray("choices")
-        require((items?.length() ?: 0) <= 8)
-        val choices = List(items?.length() ?: 0) { i ->
-            val row = items!!.getJSONObject(i)
-            RepairChoice(row.getInt("id"), row.optString("title"), row.optString("artist"), row.optString("source"), row.optString("quality"))
+        check(checkAccount())
+        requireValid()
+        save("submitting", "Requesting a fresh copy…")
+        val result = try {
+            call("/api/bulk-import-async", "POST", JSONObject().put("songs", line)
+                .put("create_playlist", false).put("use_playlists_dir", false))
+        } catch (e: AcquisitionFailure) {
+            if (e.status in setOf(400, 401, 403, 404, 422, 429)) {
+                save("request_failed", "Bad file deleted. MusicGrabber rejected the request; check its connection and retry the request.")
+                return
+            }
+            throw e
         }
-        val status = value.getString("state")
-        require(status in setOf("searching", "ready", "empty", "replacing", "done", "failed", "unknown"))
-        state.value = state.value.copy(status = status, title = value.optString("title"), artist = value.optString("artist"),
-            message = value.optString("message"), choices = choices)
+        requireValid()
+        val id = result.optString("import_id")
+        require(id.matches(Regex("[A-Za-z0-9_-]{1,100}")))
+        saved.put("importId", id)
+        save("acquiring", "MusicGrabber is acquiring a fresh copy…")
+        poll()
     }
-    private fun fail(uncertain: Boolean) {
-        state.value = state.value.copy(status = if (uncertain) "unconfirmed" else "failed",
-            message = if (uncertain) "Connection interrupted. Check status before trying anything else." else "Could not locate this track for repair. Check your library and connection.")
+    private suspend fun poll() {
+        while (state.value.status == "acquiring") {
+            requireValid()
+            val result = call("/api/bulk-import/${saved.getString("importId")}/status", "GET", null)
+            requireValid()
+            when {
+                result.optString("status") in setOf("error", "failed", "cancelled") ->
+                    save("request_failed", "Bad file deleted. MusicGrabber could not download a replacement.")
+                result.optBoolean("complete") -> {
+                    when {
+                        result.optInt("completed") > 0 -> save("done", "Fresh copy downloaded. It will appear when Plex finishes indexing it.")
+                        result.optInt("skipped") > 0 || result.optInt("dupe_skipped") > 0 -> save("done", "MusicGrabber found an existing copy instead of downloading. Check its result in MusicGrabber.")
+                        else -> save("request_failed", "Bad file deleted. MusicGrabber could not download a replacement.")
+                    }
+                }
+            }
+            if (state.value.status == "acquiring") pause()
+        }
+    }
+    private fun failure() {
+        when (state.value.status) {
+            "deleting" -> save("delete_unknown", "Deletion could not be confirmed. No download was requested. Check status.")
+            "submitting" -> save("request_unknown", "Bad file deleted. The download request could not be confirmed; check MusicGrabber before requesting again.")
+            "deleted", "request_failed" -> save("request_failed", "Bad file deleted. Check MusicGrabber's connection, then retry the request.")
+            "acquiring" -> state.value = state.value.copy(message = "Download status is unavailable. Check status again; the request will not be resent.")
+            else -> state.value = state.value.copy(message = "Connection unavailable. Reopen this action after reconnecting.")
+        }
     }
 }

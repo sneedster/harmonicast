@@ -192,7 +192,7 @@ class AppUpdateViewModel internal constructor(
 @Composable internal fun UpdateSettings() {
     val vm: AppUpdateViewModel = viewModel()
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Installed version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium)
+        PrivateRepairVersion()
         SettingsToggle("Check automatically on launch", "Checks GitHub on each fresh launch and offers available updates. Downloads only when you choose.", vm.automatic, true, vm::updateAutomatic)
         TextButton(onClick = { vm.check() }, modifier = Modifier.tvFocusFeedback()) { Text("Check for updates") }
         UpdateActions(vm)

@@ -2,8 +2,6 @@ package io.github.sneedster.harmonicast
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import java.io.File
-import org.robolectric.annotation.GraphicsMode
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.*
@@ -14,25 +12,24 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w390dp-h760dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PrivateTrackRepairUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
-
-    @Test fun userMustSelectCopyBeforeReplacement() {
-        var selected: Int? = null
+    @Test fun namesTrackAndPermanentDeletionWithOneAction() {
+        var replaced = false
         compose.setContent { MaterialTheme(colorScheme = playerColors("Nocturne")) {
-            RepairDialog(RepairState(enabled = true, id = "one", status = "ready", title = "Halcyon", artist = "Orbital", message = "Choose another copy.",
-                choices = listOf(RepairChoice(0, "Halcyon", "Orbital", "qobuz", "FLAC"))), {}, { selected = it }, {}, {})
+            RepairDialog(RepairState(status = "ready", title = "Halcyon", artist = "Orbital",
+                message = "Delete this bad file permanently and ask MusicGrabber for a fresh copy."), {}, { replaced = true }, {})
         } }
-        compose.onNodeWithText("Replace copy").assertIsNotEnabled()
-        compose.onNodeWithText("Halcyon").performClick()
-        compose.onNodeWithText("Replace copy").assertIsEnabled().performClick()
-        assertEquals(0, selected)
+        compose.onNodeWithText("Halcyon — Orbital").assertIsDisplayed()
+        compose.onNodeWithText("Delete and replace").performClick()
+        assertTrue(replaced)
         compose.runOnIdle {
-            // Draw the dialog window directly; Robolectric has no PixelCopy redraw event.
             val managerClass = Class.forName("android.view.WindowManagerGlobal")
             val manager = managerClass.getMethod("getInstance").invoke(null)
             @Suppress("UNCHECKED_CAST")
@@ -40,49 +37,50 @@ class PrivateTrackRepairUiTest {
             val view = views.last()
             val screenshot = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
             view.draw(Canvas(screenshot))
-            File("build/reports/private-repair/selection.png").apply { parentFile?.mkdirs() }.outputStream().use {
+            File("build/reports/private-repair/delete-and-replace.png").apply { parentFile?.mkdirs() }.outputStream().use {
                 screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)
             }
         }
     }
-    @Test fun uncertainResultOnlyOffersStatusCheck() {
-        var checked = false
-        compose.setContent { MaterialTheme(colorScheme = playerColors("Nocturne")) {
-            RepairDialog(RepairState(enabled = true, status = "unconfirmed", title = "Halcyon", message = "Connection interrupted."), {}, {}, { checked = true }, {})
+    @Test fun uncertainSubmissionOffersNoDuplicateRequestButton() {
+        compose.setContent { MaterialTheme {
+            RepairDialog(RepairState(status = "request_unknown", message = "Check MusicGrabber."), {}, {}, {})
         } }
-        compose.onNodeWithText("Replace copy").assertDoesNotExist()
-        compose.onNodeWithText("New search").assertDoesNotExist()
-        compose.onNodeWithText("Check status").performClick()
-        assertTrue(checked)
+        compose.onNodeWithText("Delete and replace").assertDoesNotExist()
+        compose.onNodeWithText("Request fresh copy").assertDoesNotExist()
+        compose.onNodeWithText("Close").assertIsDisplayed()
     }
-    @Test fun workingReplacementCanBeDismissedWithoutAnotherMutation() {
-        var closed = false
-        compose.setContent { MaterialTheme(colorScheme = playerColors("Nocturne")) {
-            RepairDialog(RepairState(enabled = true, status = "replacing", working = true, title = "Halcyon", message = "Downloading…"), { closed = true }, {}, {}, {})
+    @Test fun confirmedFailedRequestOnlyRetriesAcquisition() {
+        var requested = false
+        compose.setContent { MaterialTheme {
+            RepairDialog(RepairState(status = "request_failed", message = "Bad file deleted."), {}, {}, { requested = true })
         } }
-        compose.onNodeWithText("Replace copy").assertDoesNotExist()
-        compose.onNodeWithText("New search").assertDoesNotExist()
-        compose.onNodeWithText("Close").performClick()
-        assertTrue(closed)
+        compose.onNodeWithText("Delete and replace").assertDoesNotExist()
+        compose.onNodeWithText("Request fresh copy").performClick()
+        assertTrue(requested)
     }
-    @Test
-    @Config(qualifiers = "w740dp-h300dp-mdpi")
-    fun landscapeKeepsCloseAndReplaceReachable() {
-        compose.setContent { MaterialTheme(colorScheme = playerColors("Nocturne")) {
-            RepairDialog(RepairState(enabled = true, id = "wide", status = "ready", title = "Halcyon", artist = "Orbital", message = "Choose another copy.",
-                choices = List(8) { RepairChoice(it, "Halcyon version $it", "Orbital", "qobuz", "FLAC") }), {}, {}, {}, {})
+    @Test @Config(qualifiers = "w740dp-h300dp-mdpi") fun landscapeKeepsActionReachable() {
+        compose.setContent { MaterialTheme {
+            RepairDialog(RepairState(status = "ready", title = "A very long song title", artist = "Artist", message = "Delete this bad file permanently and ask MusicGrabber for a fresh copy."), {}, {}, {})
         } }
         compose.onNodeWithText("Close").assertIsDisplayed()
-        compose.onNodeWithText("Replace copy").assertIsDisplayed()
-        compose.onNodeWithText("Halcyon version 7").performScrollTo().performClick()
-        compose.onNodeWithText("Replace copy").assertIsEnabled().assertIsDisplayed()
+        compose.onNodeWithText("Delete and replace").assertIsDisplayed()
+    }
+    @Test fun versionGestureEnablesThePrivateActionForAnOwner() {
+        val prefs = compose.activity.getSharedPreferences("harmonicast", android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val storage = SharedPreferencesProfileStorage(prefs)
+        HomeProfileStore(storage).savePersonalSource(PersonalPlexSource("test", "https://plex", "machine", "Server", "7", "Music"))
+        compose.setContent { MaterialTheme { PrivateRepairVersion() } }
+        repeat(6) { compose.onNodeWithText("Installed version ${BuildConfig.VERSION_NAME}").performClick() }
+        assertFalse(PrivateRepairSwitch(storage).enabled)
+        compose.onNodeWithText("Installed version ${BuildConfig.VERSION_NAME}").performClick()
+        assertTrue(PrivateRepairSwitch(storage).enabled)
     }
 
     @Test fun ordinaryInstallHasNoMaintenanceAction() {
-        compose.setContent { MaterialTheme(colorScheme = playerColors("Nocturne")) {
-            PrivateTrackRepairAction(Song("one", "Halcyon", "Orbital"), allowed = false)
-        } }
+        compose.setContent { MaterialTheme { PrivateTrackRepairAction(Song("one", "Halcyon", "Orbital"), allowed = true) } }
         compose.onNodeWithContentDescription("Track actions").assertDoesNotExist()
-        compose.onNodeWithText("Find another copy").assertDoesNotExist()
+        compose.onNodeWithText("Replace bad file").assertDoesNotExist()
     }
 }
