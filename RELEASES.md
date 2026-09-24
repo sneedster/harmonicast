@@ -1,5 +1,16 @@
 # Releases
 
+## v1.1.18 — artist and album reading tabs
+
+Version code: **80**.
+
+- Keep a wide artist banner and Artist / Album tabs fixed while the selected text scrolls.
+- Prefer Plex artist background art, with the artist thumbnail as fallback.
+- Remember each tab’s scroll position and show separate missing-biography/review messages.
+- Limit swipe-down dismissal to the header so reading cannot accidentally close the page.
+
+Validation: all 280 Android tests passed with per-class isolation; debug lint, signed release assembly, release vital lint, APK version, and same-certificate checks passed. No physical-device installation was performed.
+
 ## v1.1.17 — track artists in Now Playing
 
 Version code: **79**.

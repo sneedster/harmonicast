@@ -762,3 +762,15 @@ Real MusicGrabber credential publication and recipient integration remain pendin
   android/app/build/reports/artist-discovery/.
 - Premium static audit: zero findings. git diff --check passed.
 - No physical-device installation or real-image rendering was performed.
+
+## v1.1.18 publication validation — 2026-09-23
+
+- Version 1.1.18 (80); unchanged application ID and signing certificate compared
+  with the downloaded published v1.1.17 APK.
+- All 280 tests passed (zero failures/errors/skips) using the documented per-class
+  isolation with android/build-debug.sh; debug assembly and lint passed.
+- android/build-release.sh passed signed assembly and release vital lint after
+  the complete isolated gate. No tests were skipped by the release workflow.
+- apksigner verified the signature; aapt verified package/version/minimum SDK.
+- APK SHA-256: 0fdae4ad148759337c6fdbe8606ccbc8f6c9bda91999a0e69afe7cfdfd9d5796.
+- No physical-device installation was performed.
