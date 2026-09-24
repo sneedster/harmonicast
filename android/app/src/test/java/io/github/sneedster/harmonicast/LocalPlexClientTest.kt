@@ -5,6 +5,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LocalPlexClientTest {
+    @Test fun maintenanceRequiresOneFileFromOwnedSelectedLibrary() = runBlocking {
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        for ((section, media, allowed) in listOf(
+            Triple("7", """[{"Part":[{"file":"/music/song.flac"}]}]""", true),
+            Triple("8", """[{"Part":[{"file":"/music/song.flac"}]}]""", false),
+            Triple("7", """[{"Part":[{"file":"/music/song.flac"},{}]}]""", false),
+            Triple("7", """[{"Part":[{"file":"/music/song.flac"}]},{}]""", false),
+            Triple("7", """[{"Part":[{"key":"/stream"}]}]""", false),
+        )) {
+            val http = FakeHttp().apply { responses += """{"MediaContainer":{"Metadata":[{"ratingKey":"1","librarySectionID":"$section","Media":$media}]}}""" }
+            val result = runCatching { LocalPlexClient(MemoryStorage(), http).maintenanceFile(source, "plex:machine:1") }
+            assertEquals(allowed, result.isSuccess)
+            if (allowed) assertEquals("/music/song.flac", result.getOrThrow())
+        }
+        val http = FakeHttp()
+        assertTrue(runCatching { LocalPlexClient(MemoryStorage(), http).maintenanceFile(source.copy(canWriteToPlex = false), "plex:machine:1") }.isFailure)
+        assertTrue(http.calls.isEmpty())
+        assertTrue(runCatching { LocalPlexClient(MemoryStorage(), http).maintenanceFile(source, "plex:other:1") }.isFailure)
+        assertTrue(http.calls.isEmpty())
+    }
+
     @Test fun artistDiscoveryPrefersBackgroundAndFallsBackToThumbnail() = runBlocking {
         for ((art, expected) in listOf("/artist/banner" to "/artist/banner", "" to "/artist/thumb")) {
             val http = FakeHttp().apply {

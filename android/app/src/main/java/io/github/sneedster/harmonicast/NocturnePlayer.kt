@@ -92,6 +92,7 @@ import androidx.compose.ui.unit.sp
         }
         val extraActions: @Composable () -> Unit = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                PrivateTrackRepairAction(song, vm.isPersonalMode && vm.canWriteToPlex && !vm.nearbyRoomState.connected)
                 if (compact) {
                     IconButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Radio, "Track Radio") }
                     IconButton(onClick = { details = true; vm.loadArtistDiscovery(song) }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Info, "Discover") }

@@ -331,6 +331,17 @@ class LocalPlexClient(
         return (direct + expanded).distinctBy(Song::id).take(40)
     }
 
+    internal suspend fun maintenanceFile(source: PersonalPlexSource, id: String): String {
+        require(source.canWriteToPlex) { "Only your own library can be repaired" }
+        val item = metadata(source, id) ?: error("Plex track was not found")
+        val media = item.optJSONArray("Media") ?: error("Plex did not return a file")
+        require(media.length() == 1) { "This track has multiple or unavailable files; use MusicGrabber directly" }
+        val parts = media.getJSONObject(0).optJSONArray("Part") ?: error("Plex did not return a file")
+        require(parts.length() == 1) { "This track has multiple or unavailable files; use MusicGrabber directly" }
+        return parts.getJSONObject(0).optString("file").takeIf { it.startsWith("/") }
+            ?: error("Plex did not return a file path")
+    }
+
     suspend fun track(source: PersonalPlexSource, id: String): Song? =
         metadata(source, id)?.let { mapSong(source, it) }
 
