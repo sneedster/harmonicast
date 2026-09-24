@@ -46,6 +46,15 @@ playback sources and a general plugin installer remain outside scope.
   acquisition and deployed acceptance remain outstanding; no target release or
   delivery date assigned.
 
+## Curve equalizer — preview
+
+- Device-local parametric EQ with a draggable response curve, up to eight points,
+  precise frequency/gain/width controls, TV remote alternatives, bypass and reset.
+- Normal playback and paired receivers share the processing implementation, with
+  independent filter history and receiving-device settings. Default off.
+- This is a trial feature, not a published release. Digital DSP/UI checks and
+  physical-device trial status are recorded in [CURVE_EQUALIZER.md](docs/CURVE_EQUALIZER.md).
+
 ## Ongoing quality
 
 - Track Radio stays within Plex and uses sonic track similarity (`metadata/nearest`),

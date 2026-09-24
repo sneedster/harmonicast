@@ -1,5 +1,6 @@
 package io.github.sneedster.harmonicast
 
+import androidx.annotation.OptIn
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Handler
@@ -53,6 +54,7 @@ class NativePlaybackReceiver : MediaSessionService() {
             main.postDelayed(this, 500)
         }
     }
+    @OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
         if (!NativePlaybackProtocol.playbackEligible(this)) {
@@ -63,7 +65,7 @@ class NativePlaybackReceiver : MediaSessionService() {
         pairedSource = currentSource()
         val code = NativePlaybackProtocol.secret()
         pairing = NativePairing(code)
-        player = ExoPlayer.Builder(this).setAudioAttributes(AudioAttributes.Builder()
+        player = ExoPlayer.Builder(this, equalizerRenderers(this)).setAudioAttributes(AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true).setWakeMode(C.WAKE_MODE_LOCAL).build()
         player.addListener(object : Player.Listener {

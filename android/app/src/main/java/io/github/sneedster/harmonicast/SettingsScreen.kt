@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
     APPEARANCE("Appearance", Icons.Default.Palette),
     PLAYBACK("Playback", Icons.Default.PlayCircle),
+    EQUALIZER("Equalizer", Icons.Default.GraphicEq),
     MIX("Automatic mix", Icons.Default.Shuffle),
     RADIO("Track Radio", Icons.Default.Radio),
     RATINGS("Automatic ratings", Icons.Default.Star),
@@ -95,6 +96,7 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
                             val summary = when (category) {
                                 SettingsCategory.APPEARANCE -> vm.colorSchemeName
                                 SettingsCategory.PLAYBACK -> if (television) "Playback on this TV" else if (vm.keepScreenOnWhileCharging) "Stay awake while charging" else "Screen & background playback"
+                                SettingsCategory.EQUALIZER -> "Shape the sound on this device"
                                 SettingsCategory.MIX -> "${vm.ratedTrackShare} rated / ${10 - vm.ratedTrackShare} unrated · ${selectionLabels[vm.musicTuning.selection]}"
                                 SettingsCategory.RADIO -> "Sonic distance ${String.format(Locale.ROOT, "%.2f", vm.trackRadioDistance)}"
                                 SettingsCategory.RATINGS -> if (!vm.automaticPlexRatings) "Off" else if (vm.musicTuning.defaultRatings) "On · Default tuning" else "On · Custom tuning"
@@ -152,6 +154,7 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
                             when (active) {
                                 SettingsCategory.APPEARANCE -> AppearanceSettings(vm)
                                 SettingsCategory.PLAYBACK -> PlaybackSettings(vm)
+                                SettingsCategory.EQUALIZER -> EqualizerSettings()
                                 SettingsCategory.MIX -> MixSettings(vm)
                                 SettingsCategory.RADIO -> {
                                     TrackRadioSettingsContent(vm.trackRadioDistance, vm.isPersonalMode && vm.isHost, vm::saveTrackRadioDistance)

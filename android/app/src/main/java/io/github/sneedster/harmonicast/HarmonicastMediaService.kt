@@ -121,7 +121,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        val exoPlayer = ExoPlayer.Builder(this)
+        val exoPlayer = ExoPlayer.Builder(this, equalizerRenderers(this))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)

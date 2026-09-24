@@ -378,3 +378,29 @@ height for landscape. Loading, errors, and separate missing-text messages remain
 in the body. Down and system Back close the page; downward swipe dismissal is
 limited to the header so scrolling the text cannot close the page. MaterialTheme,
 playerColors, and tvFocusFeedback remain the visual and focus owners.
+
+
+## Device-local curve equalizer
+
+SettingsScreen owns the Equalizer category and scrolling, following Track Radio.
+EqualizerSettings uses the existing Material typography, SettingsToggle,
+SettingsDescription, native Material sliders/chips/buttons and tvFocusFeedback.
+PlayerPalette remains the only color owner. The signature is a logarithmic
+frequency plot with directly movable control points and the calculated response
+of the same filters used by playback. No decorative waveform or arbitrary spline
+stands in for audio behavior. The vertical scale expands for overlapping bands.
+
+Canonical direct-manipulation owner: EqualizerGraph. Every gesture has a point
+selector and frequency/gain/width sliders plus minus/plus buttons; accessible
+value descriptions use Hz, dB and Q rather than the slider's logarithmic values.
+Add/remove/reset controls remain reachable in the parent's scroll container.
+Off is explicitly labeled as a curve preview; users can edit while bypassed.
+Empty curves explain how to start, and the eight-point limit disables Add point.
+Reset is a reversible local edit, so it does not require a confirmation dialog.
+
+EqualizerStore owns validated immutable settings and immediate local persistence;
+this form has no server/loading/session dependency. Settings are separate from
+Plex profiles, never serialized into rooms, and excluded from Android backup and
+device transfer. The receiver applies its own saved curve. The engine reserves
+headroom for boosts; the UI distinguishes tonal response from the resulting
+volume reduction. Default is off with four flat points.

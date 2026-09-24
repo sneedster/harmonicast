@@ -29,10 +29,24 @@ retains playback authority until disconnected. Track Radio depends on Plex suppo
 
 ## Settings and music tuning
 
-Settings has seven categories: **Appearance**, **Playback**, **Automatic mix**,
-**Automatic ratings**, **Music acquisition**, **Plex account**, and **About & updates**. Phones open a page
+Settings has nine categories: **Appearance**, **Playback**, **Equalizer**, **Automatic mix**,
+**Track Radio**, **Automatic ratings**, **Music acquisition**, **Plex account**, and **About & updates**. Phones open a page
 per category; larger displays keep the category list beside the selected page.
 The mini-player remains available.
+
+### Curve equalizer (preview)
+
+Open **Settings → Equalizer** to shape this device's sound. Enable the EQ, drag
+points on the curve, or tap an empty spot to add one (up to eight). Select a point
+for frequency, gain and width controls; sliders and minus/plus buttons also work
+with a TV remote. Bypass keeps the saved curve; **Reset to flat** restores four
+neutral points. Changes apply while playing and save automatically.
+
+The curve plots the actual parametric filter response, before automatic gain
+headroom. Boosts can reduce overall volume. Each physical device owns its curve,
+including when receiving transferred playback; settings are excluded from backup
+and device migration. See [EQ implementation and validation](docs/CURVE_EQUALIZER.md)
+for processing tradeoffs and trial status.
 
 ### Rooms
 

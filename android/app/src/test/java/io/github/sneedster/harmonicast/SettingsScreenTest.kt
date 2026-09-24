@@ -31,6 +31,35 @@ import java.io.File
 @Config(sdk = [35], qualifiers = "w390dp-h760dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SettingsScreenTest {
+    @Test fun equalizerCategoryPersistsDeviceLocalCurve() {
+        setup()
+        val store = EqualizerStore.get(RuntimeEnvironment.getApplication())
+        compose.runOnIdle { store.update(EqSettings()) }
+        open("Equalizer")
+        compose.onNodeWithContentDescription("Enable equalizer").performClick()
+        compose.onNodeWithContentDescription("Increase Gain").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertTrue(store.state.value.enabled)
+            assertEquals(0.5, EqualizerStore(RuntimeEnvironment.getApplication()).state.value.points[0].gain, 0.0)
+        }
+        compose.onNodeWithText("Back").performScrollTo().performClick()
+        open("Equalizer")
+        compose.onNodeWithText("Your sound").assertExists()
+        screenshot("equalizer-phone")
+    }
+
+    @Test @Config(qualifiers = "w1280dp-h720dp-mdpi")
+    fun equalizerCategoryIsReachableOnTv() {
+        setup(tv = true)
+        compose.runOnIdle { EqualizerStore.get(RuntimeEnvironment.getApplication()).update(EqSettings()) }
+        open("Equalizer")
+        compose.onNodeWithContentDescription("Increase Gain").performScrollTo().performClick()
+        compose.onNodeWithText("Add point").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(5, EqualizerStore.get(RuntimeEnvironment.getApplication()).state.value.points.size) }
+        compose.onAllNodesWithText("Back").onLast().performScrollTo()
+        screenshot("equalizer-tv")
+    }
+
     @Test fun trackRadioDistanceSliderSavesAndRestoresDefault() {
         setup()
         open("Track Radio")
