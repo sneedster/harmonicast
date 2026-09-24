@@ -5,6 +5,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LocalPlexClientTest {
+    @Test fun artistDiscoveryPrefersBackgroundAndFallsBackToThumbnail() = runBlocking {
+        for ((art, expected) in listOf("/artist/banner" to "/artist/banner", "" to "/artist/thumb")) {
+            val http = FakeHttp().apply {
+                responses += """{"MediaContainer":{"Metadata":[{"ratingKey":"1","librarySectionID":"7","grandparentRatingKey":"2","parentRatingKey":"3"}]}}"""
+                responses += """{"MediaContainer":{"Metadata":[{"title":"Artist","art":"$art","thumb":"/artist/thumb","summary":"Bio"}]}}"""
+                responses += """{"MediaContainer":{"Metadata":[{"title":"Album","summary":"Review"}]}}"""
+            }
+            val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+            val info = LocalPlexClient(MemoryStorage(), http).discovery(source, Song("plex:machine:1", "Track", "Artist"))
+            assertEquals("https://plex$expected?X-Plex-Token=token", info.artistArtworkUri)
+            assertEquals("Bio", info.bio)
+            assertEquals("Review", info.albumSummary)
+        }
+    }
+
     @Test fun trackArtistOverridesAlbumArtistAndFallsBackForMissingMetadata() = runBlocking {
         val http = FakeHttp().apply {
             responses += """{"MediaContainer":{"Metadata":[

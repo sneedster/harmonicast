@@ -748,3 +748,17 @@ device accessibility or live-server behavior. Bundled FLAC bytes match the teste
 media asset. No live Plex library creation or Android metadata write was performed
 during this implementation; these mutations need acceptance against the server.
 Real MusicGrabber credential publication and recipient integration remain pending.
+
+## Artist discovery tabs — 2026-09-23
+
+- Fixed wide artist banner and Artist / Album tabs; only the selected body scrolls.
+- Live Plex Music artist metadata confirmed separate art and thumb fields, including
+  artists with no background. Background art is preferred, then thumbnail.
+- Passed: android/build-debug.sh :app:testDebugUnitTest --tests '*ArtistDiscoveryLayoutTest'
+  --tests '*LocalPlexClientTest' (36 tests).
+- Compose/Robolectric verifies fixed banner/tab bounds during long biography scroll,
+  independent tab positions, empty states, and short landscape reachability.
+  Rendered and inspected 390x760 and 760x360 placeholder states in
+  android/app/build/reports/artist-discovery/.
+- Premium static audit: zero findings. git diff --check passed.
+- No physical-device installation or real-image rendering was performed.

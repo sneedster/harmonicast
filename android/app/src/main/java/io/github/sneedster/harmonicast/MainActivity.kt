@@ -24,7 +24,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.border
@@ -58,8 +57,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -1722,72 +1719,91 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable internal fun ArtistDiscoveryPage(vm: HarmonicastViewModel, song: Song, close: () -> Unit) {
-    val listState = rememberLazyListState()
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize().pointerInput(song.id, listState) {
-            awaitPointerEventScope {
-                while (true) {
-                    awaitFirstDown(requireUnconsumed = false)
+    ArtistDiscoveryContent(song, vm.artistDiscovery, vm.artistDiscoveryLoading, vm.artistDiscoveryError, close)
+}
+
+@Composable internal fun ArtistDiscoveryContent(
+    song: Song,
+    info: ArtistDiscovery?,
+    loading: Boolean,
+    error: String,
+    close: () -> Unit,
+) {
+    key(song.id) {
+        var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+        val artistScroll = rememberScrollState()
+        val albumScroll = rememberScrollState()
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val photoHeight = minOf(200.dp, maxHeight * .28f)
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Only the header owns the dismissal gesture; reading never dismisses the page.
+                Column(Modifier.pointerInput(close) {
                     var downward = 0f
-                    var active = true
-                    while (active) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        val change = event.changes.firstOrNull() ?: break
-                        val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
-                        downward = if (atTop) {
-                            downward + change.positionChange().y.coerceAtLeast(0f)
-                        } else {
-                            0f
+                    detectVerticalDragGestures(
+                        onDragStart = { downward = 0f },
+                        onVerticalDrag = { change, dragAmount ->
+                            downward = (downward + dragAmount).coerceAtLeast(0f)
+                            if (downward > 90.dp.toPx()) { downward = 0f; close() }
+                            change.consume()
+                        },
+                    )
+                }) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Artist discovery", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = close, modifier = Modifier.tvFocusFeedback()) { Text("Down") }
+                    }
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(Modifier.fillMaxWidth().height(photoHeight), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Person, null, Modifier.size(photoHeight * .4f), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                AsyncImage(
+                                    model = info?.artistArtworkUri,
+                                    contentDescription = "Artist photo",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            }
                         }
-                        if (downward > 90f) { close(); active = false }
-                        if (!change.pressed) active = false
+                        Text(info?.name ?: song.albumArtist?.ifBlank { song.artist } ?: song.artist,
+                            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-            }
-        },
-    ) {
-        item {
-            Column(Modifier.padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Artist discovery", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = close, modifier = Modifier.tvFocusFeedback()) { Text("Down") }
+                TabRow(selectedTabIndex = selectedTab) {
+                    listOf("Artist", "Album").forEachIndexed { index, title ->
+                        Tab(selected = selectedTab == index, onClick = { selectedTab = index },
+                            modifier = Modifier.tvFocusFeedback(), text = { Text(title) })
+                    }
                 }
-                when {
-                    vm.artistDiscoveryLoading -> CircularProgressIndicator()
-                    vm.artistDiscoveryError.isNotBlank() -> Text(vm.artistDiscoveryError, color = MaterialTheme.colorScheme.error)
-                    vm.artistDiscovery != null -> {
-                        val info = vm.artistDiscovery!!
-                        Text(info.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                        if (info.genres.isNotEmpty()) DetailLine("Genres", info.genres.joinToString(" · "))
-                        if (info.albumName.isNotBlank()) {
-                            Text("Album context", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "${info.albumName}${info.albumYear?.let { " ($it)" }.orEmpty()}",
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            if (info.albumSummary.isNotBlank()) Text(info.albumSummary, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Justify)
+                Column(
+                    Modifier.fillMaxWidth().weight(1f)
+                        .verticalScroll(if (selectedTab == 0) artistScroll else albumScroll)
+                        .padding(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    when {
+                        loading -> CircularProgressIndicator()
+                        error.isNotBlank() -> Text(error, color = MaterialTheme.colorScheme.error)
+                        selectedTab == 0 -> {
+                            if (!info?.genres.isNullOrEmpty()) Text(info!!.genres.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(info?.bio?.ifBlank { "No artist biography available." } ?: "No artist biography available.",
+                                style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Justify)
+                            if (!info?.similarArtists.isNullOrEmpty()) {
+                                Text("Similar artists", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(info!!.similarArtists.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
+                            }
                         }
-                        if (info.bio.isNotBlank()) Text(
-                            info.bio,
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Justify,
-                        )
-                        if (info.similarArtists.isNotEmpty()) {
-                            Text("Similar artists", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text(info.similarArtists.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
+                        else -> {
+                            Text(info?.albumName?.ifBlank { song.album } ?: song.album,
+                                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            info?.albumYear?.let { Text(it.toString(), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            Text(info?.albumSummary?.ifBlank { "No album review available." } ?: "No album review available.",
+                                style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Justify)
                         }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable private fun DetailLine(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, fontWeight = FontWeight.Medium)
     }
 }
 

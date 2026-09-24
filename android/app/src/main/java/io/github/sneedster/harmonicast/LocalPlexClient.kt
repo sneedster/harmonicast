@@ -486,6 +486,8 @@ class LocalPlexClient(
             album?.optString("title").orEmpty().ifBlank { song.album },
             album?.optInt("year")?.takeIf { it > 0 },
             album?.optString("summary").orEmpty(),
+            listOf(artist?.optString("art"), artist?.optString("thumb"))
+                .firstOrNull { it?.startsWith('/') == true }?.let { authenticatedUrl(source, it) },
         )
     }
 

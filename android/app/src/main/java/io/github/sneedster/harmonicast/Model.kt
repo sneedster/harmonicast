@@ -23,7 +23,7 @@ data class Song(
     val albumArtist: String? = "",
 )
 data class NowPlaying(val song: Song? = null, val isPlaying: Boolean = false)
-data class ArtistDiscovery(val name: String, val bio: String, val genres: List<String>, val similarArtists: List<String>, val albumName: String, val albumYear: Int?, val albumSummary: String)
+data class ArtistDiscovery(val name: String, val bio: String, val genres: List<String>, val similarArtists: List<String>, val albumName: String, val albumYear: Int?, val albumSummary: String, val artistArtworkUri: String? = null)
 data class PlexConnection(val uri: String, val local: Boolean, val relay: Boolean)
 data class PlexServer(
     val machineIdentifier: String,

@@ -364,3 +364,17 @@ retains grandparentTitle; album/artist browse continues using Plex collection
 metadata and IDs. SessionMediaItems publishes both fields without mixing them.
 Saved legacy metadata refreshes when selected/resumed; a Plex outage preserves
 the playable saved track until a later refresh. Existing layout and tokens apply.
+
+### Artist discovery reading layout
+
+ArtistDiscoveryPage owns a fixed artist photo/name header and Material Artist /
+Album tabs. Only the body beneath the tabs scrolls, with independent positions
+per tab, reset for a different song. Artist contains the biography and related
+artist metadata; Album contains the album title, year, and review. Plex artist
+background art is preferred, with the artist thumbnail as fallback. The wide
+banner uses the existing authenticated artwork URL helper and Coil; unavailable
+images retain a reserved person placeholder. Banner height adapts to the available
+height for landscape. Loading, errors, and separate missing-text messages remain
+in the body. Down and system Back close the page; downward swipe dismissal is
+limited to the header so scrolling the text cannot close the page. MaterialTheme,
+playerColors, and tvFocusFeedback remain the visual and focus owners.
