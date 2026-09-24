@@ -65,7 +65,7 @@ class EqualizerSettingsTest {
             assertEquals(4.0, current.points[1].gain, 0.0)
             assertEquals(EqSettings.defaults.map { it.frequency }, current.points.map { it.frequency })
         }
-        screenshot("graphic-phone")
+        screenshot("continuous-phone")
         compose.onNodeWithContentDescription("Enable equalizer").performClick()
         compose.runOnIdle { assertFalse(current.enabled); assertEquals(4.0, current.points[1].gain, 0.0) }
         compose.onNodeWithText("Reset to flat").performClick()
@@ -85,10 +85,14 @@ class EqualizerSettingsTest {
     @Test @Config(qualifiers = "w320dp-h640dp-mdpi")
     fun narrowPhoneKeepsEveryBandReachable() {
         setup("Aurora")
-        eqBandLabels.forEach { compose.onNodeWithContentDescription("$it Hz").performScrollTo().assertIsDisplayed() }
+        val nodes = eqBandLabels.map { compose.onNodeWithContentDescription("$it Hz") }
+        nodes.forEach { it.assertIsDisplayed() }
+        val bounds = nodes.map { it.fetchSemanticsNode().boundsInRoot }
+        assertTrue(bounds.all { it.top == bounds.first().top && it.bottom == bounds.first().bottom })
+        assertTrue(bounds.zipWithNext().all { (a, b) -> a.right <= b.left + 1 })
         compose.onNodeWithContentDescription("16k Hz").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(-3f) }
         compose.runOnIdle { assertEquals(-3.0, current.points[9].gain, 0.0) }
-        screenshot("graphic-narrow")
+        screenshot("continuous-narrow")
     }
     @Test @Config(qualifiers = "w960dp-h720dp-mdpi")
     fun keyboardAdjustsAndCanLeaveBands() {
@@ -103,7 +107,31 @@ class EqualizerSettingsTest {
         compose.runOnIdle { assertEquals(-0.5, current.points[1].gain, 0.0) }
         second.performKeyInput { pressKey(Key.DirectionLeft) }
         first.assertIsFocused().performKeyInput { pressKey(Key.DirectionLeft) }
-        compose.onNodeWithText("Reset to flat").assertIsFocused()
-        screenshot("graphic-wide")
+        compose.onNodeWithContentDescription("Equalizer preset").assertIsFocused()
+        screenshot("continuous-wide")
     }
+    @Test fun presetsManualEditsAndPreampStayIndependent() {
+        setup()
+        compose.onNodeWithContentDescription("Equalizer preset").performClick()
+        screenshot("presets-open")
+        compose.onNodeWithText("Bass lift").performClick()
+        compose.runOnIdle {
+            assertEquals("Bass lift", equalizerPresetName(current))
+            assertEquals(4.0, current.points[0].gain, 0.0)
+            assertFalse(current.enabled)
+        }
+        compose.onNodeWithContentDescription("Equalizer preamp").performScrollTo()
+            .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(-3f) }
+        compose.runOnIdle { assertEquals(-3.0, current.preampDb, 0.0) }
+        compose.onNodeWithContentDescription("125 Hz").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Increase selected band").performClick()
+        compose.runOnIdle {
+            assertEquals("Custom", equalizerPresetName(current))
+            assertEquals(3.0, current.points[2].gain, 0.0)
+            assertEquals(-3.0, current.preampDb, 0.0)
+        }
+        compose.onNodeWithText("Reset to flat").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(EqSettings(), current) }
+    }
+
 }

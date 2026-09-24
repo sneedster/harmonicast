@@ -37,10 +37,12 @@ The mini-player remains available.
 ### 10-band equalizer (preview)
 
 Open **Settings → Equalizer** for ten fixed frequency bands from 31.5 Hz to
-16 kHz. Move a slider up to boost that range or down to cut it, up to ±12 dB.
-A smooth line connects the slider positions. Each slider adjusts independently.
-**Reset to flat** centers all ten; switching EQ off keeps the saved settings.
-Phone controls use two rows of five, while wide screens show one row of ten.
+16 kHz. Drag a point up to boost that range or down to cut it, up to ±12 dB.
+All ten points stay together on one graph with a smooth connecting line. Each
+band adjusts independently; tap a band and use minus/plus for precise changes.
+Choose Flat, Bass lift, Warm, Vocal, Bright or Lively as a starting preset.
+**Preamp** controls overall EQ level without automatic volume reductions.
+**Reset to flat** centers all bands and preamp; switching EQ off keeps the settings.
 TV remote left/right selects a control and up/down adjusts the selected band.
 
 Settings save on this device and apply to local or received playback. The earlier

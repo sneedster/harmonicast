@@ -88,7 +88,7 @@ class EqualizerAudioProcessorTest {
         prefs.edit().clear().putString("curve", "{\"enabled\":true,\"points\":[{\"hz\":240,\"db\":12,\"q\":0.8}]}").commit()
         val store = EqualizerStore(context)
         assertEquals(EqSettings(), store.state.value)
-        val settings = EqSettings(true, EqSettings.defaults.mapIndexed { i, band -> band.copy(gain = i - 4.5) })
+        val settings = EqSettings(true, EqSettings.defaults.mapIndexed { i, band -> band.copy(gain = i - 4.5) }, preampDb = -3.5)
         store.update(settings)
         assertEquals(settings, EqualizerStore(context).state.value)
         assertTrue(prefs.contains("curve"))
@@ -105,4 +105,28 @@ class EqualizerAudioProcessorTest {
         assertFalse(EqualizerStore.decode(null).enabled)
         assertEquals(EqSettings(), EqualizerStore.decode("{\"enabled\":true,\"gains\":[]}"))
     }
+    @Test fun boostsRaiseTheirBandWithoutTurningEverythingElseDown() {
+        for (rate in listOf(44100, 48000, 96000)) {
+            val boosted = EqSettings(true, EqSettings.defaults.map { if (it.frequency == 1000.0) it.copy(gain = 6.0) else it })
+            for (frequency in listOf(1000.0, 63.0, 8000.0)) {
+                val p = EqualizerAudioProcessor({ boosted })
+                p.configure(AudioProcessor.AudioFormat(rate, 1, C.ENCODING_PCM_16BIT)); p.flush()
+                val input = ShortArray(rate) { (3000 * sin(2 * PI * frequency * it / rate)).roundToInt().toShort() }
+                val processed = output(p, input)
+                val actual = 10 * log10(processed.takeLast(rate / 2).sumOf { it.toDouble().pow(2) } /
+                    input.takeLast(rate / 2).sumOf { it.toDouble().pow(2) })
+                assertEquals(eqResponseDb(boosted, frequency, rate), actual, 0.02)
+                if (frequency == 1000.0) assertEquals(6.0, actual, 0.02)
+                else assertTrue("Unrelated frequencies must not be attenuated: $actual", actual > -0.05 && actual < 0.15)
+            }
+        }
+    }
+    @Test fun oldGraphicSettingsKeepGainsAndDefaultToNeutralPreamp() {
+        val raw = "{\"enabled\":true,\"gains\":[1,2,3,4,5,6,7,8,9,10]}"
+        val settings = EqualizerStore.decode(raw)
+        assertTrue(settings.enabled)
+        assertEquals(10.0, settings.points.last().gain, 0.0)
+        assertEquals(0.0, settings.preampDb, 0.0)
+    }
+
 }

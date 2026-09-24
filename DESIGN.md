@@ -382,28 +382,37 @@ playerColors, and tvFocusFeedback remain the visual and focus owners.
 
 ## Device-local 10-band equalizer
 
-The initial movable-point editor was replaced at Michael's request with ten
-traditional fixed bands: 31.5, 63, 125, 250, 500 Hz, 1, 2, 4, 8 and 16 kHz.
-SettingsScreen owns navigation/scrolling; EqualizerSettings owns the fader bank.
+Michael's Pixel screenshot of Plexamp established the interaction reference:
+ten fixed-frequency points together on one continuous graph, with gain values
+above and frequency labels below. The former two-row fader layout was rejected.
+All ten remain on one surface at every width, with no horizontal scrolling.
+SettingsScreen owns navigation/scrolling; EqualizerSettings owns the graph.
 MaterialTheme, PlayerPalette, SettingsToggle and tvFocusFeedback stay canonical.
-Each band has one vertical Material slider, a frequency label and a dB value.
-There are no frequency, Q, add/remove, point selection or linking controls.
+Use the active palette's primary for the line/handles, a subtle fill against the
+zero line, and a selected-band halo/guide. No copied Plexamp assets or colors.
 
-A smooth line joins the fader positions as a visual guide. It represents the
-chosen settings, not the song waveform or the calculated filter response.
-Bands remain independent, as Michael accepted after clarifying the spline idea.
-On phones the faders form two rows of five; at 600 dp of available content width,
-all ten fit in one row. Every band remains accessible without horizontal scrolling.
-Native slider semantics support accessible value changes; left/right moves focus
-between controls and up/down adjusts by 0.5 dB. Focus can leave the bank normally.
-Reset to flat is immediate; bypass retains settings and editing remains available.
+Each point moves vertically in 0.5 dB steps across ±12 dB. A smooth connecting
+line represents settings, not the song waveform or measured filter response.
+Bands remain independent. Tap a band's lane to select it; the selected frequency
+and gain are readable below, with Material minus/plus buttons for precise edits.
+Each lane exposes range/SetProgress semantics and focus; left/right traverses,
+up/down adjusts. Compact labels keep all bands visible; selected-band readout
+and accessibility semantics retain full values. Parent settings scrolling stays
+available outside the graph. Native Material DropdownMenu owns preset selection.
 
-Settings default off with ten neutral bands. EqualizerStore stores only fixed-band
-gains in a new graphic_v1 record, separate from the retired curve. Upgrading from
-the point editor starts flat/off rather than approximating a curve with different
-filters; the old record is retained for rollback. Settings remain device-local,
-excluded from backup/transfer, and never go into room messages. The receiver uses
-its own settings. The existing PCM engine and automatic boost headroom remain.
+Presets are original gentle curves: Flat, Bass lift, Warm, Vocal, Bright, Lively.
+Matching gains determine the displayed name; edits show Custom. Presets preserve
+bypass and explicit preamp. Reset to flat resets gains and preamp to zero without
+changing enable state. Bypass retains all edits and bypasses preamp too.
+
+The hidden sum-of-positive-gains attenuation was removed after Michael reported
+that EQ edits mostly reduced volume. Explicit preamp defaults to 0 dB, ranges
+±12 dB, and alone controls global EQ level. The UI explains lowering preamp if
+boosts distort; output conversion bounds PCM rather than silently renormalizing
+all bands. EqualizerStore retains graphic_v1 gains and adds optional preampDb;
+older ten-band records load with neutral preamp. Settings stay device-local,
+excluded from backup/transfer, and never go into room messages. The playing
+receiver uses its own settings and independent filter history.
 
 ## Playback controls during connection recovery
 

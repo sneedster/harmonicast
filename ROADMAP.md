@@ -48,8 +48,10 @@ playback sources and a general plugin installer remain outside scope.
 
 ## 10-band equalizer — preview
 
-- Replaces the initial point editor with ten independent fixed-frequency sliders,
-  a smooth visual line through their positions, bypass and reset to flat.
+- Ten independent fixed-frequency points share one continuous graph at every
+  screen width, with six presets, bypass, explicit preamp and reset to flat.
+- Removed excessive sum-of-boosts attenuation; boosts now increase their bands
+  without secretly reducing the overall level.
 - Defaults off; settings belong to the playing device. Normal playback and paired
   receivers share the DSP engine with independent sample histories.
 - Local transport now connects independently of Plex discovery and reconnects

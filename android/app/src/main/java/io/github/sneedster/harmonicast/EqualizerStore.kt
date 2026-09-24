@@ -15,10 +15,10 @@ internal class EqualizerStore(context: Context) {
     fun update(settings: EqSettings) {
         val safe = EqSettings(settings.enabled, EqSettings.defaults.mapIndexed { index, band ->
             band.copy(gain = settings.points.getOrElse(index) { band }.validated().gain)
-        })
+        }, settings.preampDb).validated()
         mutable.value = safe
         val gains = JSONArray().apply { safe.points.forEach { put(it.gain) } }
-        preferences.edit().putString("graphic_v1", JSONObject().put("enabled", safe.enabled).put("gains", gains).toString()).apply()
+        preferences.edit().putString("graphic_v1", JSONObject().put("enabled", safe.enabled).put("gains", gains).put("preampDb", safe.preampDb).toString()).apply()
     }
     companion object {
         @Volatile private var instance: EqualizerStore? = null
@@ -32,7 +32,7 @@ internal class EqualizerStore(context: Context) {
             require(gains.length() == EqSettings.defaults.size)
             EqSettings(json.optBoolean("enabled", false), EqSettings.defaults.mapIndexed { index, band ->
                 band.copy(gain = gains.getDouble(index)).validated()
-            })
+            }, json.optDouble("preampDb", 0.0)).validated()
         }.getOrDefault(EqSettings())
     }
 }

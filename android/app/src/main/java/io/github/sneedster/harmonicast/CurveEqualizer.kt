@@ -10,10 +10,9 @@ internal data class EqPoint(val frequency: Double, val gain: Double = 0.0, val q
         q.takeIf { it.isFinite() }?.coerceIn(0.25, 8.0) ?: 0.8,
     )
 }
-internal data class EqSettings(val enabled: Boolean = false, val points: List<EqPoint> = defaults) {
-    fun validated() = copy(points = points.take(10).map { it.validated() })
-    // Conservative bound on combined steady-state boost, including overlapping bands.
-    val headroomDb: Double get() = if (enabled) points.sumOf { max(0.0, it.gain) } else 0.0
+internal data class EqSettings(val enabled: Boolean = false, val points: List<EqPoint> = defaults, val preampDb: Double = 0.0) {
+    fun validated() = copy(points = points.take(10).map { it.validated() },
+        preampDb = preampDb.takeIf { it.isFinite() }?.coerceIn(-12.0, 12.0) ?: 0.0)
     companion object { val defaults = listOf(31.5, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0).map { EqPoint(it, q = 1.4) } }
 }
 
@@ -48,7 +47,7 @@ internal class EqFilterBank(val settings: EqSettings, sampleRate: Int, channels:
     private val coefficients = if (settings.enabled) settings.points.map { EqCoefficients.forPoint(it, sampleRate) } else emptyList()
     private val z1 = Array(coefficients.size) { DoubleArray(channels) }
     private val z2 = Array(coefficients.size) { DoubleArray(channels) }
-    private val preamp = 10.0.pow(-settings.headroomDb / 20)
+    private val preamp = if (settings.enabled) 10.0.pow(settings.validated().preampDb / 20) else 1.0
     fun sample(input: Double, channel: Int): Double {
         var value = input * preamp
         coefficients.forEachIndexed { index, c ->
