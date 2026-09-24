@@ -13,6 +13,8 @@ import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.UUID
 
+internal data class BadPlexFile(val songId: String, val path: String, val partId: String, val size: String)
+
 data class PlexAccount(val username: String, val email: String)
 
 data class PlexPin(val id: Long, val code: String, val authToken: String?, val expiresAt: String?)
@@ -45,7 +47,9 @@ class OkHttpPlexHttp(
             val body = FormBody.Builder().apply { form.forEach { (name, value) -> add(name, value) } }.build()
             builder.method(method, body)
         }
-        client.newCall(builder.build()).execute().use { response ->
+        val transport = if (method == "DELETE") client.newBuilder().retryOnConnectionFailure(false)
+            .followRedirects(false).followSslRedirects(false).callTimeout(25, java.util.concurrent.TimeUnit.SECONDS).build() else client
+        transport.newCall(builder.build()).execute().use { response ->
             if (!response.isSuccessful) throw PlexRequestFailure(response.code)
             if (maxResponseBytes == null) response.body?.string().orEmpty()
             else {
@@ -329,6 +333,37 @@ class LocalPlexClient(
             }
         }
         return (direct + expanded).distinctBy(Song::id).take(40)
+    }
+
+    internal suspend fun badFile(source: PersonalPlexSource, id: String): BadPlexFile {
+        require(source.canWriteToPlex) { "Only your own library can be repaired" }
+        val item = metadata(source, id) ?: error("Plex track was not found")
+        require(item.optString("type") == "track") { "Only a music track can be replaced" }
+        val media = item.optJSONArray("Media") ?: error("Plex did not return a file")
+        require(media.length() == 1) { "This track has multiple files; choose the bad file in Plex" }
+        val parts = media.getJSONObject(0).optJSONArray("Part") ?: error("Plex did not return a file")
+        require(parts.length() == 1) { "This track has multiple files; choose the bad file in Plex" }
+        val part = parts.getJSONObject(0)
+        val path = part.optString("file").takeIf { it.isNotBlank() } ?: error("Plex did not return a file path")
+        return BadPlexFile(id, path, part.optString("id"), part.optString("size"))
+    }
+
+    internal suspend fun deleteBadFile(source: PersonalPlexSource, file: BadPlexFile, stillValid: () -> Boolean = { true }) {
+        require(badFile(source, file.songId) == file) { "The file changed; reopen the replacement action" }
+        require(stillValid()) { "Connection changed; deletion cancelled" }
+        http.request("${source.baseUrl.trimEnd('/')}/library/metadata/${ratingKey(source, file.songId)}",
+            method = "DELETE", headers = headers(source.token))
+    }
+
+    internal suspend fun badFileDeleted(source: PersonalPlexSource, file: BadPlexFile): Boolean {
+        require(source.canWriteToPlex)
+        return try {
+            val result = serverContainer(source.baseUrl, source.token, "/library/metadata/${ratingKey(source, file.songId)}")
+            val items = result.optJSONArray("Metadata")
+            items != null && items.length() == 0 || items == null && result.optInt("size", -1) == 0
+        } catch (e: PlexRequestFailure) {
+            if (e.status == 404) true else throw e
+        }
     }
 
     suspend fun track(source: PersonalPlexSource, id: String): Song? =
