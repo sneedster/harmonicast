@@ -60,6 +60,10 @@ android {
         }
     }
     testOptions.unitTests.isIncludeAndroidResources = true
+    testOptions.unitTests.all {
+        it.maxHeapSize = "4g"
+        it.forkEvery = 1
+    }
 
     buildFeatures {
         compose = true

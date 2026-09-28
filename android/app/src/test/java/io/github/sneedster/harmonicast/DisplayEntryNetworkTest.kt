@@ -28,8 +28,8 @@ class DisplayEntryNetworkTest {
                     socket.getOutputStream().flush()
                     socket.getInputStream().bufferedReader().readText()
                 }
-            assertTrue(get("/display").contains("Room ${room.roomCode}"))
-            assertTrue(get("/join").contains(room.roomCode))
+            assertFalse(get("/display").contains(room.roomCode))
+            assertFalse(get("/join").contains(room.roomCode))
             assertTrue(get("/v1/queue", oldRoom.displayUrl.substringAfter("#cap=")).startsWith("HTTP/1.1 401"))
             assertTrue(get("/v1/queue", oldRoom.joinUrl.substringAfter("#cap=")).startsWith("HTTP/1.1 401"))
             assertTrue(get("/v1/queue", room.displayUrl.substringAfter("#cap=")).startsWith("HTTP/1.1 200"))

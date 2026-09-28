@@ -11,7 +11,7 @@ native playback transfer and take-back, shared read-only Plex libraries, and And
 Plex is the supported playback source. Optional MusicGrabber acquisition is implemented in v1.1.9
 for owner libraries: username/password sign-in, advanced API-key mode, temporary
 computer-assisted setup, and explicit per-room guest permission. Acquired tracks
-are queued only after verification in the selected Plex library. Alternative
+are queued only after a title, artist, and available duration match in the selected Plex library. Alternative
 playback sources and a general plugin installer remain outside scope.
 
 ## Rating consent and future controls

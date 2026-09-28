@@ -22,6 +22,17 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
+private fun readBoundedLine(reader: BufferedReader, maxLength: Int): String? {
+    val line = StringBuilder()
+    while (true) {
+        val character = reader.read()
+        if (character == -1) return null
+        if (character == '\n'.code) return line.removeSuffix("\r").toString()
+        if (line.length >= maxLength) return null
+        line.append(character.toChar())
+    }
+}
+
 data class RoomShareState(
     val enabled: Boolean = false,
     val nearbyAvailable: Boolean = false,
@@ -524,7 +535,13 @@ class GuestRoomGateway(
         running = true
         thread(name = "harmonicast-room", isDaemon = true) {
             while (running) {
-                val client = runCatching { socket.accept() }.getOrNull() ?: break
+                val client = try {
+                    socket.accept()
+                } catch (e: java.io.IOException) {
+                    if (!running || socket.isClosed) break
+                    android.util.Log.w("HarmonicastRoom", "Room accept failed; retrying", e)
+                    continue
+                }
                 try {
                     workers.execute {
                         // Idle or half-open browser sockets are untrusted input. A read timeout
@@ -592,14 +609,14 @@ class GuestRoomGateway(
     private fun serve(client: java.net.Socket) {
         client.soTimeout = 10_000
         val reader = BufferedReader(InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8))
-        val first = reader.readLine()?.split(' ') ?: return
+        val first = readBoundedLine(reader, 8_192)?.split(' ') ?: return
         if (first.size < 2) return
         val headers = mutableMapOf<String, String>()
         var headerCount = 0
         while (true) {
-            val line = reader.readLine() ?: return
+            val line = readBoundedLine(reader, 8_192) ?: return
             if (line.isBlank()) break
-            if (line.length > 8_192 || ++headerCount > 50) return
+            if (++headerCount > 50) return
             val split = line.indexOf(':')
             if (split > 0) headers[line.substring(0, split).trim().lowercase()] = line.substring(split + 1).trim()
         }
@@ -627,7 +644,7 @@ class GuestRoomGateway(
                 client,
                 GuestApiResponse(
                     200,
-                    GuestWebPage.render(template, capability?.roomCode.orEmpty()),
+                    GuestWebPage.render(template, ""),
                     "text/html; charset=utf-8",
                 ),
             )

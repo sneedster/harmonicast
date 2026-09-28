@@ -32,6 +32,8 @@ Media3 1.5.1 has two important compatibility details, verified against its cache
 1. Legacy `MediaBrowserService` binding calls `onGetSession` with an anonymous legacy placeholder (negative UID and legacy controller version). That placeholder is allowed **only to select the binder**. The real caller must then pass `onConnect`; the foreign legacy-browser test confirms it cannot get a root. This is required for Android Auto.
 2. A trusted controller connecting directly with a session token can survive `onConnect` rejection in Media3 with **empty player/session commands**. The service-token route is rejected earlier by `onGetSession`. No `isTrusted` exception grants commands in our policy. Metadata sanitization is independent, including for platform media metadata observed by OS-authorized listeners.
 
+This controller policy covers session/browser connections. Media3 also handles `ACTION_MEDIA_BUTTON` delivered to the exported service through a legacy notification-controller path; that path has not been shown to enforce the initiating app's identity. A physical-device check is still needed before changing it, because Bluetooth and Android Auto media buttons use the same route. See the [2026-09-27 review response](../CODE_REVIEW_RESPONSE_2026-09-27.md).
+
 Live accepted identities were HarmoniCast (`uid=10444`, including its notification controller) and Android Auto (`uid=10131`). No additional third-party package was added. The anonymous legacy lookup was the only special connection handling needed for Auto. The named OS controls remain intentionally supported; individual OEM/older-Android Bluetooth variants were not separately exercised.
 
 ## Why playback URLs can remain local

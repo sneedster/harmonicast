@@ -452,13 +452,10 @@ class HarmonicastMediaService : MediaLibraryService() {
                 return scope.future {
                     try {
                         val current = core.playback.snapshot().nowPlaying.song
-                        if (current != null && current.id == mediaId) {
-                            val song = current
-                            LibraryResult.ofItem(createMediaItem(song), null)
-                        } else {
-                            val song = Song(mediaId, mediaId, "", "", 0, "")
-                            LibraryResult.ofItem(createMediaItem(song), null)
-                        }
+                        val song = current?.takeIf { it.id == mediaId }
+                            ?: core.queue.songs().firstOrNull { it.id == mediaId }
+                        if (song == null) LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+                        else LibraryResult.ofItem(createMediaItem(song), null)
                     } catch (e: Exception) {
                         Log.e("HarmonicastMedia", "onGetItem failed", e)
                         LibraryResult.ofError(SessionError.ERROR_UNKNOWN)
@@ -1305,6 +1302,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 val response = core.queue.dequeueWithAutomaticFallback()
                 val song = response.song
                 if (song != null) {
+                    val mediaItem = createMediaItem(song)
                     val isAuto = !response.isManual
                     currentIsAuto.set(isAuto)
                     core.playback.publish(song, isPlaying = true, isAutoQueue = isAuto)
@@ -1314,7 +1312,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                     // active item whenever Media3 republishes playback state.
                     // The shared Request queue remains the authoritative list
                     // of upcoming songs, and advance() loads its next song.
-                    player.setMediaItem(createMediaItem(song), 0)
+                    player.setMediaItem(mediaItem, 0)
                     val output = nativeOutput
                     if (output != null) output.load(player.currentMediaItem!!, 0, true)
                     else { player.prepare(); player.play() }
