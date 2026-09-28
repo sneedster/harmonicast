@@ -191,6 +191,13 @@ class ReplayWindowTest {
         assertTrue(calls.any { "X-Plex-Container-Start=0" in it && "lastViewedAt" in it })
     }
 
+    @Test fun blankTrackIdIsNotRecorded() {
+        val storage = Storage()
+        RecentTrackPlays(storage).record("", now)
+        RecentTrackPlays(storage).record("   ", now)
+        assertTrue(RecentTrackPlays(storage).snapshot(now).isEmpty())
+    }
+
     @Test fun signingOutClearsReplayHistoryButKeepsWindowPreference() {
         val storage = Storage()
         RecentTrackPlays(storage).record(song().id, now)
