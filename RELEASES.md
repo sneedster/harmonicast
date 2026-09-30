@@ -1,5 +1,17 @@
 # Releases
 
+## v1.1.20 — room access and playback hardening
+
+Version code: **82**.
+
+- Keep the live room code out of unauthenticated guest and display pages while retaining host-screen and QR invitations.
+- Exclude saved Plex sign-in and queue data from Android backup and device transfer. Sign in again after moving to a new device.
+- Reject oversized room HTTP request lines and headers without unbounded allocation.
+- Resolve the next media item before publishing playback state, and return an error for unknown media item IDs instead of a fabricated item.
+- Add regression coverage for blank track IDs in recent-play history and make the Android release test gate run each test class in isolation.
+
+Validation: all 329 Android tests across 46 classes passed, with no failures, errors, or skips. Debug lint, both browser guest/display suites, signed release assembly, release vital lint, APK version, and same-certificate verification passed. No physical-device or Android Auto DHU check was performed for this release.
+
 ## v1.1.19 — equalizer and playback controls
 
 Version code: **81**.
