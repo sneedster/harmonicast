@@ -442,6 +442,37 @@ class LocalPlexClient(
         return PlexJukeboxPools(rated, unrated, fallback)
     }
 
+    internal suspend fun rediscoveryTracks(source: PersonalPlexSource, mode: MixDiscovery, pages: Int = 4, pageSize: Int = 100): List<Song> {
+        val size = pageSize.coerceIn(1, 100)
+        val sort = if (mode == MixDiscovery.UNDERPLAYED || mode == MixDiscovery.UNPLAYED) "viewCount:asc,titleSort:asc" else "lastViewedAt:asc,titleSort:asc"
+        val filter = when (mode) {
+            MixDiscovery.FORGOTTEN -> "&userRating%3E=7&lastViewedAt%3E%3E=0"
+            MixDiscovery.UNPLAYED -> "&viewCount=0"
+            MixDiscovery.UNDERPLAYED -> "&viewCount%3E%3E=0&viewCount%3C%3C=4"
+            else -> ""
+        }
+        val found = mutableListOf<Song>()
+        for (page in 0 until pages.coerceIn(1, 4)) {
+            val container = serverContainer(source.baseUrl, source.token,
+                "/library/sections/${source.libraryKey}/all?type=10&sort=${encodePlex(sort)}&X-Plex-Container-Start=${page * size}&X-Plex-Container-Size=$size$filter")
+            val batch = songs(source, container); found += batch
+            if (metadataArray(container).size < size) break
+        }
+        return found.distinctBy { it.id }
+    }
+
+    /** Artwork-only fallback when a new collection has no 90-day rediscovery history yet. */
+    internal suspend fun favoriteArtworkTracks(source: PersonalPlexSource): List<Song> {
+        val ranked = songs(source, serverContainer(source.baseUrl, source.token,
+            "/library/sections/${source.libraryKey}/all?type=10&sort=${encodePlex("userRating:desc")}&X-Plex-Container-Start=0&X-Plex-Container-Size=40"))
+        return ranked.filter { (it.rating ?: 0.0) >= 7.0 }.ifEmpty { ranked.filter { (it.rating ?: 0.0) > 1.0 } }
+    }
+
+    suspend fun recentlyPlayedTracks(source: PersonalPlexSource, limit: Int = 20): List<Song> = songs(source,
+        serverContainer(source.baseUrl, source.token,
+            "/library/sections/${source.libraryKey}/all?type=10&sort=${encodePlex("lastViewedAt:desc")}&lastViewedAt%3E%3E=0&X-Plex-Container-Start=0&X-Plex-Container-Size=${limit.coerceIn(1, 40)}"))
+        .filter { (it.lastPlayedAtMillis ?: 0) > 0 }.sortedByDescending { it.lastPlayedAtMillis }
+
     suspend fun related(source: PersonalPlexSource, id: String, limit: Int = 20, maxDistance: Double = 0.25): List<Song> {
         // Plex documents metadata/nearest as sonic track similarity, not similar-artist metadata.
         // https://developer.plex.tv/pms/ — Get nearest tracks to metadata item.
@@ -451,7 +482,7 @@ class LocalPlexClient(
             serverContainer(
                 source.baseUrl,
                 source.token,
-                "/library/metadata/$ratingKey/nearest?limit=${limit.coerceIn(1, 100)}&maxDistance=$maxDistance",
+                "/library/metadata/$ratingKey/nearest?limit=${limit.coerceIn(1, 500)}&maxDistance=$maxDistance",
             ),
         ).filter { it.id != id }
     }
@@ -596,7 +627,8 @@ class LocalPlexClient(
             rating = item.optDouble("userRating").takeIf { !item.isNull("userRating") },
             year = year,
             streamUri = firstPart(item)?.let { authenticatedUrl(source, it) },
-            artworkUri = item.optString("thumb").takeIf { it.startsWith('/') }?.let { authenticatedUrl(source, it) },
+            artworkUri = listOf("thumb", "parentThumb", "grandparentThumb").asSequence().map { item.optString(it) }
+                .firstOrNull { it.startsWith('/') }?.let { authenticatedUrl(source, it) },
             viewCount = item.optInt("viewCount").coerceAtLeast(0),
             lastPlayedAtMillis = item.optLong("lastViewedAt").takeIf { it in 1..(Long.MAX_VALUE / 1000) }?.times(1000),
         )

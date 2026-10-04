@@ -21,10 +21,16 @@ class LocalHarmonicastCore(
     private val configuredSource: PersonalPlexSource?,
     private val storage: ProfileStorage,
     private val plex: LocalPlexClient = LocalPlexClient(storage),
+    private val offline: OfflineStore? = null,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : HarmonicastCore {
     private val replayWindow = ReplayWindow(storage)
     private val recentPlays = RecentTrackPlays(storage)
+    private fun sourceStillSelected(): Boolean {
+        if (storage.read("home.mode") == null) return true
+        val selected = HomeProfileStore(storage).personalSource ?: return false
+        return configuredSource?.let { it.machineIdentifier == selected.machineIdentifier && it.libraryKey == selected.libraryKey && it.accountToken == selected.accountToken } == true
+    }
     private val source: PersonalPlexSource get() = checkNotNull(configuredSource) { "Sign in with Plex first" }
     override fun observe(onEvent: (CoreEvent) -> Unit, onDisconnected: () -> Unit): CoreSubscription {
         LocalCoreEvents.listeners += onEvent
@@ -34,19 +40,50 @@ class LocalHarmonicastCore(
     override val library: MusicLibrary = object : MusicLibrary {
         override suspend fun randomTracks(limit: Int) = plex.discoverySample(source, limit)
         override suspend fun recentTracks() = plex.discoveryRecentTracks(source)
+        override suspend fun recentlyPlayedTracks(limit: Int): List<Song> {
+            val local = recentPlays.snapshot(nowMillis())
+            val cached = offline?.availableSongs(source).orEmpty().filter { (local[it.id] ?: 0) > 0 }
+            val remote = try { plex.recentlyPlayedTracks(source, limit) }
+                catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) { if (cached.isEmpty()) throw e else emptyList() }
+            return (remote + cached).distinctBy { it.id }
+                .sortedByDescending { maxOf(it.lastPlayedAtMillis ?: 0, local[it.id] ?: 0) }.take(limit.coerceIn(1, 40))
+        }
+        override suspend fun mixPreview(mode: MixDiscovery): List<Song> {
+            val now = nowMillis()
+            val cutoff = replayWindow.cutoff(now)
+            val local = recentPlays.snapshot(now)
+            val candidates = if (mode == MixDiscovery.STANDARD) {
+                val pools = plex.jukeboxPools(source, 12) { eligibleForAutomaticMix(it, cutoff, local) }
+                chooseJukeboxTracks(pools, 12, storage.read("local.ratedTrackShare")?.toIntOrNull()?.coerceIn(0, 10) ?: 8,
+                    0, MusicTuningStore(storage).read()).songs
+            } else plex.rediscoveryTracks(source, mode).filter {
+                eligibleForAutomaticMix(it, cutoff, local) && rediscoveryEligible(it, mode, now, local)
+            }
+            fun covers(tracks: List<Song>) = tracks.filter { it.artworkUri != null }.distinctBy {
+                if (it.album.isNotBlank()) "${it.albumArtist}\u0000${it.album}\u0000${it.year}" else it.artworkUri
+            }.take(4)
+            val eligible = covers(candidates)
+            return if (eligible.isEmpty() && mode == MixDiscovery.FORGOTTEN) covers(plex.favoriteArtworkTracks(source)) else eligible
+        }
         override suspend fun letterIndex(kind: BrowseKind) = plex.letterIndex(source, kind)
         override suspend fun browse(kind: BrowseKind, order: BrowseOrder, offset: Int, parent: String?, query: String) = plex.browse(source, kind, order, offset, parent, query)
         override suspend fun albumTracks(id: String) = plex.albumTracks(source, id)
         override suspend fun searchPage(query: String, offset: Int, limit: Int) = plex.searchPage(source, query, offset, limit)
         override suspend fun search(query: String) = plex.search(source, query)
         override suspend fun searchForBrowsing(query: String) = plex.search(source, query, expandAlbums = false, expandArtists = false)
-        override suspend fun track(id: String) = plex.track(source, id)
+        override suspend fun track(id: String): Song? {
+            val cached = if (sourceStillSelected()) offline?.song(source, id) else null
+            if (storage.read("local.offlinePlayback") == "true" || offline?.connected() == false) cached?.let { return it }
+            return try { plex.track(source, id) }
+                catch (e: java.io.IOException) { cached ?: throw e }
+        }
         override suspend fun artist(query: String) = plex.artist(source, query)
         override suspend fun discovery(song: Song) = plex.discovery(source, song)
         override suspend fun playlists() = plex.playlists(source)
         override suspend fun playlistTracks(id: String) = plex.playlistTracks(source, id)
         override suspend fun playlistPage(id: String, offset: Int) = plex.playlistPage(source, id, offset)
-        override fun streamUrl(song: Song) = currentSourceUrl(song, song.streamUri)
+        override fun streamUrl(song: Song) = offline?.uri(source, song.id) ?: currentSourceUrl(song, song.streamUri)
             ?: throw IllegalStateException("Plex track needs fresh playback metadata")
         override fun artworkUrl(song: Song) = currentSourceUrl(song, song.artworkUri)
     }
@@ -75,11 +112,13 @@ class LocalHarmonicastCore(
                 }
                 val cutoff = replayWindow.cutoff(nowMillis())
                 val automatic = !candidate.isManual && !candidate.isRadio
-                var selected: Song? = library.refreshLegacyArtist(candidate)
+                val cached = if (sourceStillSelected()) offline?.song(source, candidate.id) else null
+                var selected: Song? = if (cached != null) candidate.copy(artist = cached.artist, albumArtist = cached.albumArtist) else library.refreshLegacyArtist(candidate)
                 if (automatic && cutoff != null) {
                     val local = recentPlays.snapshot(nowMillis())
                     selected = if (!eligibleForAutomaticMix(candidate, cutoff, local)) null
-                        else plex.track(source, candidate.id)?.copy(isManual = false)
+                        else (cached?.copy(streamUri = candidate.streamUri, artworkUri = candidate.artworkUri, coverArt = candidate.coverArt)
+                            ?: library.track(candidate.id))?.copy(isManual = false)
                     // Re-read preferences/history after the metadata request. Another
                     // device may have played it, or the user may have changed the window.
                     if (selected != null && !eligibleForAutomaticMix(selected,
@@ -134,10 +173,32 @@ class LocalHarmonicastCore(
             writeSongs("local.queue", songs().filterNot { it.id == id })
             LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
         }
-        override suspend fun clear() = QueueTransactions.mutex.withLock {
-            writeSongs("local.queue", emptyList())
-            storage.write(mapOf("local.radioActive" to "false", "local.radioSeed" to "", "local.radioRecent" to "[]"))
+        override suspend fun resetAutomaticTail() = QueueTransactions.mutex.withLock {
+            storage.write(mapOf("local.mixEpoch" to java.util.UUID.randomUUID().toString()))
+            writeSongs("local.queue", songs().filter { it.isManual })
+            storage.write(mapOf("local.radioActive" to "false", "local.radioReturnSeed" to "", "local.offlinePlayback" to "false", "local.radioRecent" to "[]"))
             LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
+        }
+        override suspend fun clear() = QueueTransactions.mutex.withLock {
+            storage.write(mapOf("local.mixEpoch" to java.util.UUID.randomUUID().toString()))
+            writeSongs("local.queue", emptyList())
+            storage.write(mapOf("local.radioActive" to "false", "local.radioSeed" to "", "local.radioRecent" to "[]", "local.radioReturnSeed" to "", "local.offlinePlayback" to "false"))
+            LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
+        }
+        override suspend fun somewhereDifferent(): Int = QueueTransactions.mutex.withLock {
+            val current = playback.snapshot().nowPlaying.song ?: return@withLock 0
+            val queued = songs()
+            val near = plex.related(source, current.id, 100, TrackRadioSettings(storage).distance)
+            val far = plex.related(source, current.id, 500, 0.50)
+            val additions = distinctRadioTracks(current, queued + near + readSongs("local.radioRecent"), far)
+                .shuffled().take(3).map { it.copy(isManual = false, isRadio = true) }
+            if (additions.isEmpty() || !sourceStillSelected()) return@withLock 0
+            // Preserve requests; this brief detour replaces only the automatic tail.
+            writeSongs("local.queue", queued.filter { it.isManual } + additions)
+            storage.write(mapOf("local.offlinePlayback" to "false", "local.radioActive" to "true", "local.radioReturnSeed" to encodeSong(current).toString()))
+            rememberRadioSong(current)
+            LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
+            additions.size
         }
         override suspend fun radio(): Int = QueueTransactions.mutex.withLock {
             val current = playback.snapshot().nowPlaying.song ?: return@withLock 0
@@ -146,7 +207,8 @@ class LocalHarmonicastCore(
                 plex.related(source, current.id, limit = 100, maxDistance = distance)
             }
                 .map { it.copy(isManual = false, isRadio = true) }
-            storage.write(mapOf("local.radioActive" to "true", "local.radioSeed" to encodeSong(current).toString()))
+            if (!sourceStillSelected()) return@withLock 0
+            storage.write(mapOf("local.offlinePlayback" to "false", "local.radioReturnSeed" to "", "local.radioActive" to "true", "local.radioSeed" to encodeSong(current).toString()))
             rememberRadioSong(current)
             if (additions.isNotEmpty()) {
                 writeSongs("local.queue", queued + additions)
@@ -155,13 +217,15 @@ class LocalHarmonicastCore(
             return@withLock additions.size
         }
         override suspend fun enableAutomaticPlayback() {
+            if (storage.read("local.offlinePlayback") == "true") return
             // Keep radio continuity separate from the general automatic mix. The mutex
             // makes simultaneous refill callers observe one batch, and clear cannot
             // be undone by an in-flight refill.
             val radioHandled = QueueTransactions.mutex.withLock {
                 if (storage.read("local.radioActive") != "true") return@withLock false
                 if (songs().isNotEmpty()) return@withLock true
-                val seed = playback.snapshot().nowPlaying.song
+                val seed = storage.read("local.radioReturnSeed")?.takeIf { it.isNotBlank() }?.let { decodeSong(JSONObject(it)) }
+                    ?: playback.snapshot().nowPlaying.song
                     ?: storage.read("local.radioSeed")?.takeIf { it.isNotBlank() }?.let { decodeSong(JSONObject(it)) }
                 val additions = if (seed == null) emptyList() else
                     radioBatch(seed, readSongs("local.radioRecent"), TrackRadioSettings(storage).distance) { distance ->
@@ -169,28 +233,46 @@ class LocalHarmonicastCore(
                     }
                         .map { it.copy(isManual = false, isRadio = true) }
                 writeSongs("local.queue", additions)
+                storage.write(mapOf("local.radioReturnSeed" to ""))
                 storage.write(mapOf(ReplayWindow.STATUS_KEY to if (additions.isEmpty())
                     "No fresh sonic matches found. Start Track Radio from another song or clear the queue to leave radio." else ""))
                 LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
                 true
             }
             if (radioHandled) return
-            if (songs().isEmpty()) {
+            val settings = offline?.cacheSettings
+            val state = playback.snapshot()
+            val target = if (settings?.enabled == true) settings.count - (if (state.nowPlaying.song != null) 1 else 0) else 5
+            val waiting = songs()
+            val topUp = settings?.enabled == true && state.isAutoQueue && offline.connected()
+            if (waiting.isEmpty() || (topUp && waiting.size < target)) {
+                val excluded = (waiting.map { it.id } + listOfNotNull(state.nowPlaying.song?.id)).toSet()
+                val needed = (target - waiting.size).coerceAtLeast(1)
+                val epoch = storage.read("local.mixEpoch")
                 val cutoff = replayWindow.cutoff(nowMillis())
                 val local = recentPlays.snapshot(nowMillis())
-                val pools = plex.jukeboxPools(source) { eligibleForAutomaticMix(it, cutoff, local) }
+                val mode = MixPresetStore(storage).discovery
+                val pools = if (mode == MixDiscovery.STANDARD) plex.jukeboxPools(source) { it.id !in excluded && eligibleForAutomaticMix(it, cutoff, local) }
+                    else plex.rediscoveryTracks(source, mode).filter {
+                        it.id !in excluded && eligibleForAutomaticMix(it, cutoff, local) && rediscoveryEligible(it, mode, nowMillis(), local)
+                    }.let { PlexJukeboxPools(it.filter { song -> (song.rating ?: 0.0) > 1.0 }, it.filter { song -> song.rating == null }, it) }
                 val share = ratedTrackShare()
                 val start = storage.read("local.jukeboxMixIndex")?.toIntOrNull()?.coerceAtLeast(0) ?: 0
-                val selection = chooseJukeboxTracks(pools, 5, share, start, MusicTuningStore(storage).read())
+                val selection = chooseJukeboxTracks(pools, needed, share, start, MusicTuningStore(storage).read())
                 // Preserve requests added during candidate loading.
                 QueueTransactions.mutex.withLock {
                 // A user may have started radio while the general mix was loading.
-                if (storage.read("local.radioActive") == "true") return@withLock
-                writeSongs("local.queue", songs() + selection.songs.map { it.copy(isManual = false) })
-                storage.write(mapOf(ReplayWindow.STATUS_KEY to if (selection.songs.isEmpty() && songs().isEmpty())
-                    ReplayWindow.EMPTY_MESSAGE else ""))
-                storage.write(mapOf("local.jukeboxMixIndex" to selection.nextMixIndex.toString()))
-                LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
+                if (storage.read("local.radioActive") == "true" || epoch != storage.read("local.mixEpoch") || !sourceStillSelected()) return@withLock
+                val latest = songs()
+                val playing = playback.snapshot().nowPlaying.song?.id
+                val additions = selection.songs.filter { candidate -> candidate.id != playing && latest.none { it.id == candidate.id } }
+                    .take((target - latest.size).coerceAtLeast(0)).map { it.copy(isManual = false) }
+                val status = if (additions.isEmpty() && latest.isEmpty()) ReplayWindow.EMPTY_MESSAGE else ""
+                val statusChanged = storage.read(ReplayWindow.STATUS_KEY) != status
+                writeSongs("local.queue", latest + additions)
+                storage.write(mapOf(ReplayWindow.STATUS_KEY to status, "local.jukeboxMixIndex" to selection.nextMixIndex.toString()))
+                if (additions.isNotEmpty()) LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
+                else if (statusChanged) LocalCoreEvents.publish(CoreEvent.CHANGED)
                 }
             }
         }
@@ -222,7 +304,7 @@ class LocalHarmonicastCore(
             val persistedSong = song?.let { value ->
                 if (value.streamUri != null) value
                 else previous.nowPlaying.song?.takeIf { it.id == value.id && it.streamUri != null }
-                    ?: plex.track(source, value.id) ?: value
+                    ?: offline?.song(source, value.id) ?: library.track(value.id) ?: value
             }
             // Playback callbacks can carry metadata captured before a vote finished.
             val displayedSong = persistedSong?.let { persisted ->
@@ -254,19 +336,19 @@ class LocalHarmonicastCore(
             storage.write(mapOf("local.playback" to value.toString()))
         }
         override suspend fun scrobble(id: String, submission: Boolean) {
-            if (source.canWriteToPlex && submission) plex.scrobble(source, id)
+            if (sourceStillSelected() && storage.read("local.offlinePlayback") != "true" && source.canWriteToPlex && offline?.connected() != false && submission) plex.scrobble(source, id)
         }
         override suspend fun recordEvent(song: Song, event: String, progress: Double) {
             if (event == "complete" || event == "skip") recentPlays.record(song.id, nowMillis())
             try {
-                if (PlexAccessPolicy.forSource(configuredSource, joinedGuest = false).canRateTracks && AutomaticPlexRatings(storage).enabled && event in setOf("complete", "skip")) {
+                if (sourceStillSelected() && storage.read("local.offlinePlayback") != "true" && offline?.connected() != false && PlexAccessPolicy.forSource(configuredSource, joinedGuest = false).canRateTracks && AutomaticPlexRatings(storage).enabled && event in setOf("complete", "skip")) {
                     LocalCoreEvents.ratingMutex.withLock {
                         if (AutomaticPlexRatings(storage).enabled) {
                             val current = plex.track(source, song.id)
                             if (current != null) {
                                 val adjusted = adjustPersonalRating(current.rating, event, progress, current.viewCount,
                                     MusicTuningStore(storage).read())
-                                if (adjusted != (current.rating ?: 5.0) && AutomaticPlexRatings(storage).enabled) {
+                                if (adjusted != (current.rating ?: 5.0) && AutomaticPlexRatings(storage).enabled && sourceStillSelected()) {
                                     val saved = plex.rate(source, song.id, adjusted)
                                     updateDisplayedRating(song.id, saved)
                                 }
@@ -371,7 +453,7 @@ internal fun fairManualQueue(songs: List<Song>): List<Song> {
     return fair + songs.filterNot(Song::isManual)
 }
 
-fun harmonicastCore(api: AppStorage): HarmonicastCore = LocalHarmonicastCore(api.profile.personalSource, api.storage)
+fun harmonicastCore(api: AppStorage): HarmonicastCore = LocalHarmonicastCore(api.profile.personalSource, api.storage, offline = api.offline)
 
 data class JukeboxSelection(val songs: List<Song>, val nextMixIndex: Int)
 

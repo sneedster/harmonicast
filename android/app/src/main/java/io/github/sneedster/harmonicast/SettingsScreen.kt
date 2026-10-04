@@ -189,6 +189,7 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
 
 @Composable private fun AppearanceSettings(vm: HarmonicastViewModel) {
     SettingsDescription("Choose a color scheme for this device. Your choice applies throughout Harmonicast.")
+    if (isTvDevice()) { VisualizerSettingsContent(); HorizontalDivider() }
     PlayerPalette.entries.forEach { palette ->
         val colors = playerColors(palette.name)
         Surface(onClick = { vm.selectColorScheme(palette.name) }, shape = MaterialTheme.shapes.medium,
@@ -283,6 +284,8 @@ private val selectionLabels = listOf("Equal chance", "Mild", "Normal", "Strong",
     SettingsDescription("Example: a track rated 8 has ${decimal(ratio)}× the selection weight of a track rated 4 in the same pool. These are relative weights, not guaranteed library-wide probabilities.")
     OutlinedButton(onClick = { vm.saveMusicTuning(tuning.copy(selection = 2)) }, enabled = vm.isHost && vm.isPersonalMode && tuning.selection != 2, modifier = Modifier.tvFocusFeedback()) { Text("Restore selection preference") }
     if (!vm.isHost) SettingsDescription("Only the host can change automatic mix settings.")
+    HorizontalDivider()
+    MixPresetsContent(vm)
 }
 
 @Composable private fun RatingSettings(vm: HarmonicastViewModel) {

@@ -22,6 +22,9 @@ native playback; Plex rating/history writes still require server owner access.
 - Temporary nearby rooms, requests/votes, and bundled browser guest/display pages.
 - Owner-controlled native room playback transfer and take-back.
 - Optional **Stay awake while charging** while Harmonicast is open.
+- Saved mix presets, rediscovery mixes, explicit offline audio
+  downloads, a rolling queue cache for patchy reception, named sound profiles, TV demoscene backgrounds, and sonic detours.
+  See [listening features and validation limits](docs/LISTENING_FEATURES.md).
 
 Rooms are for nearby guests. Native transfer needs a reachable local Wi-Fi/Ethernet
 network. Internet guest control is outside scope. Active Android Auto projection
@@ -34,7 +37,7 @@ Settings has nine categories: **Appearance**, **Playback**, **Equalizer**, **Aut
 per category; larger displays keep the category list beside the selected page.
 The mini-player remains available.
 
-### 10-band equalizer (preview)
+### 10-band equalizer
 
 Open **Settings → Equalizer** for ten fixed frequency bands from 31.5 Hz to
 16 kHz. Drag a point up to boost that range or down to cut it, up to ±12 dB.

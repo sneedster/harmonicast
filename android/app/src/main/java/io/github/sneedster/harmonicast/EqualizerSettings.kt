@@ -32,6 +32,8 @@ import kotlin.math.round
     val store = remember(context) { EqualizerStore.get(context) }
     val settings by store.state.collectAsState()
     EqualizerContent(settings, store::update)
+    HorizontalDivider()
+    SoundProfilesContent(store)
 }
 
 /** One continuous, fixed-frequency control surface at every screen width. */

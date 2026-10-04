@@ -46,7 +46,7 @@ playback sources and a general plugin installer remain outside scope.
   acquisition and deployed acceptance remain outstanding; no target release or
   delivery date assigned.
 
-## 10-band equalizer — preview
+## 10-band equalizer — v1.1.19
 
 - Ten independent fixed-frequency points share one continuous graph at every
   screen width, with six presets, bypass, explicit preamp and reset to flat.
@@ -56,7 +56,15 @@ playback sources and a general plugin installer remain outside scope.
   receivers share the DSP engine with independent sample histories.
 - Local transport now connects independently of Plex discovery and reconnects
   missing/stale controllers, avoiding silent play/pause taps.
-- This remains a trial, not a published release. See [validation](docs/EQUALIZER.md).
+- Published in v1.1.19. See [validation](docs/EQUALIZER.md).
+
+## Listening features — v1.1.21
+
+Saved mix presets, three rediscovery modes, device-private audio downloads and a rolling queue cache, named
+sound profiles, demoscene TV backgrounds, and temporary sonic detours are implemented
+for v1.1.21. Pixel UI and offline playback checks passed; physical TV, Android Auto,
+and prolonged background scheduling still need device acceptance. See
+[behavior and validation](docs/LISTENING_FEATURES.md).
 
 ## Ongoing quality
 

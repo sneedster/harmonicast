@@ -23,8 +23,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Keep the published APK version reproducible from source.
-        versionCode = providers.gradleProperty("versionCode").orElse("82").get().toInt()
-        versionName = providers.gradleProperty("versionName").orElse("1.1.20").get()
+        versionCode = providers.gradleProperty("versionCode").orElse("84").get().toInt()
+        versionName = providers.gradleProperty("versionName").orElse("1.1.21").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -72,7 +72,9 @@ android {
 }
 
 dependencies {
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.work:work-testing:2.10.0")
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

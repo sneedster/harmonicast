@@ -23,6 +23,7 @@ internal class NativePlaybackHost private constructor(
     private val token: String,
     private val http: OkHttpClient,
     private val address: String,
+    private val offlineRoot: java.io.File,
 ) {
     private data class Stream(val path: String, val upstream: String)
     @Volatile private var stream: Stream? = null
@@ -129,6 +130,11 @@ internal class NativePlaybackHost private constructor(
             !NativePlaybackProtocol.matches(request.headers["authorization"], audioToken)) {
             NativePlaybackProtocol.reply(socket, 401); return
         }
+        if (selected.upstream.startsWith("file:")) {
+            val file = offlineAudioFile(offlineRoot, selected.upstream) ?: run { NativePlaybackProtocol.reply(socket, 404); return }
+            proxyOfflineAudio(socket, file, request.headers["range"], { !closed && stream === selected })
+            return
+        }
         val connection = URL(selected.upstream).openConnection() as HttpURLConnection
         connection.connectTimeout = 4_000
         connection.readTimeout = 4_000
@@ -169,7 +175,41 @@ internal class NativePlaybackHost private constructor(
                 JSONObject(it.body?.string().orEmpty()).getString("token")
             }
             require(token.length in 32..128)
-            NativePlaybackHost(address, token, client, NativePlaybackProtocol.localAddress(context, network))
+            NativePlaybackHost(address, token, client, NativePlaybackProtocol.localAddress(context, network), java.io.File(context.noBackupFilesDir, "offline_music"))
         }
+    }
+}
+
+/** Same peer/token guard as Plex proxying, with a strict private-download root. */
+internal fun offlineAudioFile(root: java.io.File, uri: String): java.io.File? = runCatching {
+    val file = java.io.File(java.net.URI(uri)).canonicalFile
+    file.takeIf { it.isFile && it.extension == "audio" && it.path.startsWith(root.canonicalPath + java.io.File.separator) }
+}.getOrNull()
+
+internal fun proxyOfflineAudio(socket: java.net.Socket, file: java.io.File, range: String?, active: () -> Boolean) {
+    java.io.RandomAccessFile(file, "r").use { input ->
+        val total = input.length()
+        val match = range?.let { Regex("bytes=(\\d+)-(\\d*)").matchEntire(it) }
+        val start = match?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        val end = match?.groupValues?.get(2)?.toLongOrNull()?.coerceAtMost(total - 1) ?: total - 1
+        if ((range != null && (match == null || match.groupValues[1].toLongOrNull() == null || (match.groupValues[2].isNotEmpty() && match.groupValues[2].toLongOrNull() == null))) || start < 0 || start >= total || end < start) {
+            NativePlaybackProtocol.reply(socket, 416); return
+        }
+        val output = socket.getOutputStream()
+        val header = buildString {
+            append("HTTP/1.1 ${if (range == null) 200 else 206} OK\r\nContent-Type: application/octet-stream\r\n")
+            append("Content-Length: ${end - start + 1}\r\nAccept-Ranges: bytes\r\n")
+            if (range != null) append("Content-Range: bytes $start-$end/$total\r\n")
+            append("Cache-Control: no-store\r\nConnection: close\r\n\r\n")
+        }
+        output.write(header.toByteArray()); input.seek(start)
+        var remaining = end - start + 1
+        val buffer = ByteArray(32768)
+        while (remaining > 0 && active()) {
+            val count = input.read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
+            if (count < 0) break
+            output.write(buffer, 0, count); remaining -= count
+        }
+        output.flush()
     }
 }

@@ -422,3 +422,63 @@ and release after sign-out, receiver mode or ViewModel disposal. A tap during
 reconnection is queued instead of silently discarded. Failures use the existing
 notice area with a retry instruction. Normal player, mini-player and TV controls
 continue to use the same ViewModel actions and authenticated MediaController.
+
+## Listening features and demoscene backgrounds
+
+Home offers automatic mix and the three rediscovery modes in matching square
+cards: two columns on phones and four on wide screens. Track Radio starts from
+Now Playing, where its current-song context is visible; it has no Home panel.
+Each square samples up to four album covers from eligible tracks for that mix.
+Dark shading protects the titles; palette gradients and icons remain visible when
+artwork cannot load. Preview requests do not alter the queue or rating consent. Use strict Plex bounds
+for nonzero play history and 1–3 play counts, and album/artist thumbnail fallback.
+If Forgotten favorites has no 90-day candidates yet, display its highest-rated
+favorite covers for the tile only; never broaden the actual rediscovery mix.
+Recently played shows track titles and artists using listening order, with album
+art as the image, and includes downloaded tracks heard locally.
+
+MixPresetStore owns device-local mix presets and rediscovery mode. Presets alter
+selection only, never automatic-rating consent or rating adjustment coefficients.
+Settings > Automatic mix uses existing RemoteTextField, Material buttons,
+SettingsDescription, tvFocusFeedback, and FocusRestoringAlertDialog for removal.
+Home's rediscovery actions preserve manual requests while replacing the automatic
+tail and ending the previous radio session. Bounded candidate reads respect the
+repeat window and report an empty mix rather than silently broadening it.
+
+SoundProfileStore uses the existing excluded device_equalizer preferences. Settings
+> Equalizer keeps one DSP owner and adds named snapshots of all bands, preamp,
+and bypass state. Choosing a profile applies it; editing the EQ does not overwrite
+a saved profile. Output switching is manual in this version.
+
+Home > Downloads owns device-local downloaded-track browsing. Album/playlist and
+Now Playing actions schedule explicit downloads; Wi-Fi-only defaults on and means
+an unmetered connection. WorkManager owns persistence, retry and connection gating;
+OfflineStore owns complete-file visibility, account/library separation, cancellation
+generations, and atomic metadata updates. Private no-backup storage contains audio
+and sanitized metadata, never source URLs or access tokens. Progress, failures,
+retry, cancellation and removal use native Material controls and inline status.
+Removal confirms its device-local consequence. Sign-out removes all downloads.
+An explicit offline queue stops when exhausted and does not wait for Plex writes.
+Downloads also owns a separate rolling queue cache: default on, current plus next
+11 tracks, mobile data allowed. QueueCacheSettings stores device-local enabled,
+window and network preferences. Use native toggles and 5/12/25/50 window buttons;
+show cached count, bytes, waiting jobs and a retry state. Saved downloads keep their
+Wi-Fi preference and ownership. Cache eviction and cache cancellation never remove
+saved audio. The current track counts toward the window; a 512 MB cache budget may
+limit large queues before the track count. Playback uses complete files only and
+can retry a failed stream locally without resetting its position. Selection from
+cached metadata still respects retained local replay history.
+
+Settings > Appearance on TV owns demoscene selection and optional classic neon.
+DemoVisualizer renders plasma, starfield or a wireframe cube behind Now Playing;
+the existing transport controls retain focus and layout. No capture permission is
+added: DemoAudio samples the existing PCM processor, computes eight bands, and
+publishes bounded snapshots. Pause and reduced motion stop animation. The default
+is Off. Classic neon is an intentional cyan/magenta variant; normal rendering uses
+PlayerPalette roles. Composition disposal turns off sampling.
+
+Take me somewhere different uses the queue owner and keeps manual requests first.
+It chooses up to three nonduplicate sonic candidates outside the nearest 100,
+using a wider bounded Plex request, then resumes from the original radio seed
+with the saved distance. Clear queue ends the detour. No saved radio preference
+or rating consent changes. Plex sonic analysis remains a prerequisite.

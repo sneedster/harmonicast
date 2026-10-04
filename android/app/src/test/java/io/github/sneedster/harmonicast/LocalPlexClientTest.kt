@@ -5,6 +5,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LocalPlexClientTest {
+    @Test fun recentlyPlayedReturnsTracksInListeningOrderAndExcludesUnknownHistory() = runBlocking {
+        val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
+        val http = FakeHttp().apply { responses += """{"MediaContainer":{"Metadata":[
+            {"type":"track","ratingKey":"1","title":"Older track","parentTitle":"Album","grandparentTitle":"Artist","lastViewedAt":100},
+            {"type":"track","ratingKey":"2","title":"Never played","lastViewedAt":0},
+            {"type":"track","ratingKey":"3","title":"Latest track","parentTitle":"Different album","grandparentTitle":"Other artist","lastViewedAt":200}
+        ]}}""" }
+        val result = LocalPlexClient(MemoryStorage(), http).recentlyPlayedTracks(source)
+        assertEquals(listOf("Latest track", "Older track"), result.map { it.title })
+        assertEquals("Other artist", result.first().artist)
+        assertTrue(http.calls.single().url.contains("type=10"))
+        assertTrue(http.calls.single().url.contains("lastViewedAt%3Adesc"))
+    }
+
     @Test fun maintenanceRequiresOneFileFromOwnedSelectedLibrary() = runBlocking {
         val source = PersonalPlexSource("token", "https://plex", "machine", "Server", "7", "Music")
         for ((section, media, allowed) in listOf(

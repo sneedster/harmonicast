@@ -62,6 +62,7 @@ internal class EqualizerAudioProcessor(
             if (next != null && ++fadeFrame >= fadeFrames) { bank = next; incoming = null }
         }
         output.flip()
+        DemoAudio.consume(output, channels, inputAudioFormat.sampleRate)
     }
 }
 

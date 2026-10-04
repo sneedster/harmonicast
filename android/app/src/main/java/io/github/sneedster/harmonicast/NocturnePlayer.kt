@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 @Composable internal fun NocturnePlayer(vm: HarmonicastViewModel, search: (String) -> Unit) {
     val song = vm.nowPlaying.song
     var details by remember(song?.id) { mutableStateOf(false) }
+    var moreActions by remember { mutableStateOf(false) }
     BackHandler(details) { details = false }
     if (details && song != null) {
         ArtistDiscoveryPage(vm, song) { details = false }
@@ -45,6 +46,10 @@ import androidx.compose.ui.unit.sp
         return
     }
     val colors = MaterialTheme.colorScheme
+    val demoContext = androidx.compose.ui.platform.LocalContext.current
+    val demo = remember(demoContext) { DemoSettings(demoContext) }
+    Box(Modifier.fillMaxSize()) {
+    if (isTvDevice() && demo.scene != DemoScene.OFF) DemoVisualizer(demo.scene, demo.neon, vm.nowPlaying.isPlaying, Modifier.fillMaxSize())
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         val wide = maxWidth >= 480.dp && maxWidth > maxHeight
         val compact = wide && maxHeight < 380.dp
@@ -100,6 +105,17 @@ import androidx.compose.ui.unit.sp
                     TextButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Radio, null, Modifier.size(19.dp)); Text(" Track Radio") }
                     TextButton(onClick = { details = true; vm.loadArtistDiscovery(song) }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Info, null, Modifier.size(19.dp)); Text(" Discover") }
                 }
+                Box {
+                    IconButton(onClick = { moreActions = true }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.MoreVert, "More listening actions") }
+                    DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
+                        DropdownMenuItem(text = { Text("Take me somewhere different") }, enabled = vm.isActivePlayer && vm.isPersonalMode,
+                            onClick = { moreActions = false; vm.somewhereDifferent() })
+                        DropdownMenuItem(text = { Text("Download track") }, enabled = vm.isPersonalMode && !vm.nearbyRoomState.connected,
+                            onClick = { moreActions = false; vm.downloadSongs(listOf(song)) })
+                        DropdownMenuItem(text = { Text("Download queued tracks") }, enabled = vm.isPersonalMode && vm.queue.isNotEmpty() && !vm.nearbyRoomState.connected,
+                            onClick = { moreActions = false; vm.downloadSongs(vm.queue) })
+                    }
+                }
             }
         }
         val controls: @Composable () -> Unit = {
@@ -130,6 +146,7 @@ import androidx.compose.ui.unit.sp
             }
             controls()
         }
+    }
     }
 }
 

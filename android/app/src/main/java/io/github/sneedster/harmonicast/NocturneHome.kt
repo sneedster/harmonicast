@@ -138,7 +138,8 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
                         when {
                             entry?.kind == BrowseKind.ARTISTS -> CollectionBrowser(vm, library, wide, entry, { stack.add(it) }) { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
                             entry != null -> AlbumPage(vm, library, entry) { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
-                            route == "Home" -> DiscoveryHome(vm, library, wide, { stack.add(it) }, { navigate("Library") }, { navigate("Player") })
+                            route == "Home" -> DiscoveryHome(vm, library, wide, { stack.add(it) }, { navigate("Library") }, { navigate("Player") }, { navigate("Downloads") })
+                            route == "Downloads" -> OfflineScreen(vm) { navigate("Home") }
                             route == "Library" -> CollectionBrowser(vm, library, wide, null, { stack.add(it) }) {}
                             route == "Search" -> Search(vm) { stack.add(it) }
                             route == "Queue" -> Queue(vm)
@@ -186,7 +187,7 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
     Text(text, modifier, fontFamily = FontFamily.Serif, fontSize = 30.sp, lineHeight = 36.sp, color = MaterialTheme.colorScheme.onSurface)
 }
 
-@Composable private fun DiscoveryHome(vm: HarmonicastViewModel, library: MusicLibrary, wide: Boolean, open: (LibraryEntry) -> Unit, collection: () -> Unit, player: () -> Unit) {
+@Composable private fun DiscoveryHome(vm: HarmonicastViewModel, library: MusicLibrary, wide: Boolean, open: (LibraryEntry) -> Unit, collection: () -> Unit, player: () -> Unit, downloads: () -> Unit) {
     LazyColumn(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -195,17 +196,50 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
             }
         }
         item {
-            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FeatureCard("Your automatic mix", "Favorites and fresh discoveries", Icons.Default.AutoAwesome, Modifier.weight(1f), vm.isActivePlayer) { vm.startRandomPlayback(); player() }
-                FeatureCard("Track Radio", "Follow the sound of this track", Icons.Default.Radio, Modifier.weight(1f), vm.nowPlaying.song != null && vm.isActivePlayer) { vm.queueSimilar() }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Rediscover your collection", style = MaterialTheme.typography.titleMedium)
+                val mixes = MixDiscovery.entries
+                mixes.chunked(if (wide) 4 else 2).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { mode ->
+                            var artwork by remember(library, mode) { mutableStateOf(emptyList<String>()) }
+                            LaunchedEffect(library, mode) {
+                                artwork = try { library.mixPreview(mode).mapNotNull(library::artworkUrl).distinct().take(4) }
+                                catch (e: CancellationException) { throw e }
+                                catch (_: Exception) { emptyList() }
+                            }
+                            FeatureCard(
+                                if (mode == MixDiscovery.STANDARD) "Your automatic mix" else mode.title,
+                                when (mode) {
+                                    MixDiscovery.STANDARD -> "Favorites and fresh discoveries"
+                                    MixDiscovery.FORGOTTEN -> "Old favorites, heard anew"
+                                    MixDiscovery.UNDERPLAYED -> "Give overlooked tracks another turn"
+                                    MixDiscovery.UNPLAYED -> "Discover what you haven't heard"
+                                },
+                                when (mode) {
+                                    MixDiscovery.STANDARD -> Icons.Default.AutoAwesome
+                                    MixDiscovery.FORGOTTEN -> Icons.Default.History
+                                    MixDiscovery.UNDERPLAYED -> Icons.Default.Replay
+                                    MixDiscovery.UNPLAYED -> Icons.Default.Explore
+                                },
+                                Modifier.weight(1f).aspectRatio(1f), vm.isActivePlayer, artwork,
+                            ) {
+                                if (mode == MixDiscovery.STANDARD) vm.startRandomPlayback()
+                                else { vm.selectMixDiscovery(mode); vm.startRediscovery() }
+                                player()
+                            }
+                        }
+                    }
+                }
+                TextButton(onClick = downloads, modifier = Modifier.tvFocusFeedback()) { Text("Downloads · listen offline") }
             }
         }
         item { AlbumShelf("Fresh in your library", library, BrowseOrder.RECENT, wide, open) }
-        item { AlbumShelf("Recently played", library, BrowseOrder.PLAYED, wide, open) }
+        item { RecentlyPlayedShelf(vm, library, wide, player) }
     }
 }
 
-@Composable private fun FeatureCard(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier, enabled: Boolean = true, action: () -> Unit) {
+@Composable private fun FeatureCard(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier, enabled: Boolean = true, artwork: List<String> = emptyList(), action: () -> Unit) {
     val wide = LocalConfiguration.current.screenWidthDp >= 840
     val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
@@ -216,19 +250,48 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
         shape = RoundedCornerShape(20.dp),
         color = colors.secondaryContainer.copy(alpha = .7f),
         border = BorderStroke(if (focused) 2.dp else 1.dp, colors.primary.copy(alpha = if (focused) .95f else .25f))) {
-        if (wide) Row(Modifier.background(Brush.linearGradient(listOf(colors.primary.copy(alpha = .2f), colors.surface, colors.secondaryContainer.copy(alpha = .5f))))
-            .padding(22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Box(Modifier.size(44.dp).background(colors.primary.copy(alpha = .16f), CircleShape), contentAlignment = Alignment.Center) {
-                Icon(icon, null, tint = colors.primary)
+        Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(colors.primaryContainer, colors.secondaryContainer, colors.tertiaryContainer)))) {
+            if (artwork.isNotEmpty()) {
+                if (artwork.size == 1) AsyncImage(artwork.first(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                else Column(Modifier.fillMaxSize()) {
+                    repeat(2) { row -> Row(Modifier.weight(1f).fillMaxWidth()) {
+                        repeat(2) { column -> AsyncImage(artwork[(row * 2 + column) % artwork.size], null,
+                            Modifier.weight(1f).fillMaxHeight(), contentScale = ContentScale.Crop) }
+                    } }
+                }
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .08f), Color.Black.copy(alpha = .50f), Color.Black.copy(alpha = .92f)))))
             }
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val foreground = if (artwork.isNotEmpty()) Color.White else colors.onSecondaryContainer
+            Icon(icon, null, tint = if (artwork.isNotEmpty()) Color.White else colors.primary,
+                modifier = Modifier.align(Alignment.TopStart).padding(18.dp))
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = foreground)
+                Text(subtitle, fontSize = 12.sp, color = foreground.copy(alpha = .85f))
             }
-        } else Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-            Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable private fun RecentlyPlayedShelf(vm: HarmonicastViewModel, library: MusicLibrary, wide: Boolean, player: () -> Unit) {
+    var attempt by remember { mutableIntStateOf(0) }
+    var result by remember(library) { mutableStateOf<Result<List<Song>>?>(null) }
+    LaunchedEffect(library, attempt) {
+        result = try { Result.success(library.recentlyPlayedTracks()) }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { Result.failure(e) }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Recently played", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        when {
+            result == null -> LinearProgressIndicator(Modifier.fillMaxWidth())
+            result!!.isFailure -> RetryMessage { attempt++ }
+            result!!.getOrThrow().isEmpty() -> Text("No recently played tracks yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else -> LazyRow(contentPadding = PaddingValues(vertical = if (wide) 10.dp else 0.dp, horizontal = if (wide) 6.dp else 0.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(result!!.getOrThrow(), key = Song::id) { song ->
+                    ArtworkTile(LibraryEntry(song.id, song.title, song.artist, library.artworkUrl(song), BrowseKind.ALBUMS),
+                        Modifier.width(if (wide) 146.dp else 138.dp)) { if (vm.isActivePlayer) { vm.playQueued(song); player() } }
+                }
+            }
         }
     }
 }
@@ -417,6 +480,7 @@ private val LocalBrowsePages = staticCompositionLocalOf<MutableMap<String, Colle
             Button(onClick = { vm.loadAlbum(entry, PlaylistAction.PLAY) }, enabled = vm.isActivePlayer && result?.isSuccess == true, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.PlayArrow, null); Text("Play album") }
             OutlinedButton(onClick = { vm.loadAlbum(entry, PlaylistAction.SHUFFLE) }, enabled = vm.isActivePlayer && result?.isSuccess == true, modifier = Modifier.tvFocusFeedback()) { Text("Shuffle") }
         }
+        TextButton(onClick = { vm.downloadSongs(result?.getOrNull().orEmpty()) }, enabled = result?.isSuccess == true && !vm.nearbyRoomState.connected, modifier = Modifier.tvFocusFeedback()) { Text("Download album") }
         Row {
             TextButton(onClick = { vm.loadAlbum(entry, PlaylistAction.NEXT) }, enabled = vm.isActivePlayer && result?.isSuccess == true, modifier = Modifier.tvFocusFeedback()) { Text("Play next") }
             TextButton(onClick = { vm.loadAlbum(entry, PlaylistAction.QUEUE) }, enabled = vm.isActivePlayer && result?.isSuccess == true, modifier = Modifier.tvFocusFeedback()) { Text("Add to queue") }

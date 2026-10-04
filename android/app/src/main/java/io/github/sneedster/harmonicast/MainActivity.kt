@@ -146,13 +146,15 @@ class HarmonicastViewModel : ViewModel() {
     fun initialize(appContext: Context) {
         if (::api.isInitialized) return
         context = appContext
-        api = AppStorage(context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
+        api = AppStorage(context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE), context)
         colorSchemeName = context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE).getString("ui.palette", "Nocturne") ?: "Nocturne"
         keepScreenOnWhileCharging = context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE)
             .getBoolean("ui.keepScreenOnWhileCharging", false)
         replayWindowDays = ReplayWindow(api.storage).days
         trackRadioDistance = TrackRadioSettings(api.storage).distance
         musicTuning = MusicTuningStore(api.storage).read()
+        mixPresets = MixPresetStore(api.storage).read()
+        mixDiscovery = MixPresetStore(api.storage).discovery
         automaticPlexRatings = AutomaticPlexRatings(api.storage).enabled
         plex = LocalPlexClient(api.storage)
         core = harmonicastCore(api)
@@ -161,6 +163,7 @@ class HarmonicastViewModel : ViewModel() {
         if (ready) {
             // Local transport must remain usable even when Plex discovery is slow or fails.
             connectPlaybackService()
+            refresh()
             viewModelScope.launch {
                 loading = true
                 try {
@@ -179,7 +182,8 @@ class HarmonicastViewModel : ViewModel() {
                     connectPlaybackService()
                     refresh()
                 } catch (e: Exception) {
-                    error = e.message ?: "Could not connect to Plex remotely"
+                    refresh()
+                    error = connectionError(e, "Could not connect to Plex remotely")
                 } finally {
                     loading = false
                 }
@@ -206,6 +210,19 @@ class HarmonicastViewModel : ViewModel() {
 
     private fun connectPlaybackService() {
         if (ready && !offeringRoomPlayback) localPlaybackConnection().connect()
+    }
+
+    private fun connectionError(error: Exception, fallback: String): String {
+        val networkFailure = generateSequence<Throwable>(error) { it.cause }.any {
+            it is java.net.UnknownHostException || it is java.net.ConnectException ||
+                it is java.net.SocketTimeoutException || it is java.net.SocketException
+        }
+        val source = api.profile.personalSource
+        if (networkFailure && source != null && api.offline?.availableSongs(source)?.isNotEmpty() == true) {
+            return if (api.offline?.songs(source)?.isNotEmpty() == true) "Plex unavailable. Your downloads are ready to play."
+                else "Plex unavailable. Cached queue tracks are ready to play."
+        }
+        return error.message ?: fallback
     }
 
     private fun withPlaybackController(command: (MediaController) -> Unit) {
@@ -296,6 +313,7 @@ class HarmonicastViewModel : ViewModel() {
         socket?.close()
         socket = null
         playbackConnection?.close()
+        api.offline?.clearAll()
         api.profile.clearPersonalSource()
         personalToken = ""
         personalServerToken = ""
@@ -379,6 +397,8 @@ class HarmonicastViewModel : ViewModel() {
                     trackRadioDistance = TrackRadioSettings(api.storage).distance
                     automaticMixStatus = api.storage.read(ReplayWindow.STATUS_KEY).orEmpty()
                     musicTuning = MusicTuningStore(api.storage).read()
+                    mixPresets = MixPresetStore(api.storage).read()
+                    mixDiscovery = MixPresetStore(api.storage).discovery
                     automaticPlexRatings = AutomaticPlexRatings(api.storage).enabled
                     ratedTrackShare = core.queue.ratedTrackShare()
                     ensureSocket()
@@ -389,7 +409,7 @@ class HarmonicastViewModel : ViewModel() {
                 // leave its error visible after a later request succeeds.
                 error = ""
             } catch (e: Exception) {
-                error = e.message ?: "Could not connect"
+                error = connectionError(e, "Could not connect")
                 if ((e.message ?: "").contains("Authentication required")) ready = false
             } finally {
                 loading = false
@@ -582,7 +602,7 @@ class HarmonicastViewModel : ViewModel() {
             try {
                 playlists = core.library.playlists()
             } catch (e: Exception) {
-                error = e.message ?: "Could not load Plex playlists"
+                error = connectionError(e, "Could not load Plex playlists")
             } finally {
                 playlistsLoading = false
             }
@@ -723,6 +743,86 @@ class HarmonicastViewModel : ViewModel() {
         }
     }
 
+    internal val personalSource: PersonalPlexSource? get() = if (::api.isInitialized) api.profile.personalSource else null
+    internal var mixPresets by mutableStateOf<List<MixPreset>>(emptyList()); private set
+    internal var mixDiscovery by mutableStateOf(MixDiscovery.STANDARD); private set
+    internal val downloadWifiOnly get() = if (::api.isInitialized) api.storage.read("local.downloadWifiOnly") != "false" else true
+    internal fun saveDownloadWifiOnly(value: Boolean) = api.storage.write(mapOf("local.downloadWifiOnly" to value.toString()))
+    internal fun saveMixPreset(name: String): Boolean {
+        if (!isPersonalMode || !isHost) return false
+        return try { mixPresets = MixPresetStore(api.storage).save(name); showTemporaryNotice("Mix preset saved"); true }
+        catch (e: Exception) { error = e.message ?: "Could not save preset"; false }
+    }
+    internal fun removeMixPreset(id: String) {
+        if (!isPersonalMode || !isHost) return
+        try { MixPresetStore(api.storage).remove(id); mixPresets = MixPresetStore(api.storage).read() }
+        catch (e: Exception) { error = e.message ?: "Could not remove preset" }
+    }
+    internal fun applyMixPreset(preset: MixPreset) {
+        if (!isPersonalMode || !isHost) return
+        try { MixPresetStore(api.storage).apply(preset); refresh(); showTemporaryNotice("${preset.name} applied to the next automatic batch") }
+        catch (e: Exception) { error = e.message ?: "Could not apply preset" }
+    }
+    internal fun selectMixDiscovery(mode: MixDiscovery) {
+        if (!isPersonalMode || !isHost) return
+        try {
+            MixPresetStore(api.storage).discovery = mode; mixDiscovery = mode
+            showTemporaryNotice("${mode.title} selected for the next automatic batch")
+        } catch (e: Exception) { error = e.message ?: "Could not select rediscovery mode" }
+    }
+    internal fun downloadSongs(songs: List<Song>) {
+        val source = personalSource ?: return
+        if (nearbyRoomState.connected) return
+        try { api.offline?.enqueue(source, songs, downloadWifiOnly); showTemporaryNotice("Downloads queued. Open Downloads for progress.") }
+        catch (e: Exception) { error = e.message ?: "Could not start downloads" }
+    }
+    internal fun downloadPlaylist(playlist: PlexPlaylist) {
+        val active = core
+        coreAction {
+            val tracks = mutableListOf<Song>()
+            var offset = 0
+            do {
+                val page = active.library.playlistPage(playlist.id, offset)
+                tracks += page.tracks
+                if (tracks.size > 500) throw IllegalArgumentException("Download playlists of at most 500 tracks")
+                val next = page.nextOffset ?: break
+                check(next > offset) { "Playlist could not load its next page" }
+                offset = next
+            } while (true)
+            if (active !== core) return@coreAction
+            downloadSongs(tracks)
+        }
+    }
+    internal fun retryOffline(id: String?) {
+        if (id == null) return
+        downloadSongs(listOf(Song(id, "Track download", "")))
+    }
+    internal fun playOffline(songs: List<Song>) {
+        if (!isActivePlayer || songs.isEmpty()) return
+        val active = core
+        coreAction {
+            if (active !== core) return@coreAction
+            active.queue.clear(); api.storage.write(mapOf("local.offlinePlayback" to "true")); active.queue.addAll(songs.map { it.copy(isManual = true) }); nextSong(); refresh()
+        }
+    }
+    private var adventureBusy = false
+    internal fun somewhereDifferent() {
+        if (!isActivePlayer || !isPersonalMode || adventureBusy) return
+        adventureBusy = true
+        val active = core
+        viewModelScope.launch {
+            try {
+                val count = active.queue.somewhereDifferent()
+                if (active === core) {
+                    if (count == 0) error = "No farther sonic matches found for this song"
+                    else showTemporaryNotice("Taking a detour · $count tracks, then back to your radio")
+                    refresh()
+                }
+            } catch (e: Exception) { error = e.message ?: "Could not start the detour" }
+            finally { adventureBusy = false }
+        }
+    }
+
     fun queueSimilar() {
         viewModelScope.launch {
             try {
@@ -745,8 +845,14 @@ class HarmonicastViewModel : ViewModel() {
     }
 
     /** Enables Jukebox, populates its random queue, and starts its first song. */
+    internal fun startRediscovery() {
+        if (!isActivePlayer) return
+        coreAction { core.queue.resetAutomaticTail(); startRandomPlayback() }
+    }
+
     fun startRandomPlayback() {
         if (!isActivePlayer) return
+        api.storage.write(mapOf("local.offlinePlayback" to "false"))
         context.startService(Intent(context, HarmonicastMediaService::class.java)
             .setAction(HarmonicastMediaService.START_RANDOM_PLAYBACK_ACTION))
     }

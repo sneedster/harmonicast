@@ -3,4 +3,5 @@
     <!-- Sound tuning belongs to this physical device, not a restored installation. -->
     <exclude domain="sharedpref" path="device_equalizer.xml" />
     <exclude domain="sharedpref" path="harmonicast.xml" />
+    <exclude domain="sharedpref" path="queue_cache.xml" />
 </full-backup-content>

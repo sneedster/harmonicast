@@ -113,6 +113,7 @@ import kotlinx.coroutines.CancellationException
                     Button(onClick = { vm.loadPlaylist(playlist, PlaylistAction.PLAY) }, enabled = vm.isActivePlayer && tracks.isNotEmpty(), modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.PlayArrow, null); Text("Play") }
                     OutlinedButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.SHUFFLE) }, enabled = vm.isActivePlayer && tracks.isNotEmpty(), modifier = Modifier.tvFocusFeedback()) { Text("Shuffle") }
                 }
+                TextButton(onClick = { vm.downloadPlaylist(playlist) }, enabled = !vm.nearbyRoomState.connected, modifier = Modifier.tvFocusFeedback()) { Text("Download playlist") }
                 Row {
                     TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.NEXT) }, enabled = vm.isActivePlayer && tracks.isNotEmpty(), modifier = Modifier.tvFocusFeedback()) { Text("Play next") }
                     TextButton(onClick = { vm.loadPlaylist(playlist, PlaylistAction.QUEUE) }, enabled = vm.isActivePlayer && tracks.isNotEmpty(), modifier = Modifier.tvFocusFeedback()) { Text("Add to queue") }

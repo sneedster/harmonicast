@@ -21,7 +21,7 @@ class RadioContinuationTest {
         val http = object : PlexHttp {
             override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
                 assertTrue("Radio must not fall back to unrelated library pools: $url", url.contains("/nearest?"))
-                assertTrue(url.contains("limit=100"))
+                assertTrue(url.contains(if (url.contains("maxDistance=0.5")) "limit=500" else "limit=100"))
                 val tracks = fetch(url)
                 return JSONObject().put("MediaContainer", JSONObject().put("Metadata", JSONArray().apply {
                     tracks.forEach { song -> put(JSONObject().put("type", "track")
@@ -33,6 +33,26 @@ class RadioContinuationTest {
             }
         }
         return LocalHarmonicastCore(source, storage, LocalPlexClient(storage, http))
+    }
+
+    @Test fun detourPreservesRequestsAndReturnsToOriginalSeedWithoutChangingDistance() = runBlocking {
+        val storage = Memory(); TrackRadioSettings(storage).distance = 0.15
+        val calls = mutableListOf<String>()
+        val core = core(storage) { url ->
+            calls += url
+            if (url.contains("maxDistance=0.5")) (2..14).map { song(it) } else (2..11).map { song(it) }
+        }
+        core.playback.publish(song(1), true, false)
+        core.queue.add(song(50))
+        assertEquals(3, core.queue.somewhereDifferent())
+        assertEquals(song(50).id, core.queue.dequeue().song!!.id)
+        repeat(3) { val next = core.queue.dequeue().song!!; assertTrue(next.id in (12..14).map { song(it).id }); core.playback.publish(next, true, true) }
+        core.queue.enableAutomaticPlayback()
+        assertTrue(calls.last().contains("/1/nearest"))
+        assertTrue(calls.last().contains("maxDistance=0.15"))
+        assertEquals(0.15, TrackRadioSettings(storage).distance, 0.0)
+        assertTrue(storage.read("local.radioReturnSeed").isNullOrEmpty())
+        core.queue.clear(); assertEquals("false", storage.read("local.radioActive"))
     }
 
     @Test fun emptyQueueContinuesFromLastPlayedSongAndSurvivesCoreRecreation() = runBlocking {

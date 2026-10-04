@@ -81,7 +81,7 @@ class SettingsScreenTest {
 
     private fun setup(tv: Boolean = false, fullShell: Boolean = false, readOnly: Boolean = false) {
         val context = RuntimeEnvironment.getApplication()
-        if (tv) shadowOf(context.packageManager).setSystemFeature(PackageManager.FEATURE_LEANBACK, true)
+        shadowOf(context.packageManager).setSystemFeature(PackageManager.FEATURE_LEANBACK, tv)
         val prefs = context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
         // Initialize without a source to avoid launching real playback or network requests.

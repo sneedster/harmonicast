@@ -774,3 +774,64 @@ Real MusicGrabber credential publication and recipient integration remain pendin
 - apksigner verified the signature; aapt verified package/version/minimum SDK.
 - APK SHA-256: 0fdae4ad148759337c6fdbe8606ccbc8f6c9bda91999a0e69afe7cfdfd9d5796.
 - No physical-device installation was performed.
+
+## Listening features preview — 2026-10-03
+
+Signed `1.1.21-listening-preview` (code 83) upgraded the Pixel 10 Pro from
+v1.1.20/code 82 with `adb install -r`, retaining account, palette and EQ settings.
+This is a local preview; it has not been published.
+
+- Complete Android release gate: 354 tests, zero failures/errors/skips; debug lint
+  has zero errors and 41 warnings. Signed assembly and release vital lint pass.
+- Physical phone UI: mix preset save/apply/remove, sound profile save/apply/remove
+  with bypass-state restoration, live underplayed mix, and a three-track sonic
+  detour. Temporary test presets were removed and usual discovery mode restored.
+- Downloaded a complete 20 MB track through the new player menu from the existing
+  Plex source. Completed audio appears in Downloads; no partial track was exposed.
+- Cold-started the app with both Wi-Fi and mobile data disabled. Media3 reported
+  PLAYING with advancing position and no player error; paused afterward. The test
+  automatically restored both connections and verified their enabled state.
+- Rolling cache: verified 12 completed tracks / 374 MB while the existing explicit
+  20 MB download remained saved. Cold-started without Wi-Fi or mobile data;
+  Android reported `Active default network: none`. The current cached track
+  (A Number and a Name) played, then Next loaded Dust Bowl from the ordinary
+  automatic queue; Media3 remained PLAYING, error=null, position 3352 → 6362 ms.
+  Playback was paused and both connections restored. Automatic Plex ratings were
+  temporarily disabled for test skips and restored afterward.
+- Home: matching square mix cards, representative album collage previews and
+  track-title history verified on the phone. Corrected inclusive Plex query bounds
+  that admitted never-played entries into underplayed/forgotten previews. Added
+  album/artist thumbnail fallback and a favorites-only artwork fallback when
+  no 90-day candidates exist; actual rediscovery rules remain unchanged.
+- Queue-cache status ignores cancelled/pruned generations, reports actionable
+  current failures and permits retry without deleting saved audio.
+- Fixed the discovered offline playlist error message to point to available
+  downloads instead of displaying a raw Plex hostname. Also corrected singular
+  download counts and preserved rated/unrated balance in rediscovery presets.
+- Final APK SHA-256: `fe13e16e7a1f292078d90d5f7cf87aafd5b3fa82936a03dfdc452784bf594829`.
+
+The demoscene TV scenes (plasma, starfield, wireframe) have native Compose rendering
+and control/layout coverage. Physical TV frame pacing and remote behavior,
+Android Auto, and prolonged background download scheduling remain unverified.
+
+
+## v1.1.21 stable release packaging — 2026-10-03
+
+The listening features above are packaged as stable v1.1.21, version code 84,
+which supersedes the locally installed code 83 preview. The checked-in release
+helper and Gradle defaults now produce this version without overrides.
+
+`android/build-release.sh` passed the complete release gate: 354 tests in 52
+classes, zero failures/errors/skips, debug lint with zero errors and 41 warnings,
+signed release assembly, and release vital lint. Both Chromium guest/display
+regression suites passed. APK manifest checks confirm the application ID,
+version name and version code; apksigner verifies the signature and the certificate
+matches v1.1.20. APK SHA-256: `4c6564eff89b41541a2d7e508360d91fcb6bf3978c599c4f8967423f04e6aa00`.
+
+The stable APK installed over the Pixel preview with `adb install -r`; package
+manager confirmed 1.1.21 (84) and MainActivity launch returned Status: ok.
+A stable-build Home screenshot confirmed the retained Ember palette, four mix
+collages, configured library access, and paused current track.
+Physical listening/queue-cache evidence remains the preview validation above;
+this packaging check does not add TV, Android Auto, prolonged background
+scheduling, or independent sound-auditing acceptance.

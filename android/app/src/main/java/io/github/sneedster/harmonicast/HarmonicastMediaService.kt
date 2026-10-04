@@ -59,6 +59,14 @@ class HarmonicastMediaService : MediaLibraryService() {
     // Legacy Media3 controllers expire after inactivity, not when projection ends.
     // Use them only until the platform's initial connection query completes.
     private fun hasAndroidAutoAuthority() = carProjectionConnected ?: androidAutoControllers.isNotEmpty()
+    private val cacheConnectivity by lazy { getSystemService(android.net.ConnectivityManager::class.java) }
+    private val cacheNetworkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: android.net.Network) {
+            scope.launch { if (::player.isInitialized) scheduleQueueCache() }
+        }
+    }
+    private var queueCacheJob: kotlinx.coroutines.Job? = null
+    private var queueRefillJob: kotlinx.coroutines.Job? = null
     private var positionSaveJob: kotlinx.coroutines.Job? = null
     private var previousMediaItem: MediaItem? = null
     private data class HistoryItem(val mediaItem: MediaItem, val isAuto: Boolean)
@@ -105,6 +113,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         const val CLAIM_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.CLAIM_PLAYBACK"
         const val START_RANDOM_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.START_RANDOM_PLAYBACK"
         const val SKIP_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.SKIP_PLAYBACK"
+        const val CACHE_SETTINGS_ACTION = "io.github.sneedster.harmonicast.CACHE_SETTINGS"
         const val RELOAD_PROFILE_ACTION = "io.github.sneedster.harmonicast.RELOAD_PROFILE"
         const val ENABLE_GUEST_CONTROL_ACTION = "io.github.sneedster.harmonicast.ENABLE_GUEST_CONTROL"
         const val TRANSFER_PLAYBACK_ACTION = "io.github.sneedster.harmonicast.TRANSFER_PLAYBACK"
@@ -132,7 +141,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
-        api = AppStorage(getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
+        api = AppStorage(getSharedPreferences("harmonicast", Context.MODE_PRIVATE), this)
         core = harmonicastCore(api)
         AcquisitionRuntime.get(this).start()
 
@@ -143,6 +152,18 @@ class HarmonicastMediaService : MediaLibraryService() {
                     "Playback failed (${error.errorCodeName}): ${error.message ?: "no message"}",
                     error,
                 )
+                val source = api.profile.personalSource
+                val item = exoPlayer.currentMediaItem
+                val local = if (source != null && item != null) api.offline?.uri(source, item.mediaId) else null
+                // A full download may finish after this track was prepared as a stream.
+                // Retry once using that complete file, preserving position and intent.
+                if (nativeOutput == null && error.errorCode in 2000..2009 && local != null &&
+                    item?.localConfiguration?.uri?.scheme != "file") {
+                    val position = exoPlayer.currentPosition
+                    val play = exoPlayer.playWhenReady
+                    exoPlayer.setMediaItem(item!!.buildUpon().setUri(local).build(), position)
+                    exoPlayer.prepare(); exoPlayer.playWhenReady = play
+                }
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -168,6 +189,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 previousMediaItem = mediaItem
                 updateCustomLayout(radioQueueActive)
                 syncCurrentPlaybackState(player.isPlaying)
+                scheduleQueueCache()
             }
         })
 
@@ -232,6 +254,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             }
         }
         player = exoPlayer
+        cacheConnectivity.registerDefaultNetworkCallback(cacheNetworkCallback)
         carConnection = androidx.car.app.connection.CarConnection(this)
         carConnection.type.observeForever(carConnectionObserver)
         androidx.core.content.ContextCompat.registerReceiver(
@@ -682,6 +705,10 @@ class HarmonicastMediaService : MediaLibraryService() {
             TAKE_BACK_PLAYBACK_ACTION -> scope.launch { takeBackNativePlayback(true) }
             START_RANDOM_PLAYBACK_ACTION -> { playbackHistory.discardForward(); advance("skip") }
             SKIP_PLAYBACK_ACTION -> advance("skip")
+            CACHE_SETTINGS_ACTION -> {
+                api.profile.personalSource?.let { api.offline?.resetCacheWork(it) }
+                scheduleQueueCache()
+            }
             RELOAD_PROFILE_ACTION -> reloadProfile()
             ENABLE_GUEST_CONTROL_ACTION -> enableGuestControl()
             DISABLE_GUEST_CONTROL_ACTION -> disableGuestControl()
@@ -954,6 +981,8 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun reloadProfile() {
+        queueCacheJob?.cancel(); queueRefillJob?.cancel()
+        api.profile.personalSource?.let { api.offline?.resetCacheWork(it) }
         disableGuestControl()
         stopPositionSaving()
         webSocketGeneration += 1
@@ -961,7 +990,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         webSocketReconnectJob = null
         webSocket?.close()
         webSocket = null
-        api = AppStorage(getSharedPreferences("harmonicast", Context.MODE_PRIVATE))
+        api = AppStorage(getSharedPreferences("harmonicast", Context.MODE_PRIVATE), this)
         core = harmonicastCore(api)
         player.stop()
         player.clearMediaItems()
@@ -983,8 +1012,10 @@ class HarmonicastMediaService : MediaLibraryService() {
                     advance("skip")
                 } else if (event == CoreEvent.CHANGED) {
                     scope.launch { refreshCurrentRating() }
+                    scheduleQueueCache()
                 } else if (event == CoreEvent.QUEUE_CHANGED) {
                     refreshAndroidAutoQueue()
+                    scheduleQueueCache()
                 } else if (event == CoreEvent.PLAYER_SESSION_CHANGED) {
                     scope.launch {
                         try {
@@ -1000,6 +1031,8 @@ class HarmonicastMediaService : MediaLibraryService() {
                                 Log.d("HarmonicastMedia", "Another device took over playback — pausing")
                                 player.pause()
                                 stopPositionSaving()
+                                queueCacheJob?.cancel(); queueRefillJob?.cancel()
+                                api.profile.personalSource?.let { api.offline?.resetCacheWork(it) }
                             }
                         } catch (e: Exception) {
                             Log.e("HarmonicastMedia", "Failed to check player status after session change", e)
@@ -1281,7 +1314,12 @@ class HarmonicastMediaService : MediaLibraryService() {
                     if (reason == "ended") {
                         recordPlaybackEvent(currentMediaItem, "complete", 1.0)
                         try {
-                            core.playback.scrobble(oldId, submission = true)
+                            val completedCore = core
+                            if (hasLocalAudio(oldId)) scope.launch {
+                                try { completedCore.playback.scrobble(oldId, submission = true) }
+                                catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                                catch (e: Exception) { Log.w("HarmonicastMedia", "Completion scrobble waits for Plex (${e.javaClass.simpleName})") }
+                            } else completedCore.playback.scrobble(oldId, submission = true)
                         } catch (e: kotlinx.coroutines.CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -1330,16 +1368,20 @@ class HarmonicastMediaService : MediaLibraryService() {
         }
     }
 
+    private fun hasLocalAudio(id: String): Boolean = api.profile.personalSource?.let { api.offline?.uri(it, id) } != null
+
     private suspend fun recordPlaybackEvent(item: MediaItem, event: String, progress: Double) {
         val metadata = item.mediaMetadata
-        try {
-            core.playback.recordEvent(Song(item.mediaId, metadata.title?.toString().orEmpty(),
-                metadata.artist?.toString().orEmpty(), metadata.albumTitle?.toString().orEmpty()), event, progress)
-        } catch (e: Exception) {
-            // Rating updates are important, but playback must still advance if
-            // Plex is temporarily unavailable.
-            Log.e("HarmonicastMedia", "Failed to record $event rating event", e)
+        val eventCore = core
+        val song = Song(item.mediaId, metadata.title?.toString().orEmpty(),
+            metadata.artist?.toString().orEmpty(), metadata.albumTitle?.toString().orEmpty())
+        suspend fun record() {
+            try { eventCore.playback.recordEvent(song, event, progress) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { Log.w("HarmonicastMedia", "Failed to record $event (${e.javaClass.simpleName})") }
         }
+        // Cached playback must not wait on rating writes over a patchy connection.
+        if (hasLocalAudio(item.mediaId)) scope.launch { record() } else record()
     }
 
     /** Enables the shared auto queue and returns its next playable track. */
@@ -1392,6 +1434,36 @@ class HarmonicastMediaService : MediaLibraryService() {
         }
     }
 
+    /** Prefetch on the playback host; browsing a remote/guest queue must not download it. */
+    private fun scheduleQueueCache() {
+        queueCacheJob?.cancel()
+        val captured = core
+        val source = api.profile.personalSource ?: return
+        val store = api.offline ?: return
+        if (api.profile.mode != HomeMode.PERSONAL_PLEX) return
+        queueCacheJob = scope.launch {
+            delay(400)
+            try {
+                if (captured !== core || !captured.playback.isActivePlayer()) return@launch
+                val state = captured.playback.snapshot()
+                val queue = listOfNotNull(state.nowPlaying.song) + captured.queue.songs()
+                kotlinx.coroutines.withContext(Dispatchers.IO) { store.syncQueueCache(source, queue) }
+                // Keep the automatic tail full while connected. Explicit requests
+                // retain their order, and Track Radio keeps its separate continuity.
+                if (store.cacheSettings.enabled && store.connected() && state.isAutoQueue &&
+                    api.storage.read("local.offlinePlayback") != "true" && api.storage.read("local.radioActive") != "true" &&
+                    queueRefillJob?.isActive != true) {
+                    queueRefillJob = scope.launch {
+                        try { captured.queue.enableAutomaticPlayback() }
+                        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                        catch (e: Exception) { Log.w("HarmonicastCache", "Queue top-up waits for Plex (${e.javaClass.simpleName})") }
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { Log.w("HarmonicastCache", "Could not update queue cache (${e.javaClass.simpleName})") }
+        }
+    }
+
     private fun createMediaItem(song: Song): MediaItem = SessionMediaItems.track(
         this, song, core.library.streamUrl(song), core.library.artworkUrl(song),
     )
@@ -1406,6 +1478,8 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        runCatching { cacheConnectivity.unregisterNetworkCallback(cacheNetworkCallback) }
+        queueCacheJob?.cancel(); queueRefillJob?.cancel()
         if (::carConnection.isInitialized) carConnection.type.removeObserver(carConnectionObserver)
         unregisterReceiver(idleRecovery)
         stopPositionSaving()

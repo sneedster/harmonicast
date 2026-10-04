@@ -4,6 +4,8 @@ package io.github.sneedster.harmonicast
 interface MusicLibrary {
     suspend fun randomTracks(limit: Int = 100): List<Song> = emptyList()
     suspend fun recentTracks(): List<Song> = emptyList()
+    suspend fun recentlyPlayedTracks(limit: Int = 20): List<Song> = emptyList()
+    suspend fun mixPreview(mode: MixDiscovery): List<Song> = emptyList()
     suspend fun letterIndex(kind: BrowseKind): List<LibraryLetter> = emptyList()
     suspend fun browse(kind: BrowseKind, order: BrowseOrder, offset: Int = 0, parent: String? = null, query: String = ""): LibraryPage = LibraryPage(emptyList(), null)
     suspend fun albumTracks(id: String): List<Song> = emptyList()
@@ -54,6 +56,8 @@ interface MusicQueue {
     }
     suspend fun remove(id: String)
     suspend fun clear()
+    suspend fun resetAutomaticTail() = Unit
+    suspend fun somewhereDifferent(): Int = 0
     suspend fun radio(): Int
     suspend fun enableAutomaticPlayback()
     suspend fun ratedTrackShare(): Int

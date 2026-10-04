@@ -14,6 +14,17 @@ receive track metadata and artwork. Sign out to remove the personal source;
 clear storage or uninstall to remove all local app data. Plex-side data is managed
 separately.
 
+Offline downloads and the rolling queue cache store complete audio and track
+metadata in private app storage, excluded from Android backup and device transfer.
+The queue cache defaults to 12 tracks and allows mobile data; its window and mobile
+preloading can be changed in Downloads. Manually saved downloads default to Wi-Fi
+only. Switching Plex account or library hides other download scopes; signing out
+deletes all saved audio. Clearing the rolling cache preserves manually saved tracks.
+Offline download playback keeps play/skip history locally and does not replay Plex
+rating or history updates later. Sound profiles and visualizer settings stay on
+this device. TV visualizations analyze playback audio locally and do not record
+microphone audio or send audio analysis to a service.
+
 Opening a room temporarily enables nearby discovery and a local HTTP guest/display
 interface. Guests see shared metadata, requests, votes, and playback state.
 Invitation links/QR codes grant temporary access; treat them as access credentials.

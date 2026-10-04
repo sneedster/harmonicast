@@ -1,5 +1,17 @@
 # Releases
 
+## v1.1.21 — more ways to listen
+
+Version code: **84**, superseding the code 83 listening preview.
+
+- Save named automatic mix presets and rediscover forgotten favorites, underplayed tracks, or music you have never played. Home mix cards show representative album artwork; Recently played shows track titles and artists.
+- Download tracks, albums, and playlists for offline listening. A separate rolling queue cache preloads the current track and next 11 by default, with mobile data allowed, to keep complete cached tracks playing through coverage gaps. Cache rotation preserves manually saved downloads.
+- Save named sound profiles with all ten equalizer bands, preamp, and enabled state.
+- Add optional music-reactive TV backgrounds inspired by 1990s demos: plasma, starfield, and wireframe/copper effects with classic neon colors. Enable them in Settings → Appearance → TV visualizer; Off is the default.
+- Take me somewhere different adds up to three tracks from a wider sonic neighborhood while preserving manual requests and ordinary radio continuation. Track Radio remains on Now Playing.
+
+Validation: all 354 Android tests, debug lint, both browser guest/display suites, signed assembly, release vital lint, APK version, and same-certificate checks passed. The stable APK upgraded the Pixel preview to 1.1.21 (84). Pixel 10 Pro checks covered presets, rediscovery, sonic detours, artwork, downloads, and offline cold-start/next-track playback with a complete 12-track cache. Physical TV, Android Auto, prolonged background scheduling, and independent audio listening checks remain unverified. Final stable packaging checks are recorded in [Android validation](docs/ANDROID_VALIDATION.md).
+
 ## v1.1.20 — room access and playback hardening
 
 Version code: **82**.

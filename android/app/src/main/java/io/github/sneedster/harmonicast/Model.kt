@@ -47,7 +47,8 @@ class SharedPreferencesProfileStorage(
     }
 }
 
-class AppStorage(prefs: android.content.SharedPreferences) {
+class AppStorage(prefs: android.content.SharedPreferences, context: android.content.Context? = null) {
+    internal val offline = context?.let { OfflineStore(it.applicationContext) }
     val storage = SharedPreferencesProfileStorage(prefs)
     val profile = HomeProfileStore(storage)
 }
