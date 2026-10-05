@@ -469,6 +469,22 @@ limit large queues before the track count. Playback uses complete files only and
 can retry a failed stream locally without resetting its position. Selection from
 cached metadata still respects retained local replay history.
 
+Cover remains the shared native artwork component, with Coil owning image loading
+and the existing reserved square geometry. Player callbacks retain known artwork
+independently of audio metadata. OfflineStore owns private, bounded cover files,
+preferring Plex's selected image and falling back to embedded artwork. Cache
+promotion/removal treats covers and audio together; saved covers remain outside
+rolling eviction. Background backfill refreshes the ViewModel's artwork revision
+and the current Media3 artwork handle without restarting audio or changing focus.
+Metadata indexes keep only credential-free Plex image paths, resolved against the
+current source. Existing audio gains artwork without being downloaded again.
+
+### Canonical UI Map
+
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+|---|---|---|---|---|
+| Artwork | Cover, HarmonicastViewModel.artworkUrl, MediaArtworkProvider | Listening features and offline artwork behavior above | Native player, queue, downloads and Media3 handles | ArtworkCacheTest, MediaSessionPrivacyTest |
+
 Settings > Appearance on TV owns demoscene selection and optional classic neon.
 DemoVisualizer renders plasma, starfield or a wireframe cube behind Now Playing;
 the existing transport controls retain focus and layout. No capture permission is

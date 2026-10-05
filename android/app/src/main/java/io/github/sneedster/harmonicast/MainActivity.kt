@@ -230,7 +230,12 @@ class HarmonicastViewModel : ViewModel() {
         localPlaybackConnection().connect(command)
     }
 
-    fun artworkUrl(song: Song) = core.library.artworkUrl(song)
+    private var artworkRevision by mutableIntStateOf(0)
+    fun artworkUrl(song: Song): String? {
+        // Shared covers observe backfill completion even when track identity is unchanged.
+        artworkRevision
+        return core.library.artworkUrl(song)
+    }
 
     fun beginPersonalSetup(openUrl: (String) -> Unit) {
         viewModelScope.launch {
@@ -380,6 +385,7 @@ class HarmonicastViewModel : ViewModel() {
 
     fun refresh() {
         viewModelScope.launch {
+            artworkRevision++
             loading = true
             try {
                 val connection = core.guests.policy()

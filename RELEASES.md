@@ -1,5 +1,16 @@
 # Releases
 
+## v1.1.22 — artwork that stays with your music
+
+Version code: **86**, superseding the code 85 artwork preview.
+
+- Keep Now Playing artwork when playback callbacks use cached audio metadata.
+- Save private cover images alongside downloaded and rolling-cache tracks, preferring the selected Plex cover with embedded artwork as a fallback.
+- Backfill covers for existing complete downloads while connected without downloading their audio again. Preserve saved covers when the rolling cache rotates or is cleared.
+- Refresh native, media-session, and room artwork when a cover becomes available; keep Plex credentials and private file paths out of shared metadata.
+
+Validation: all 363 Android tests across 53 isolated classes, debug lint, both Chromium guest/display suites, signed release assembly, release vital lint, APK version, and same-certificate checks passed. Physical-device artwork, real embedded-picture extraction, TV, Android Auto, and prolonged worker scheduling remain unverified. See [Android validation](docs/ANDROID_VALIDATION.md).
+
 ## v1.1.21 — more ways to listen
 
 Version code: **84**, superseding the code 83 listening preview.

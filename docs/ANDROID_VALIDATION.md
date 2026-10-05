@@ -835,3 +835,61 @@ collages, configured library access, and paused current track.
 Physical listening/queue-cache evidence remains the preview validation above;
 this packaging check does not add TV, Android Auto, prolonged background
 scheduling, or independent sound-auditing acceptance.
+
+## Plex artwork cache preview — 2026-10-05
+
+The Now Playing regression was reproduced against v1.1.21: a minimal player
+callback resolved an uncached track through Plex with its cover, but resolved a
+cached track through the audio-only index and lost its artwork reference. The
+fix preserves artwork independently of the stream URL, retains a credential-free
+Plex image path in the offline index, and stores a bounded private JPEG cover.
+Plex's selected cover is preferred; embedded artwork is the fallback. Existing
+complete audio can receive covers without another audio request. Artwork failure
+keeps audio playable and is throttled before another repair attempt.
+
+- `VERSION_NAME=1.1.22-artwork-preview VERSION_CODE=85 ./android/build-release.sh`
+  passed the complete gate: 363 tests in 53 classes, zero failures/errors/skips,
+  debug lint with zero errors and 41 warnings, signed assembly and release vital
+  lint. Nine new artwork regressions cover callbacks, current credentials,
+  legacy cache backfill, source isolation, promotion/removal, cancellation,
+  retry throttling, optional embedded pictures and private room image transport.
+- The backfill worker test serves Plex metadata and cover pixels from a local
+  HTTP fixture, verifies no audio endpoint request, and compares the existing
+  audio bytes before and after. Embedded-picture tests model Android's optional
+  retriever API; they do not establish real codec/tag extraction on a device.
+- Chromium kiosk/guest and display-recovery suites passed using the existing
+  Playwright runtime and `/usr/bin/chromium`. Guest image/request/vote behavior,
+  keyboard navigation, narrow/wide layouts and recovery states remain covered.
+  Inspected the rendered guest-phone and wireframe-player-TV states. The strict
+  static audit scoped to the native Android sources reported zero findings.
+- `git diff --check` passed. APK manifest checks confirm the unchanged app ID,
+  version `1.1.22-artwork-preview` and code 85. `apksigner` verifies the signature
+  and the certificate matches the stable v1.1.21 APK.
+- Preview: `android/releases/harmonicast-1.1.22-artwork-preview.apk`.
+  SHA-256: `21693b66bcced68b038ae40bcaee1ca929eedabe4f7b896b211b711fd1a527c4`.
+
+This preview has not been installed or published; no Android device was attached.
+Next acceptance is an upgrade on the phone followed by live Plex Now Playing,
+cover backfill for existing audio, and a cold offline start with embedded artwork.
+Physical TV, Android Auto and prolonged worker scheduling remain unverified.
+
+## v1.1.22 stable artwork release packaging — 2026-10-05
+
+The artwork fix above is packaged as stable v1.1.22, version code 86, which
+supersedes the code 85 preview. The checked-in release helper and Gradle defaults
+produce this version without overrides.
+
+`android/build-release.sh` passed the complete release gate: 363 tests in 53
+isolated classes, zero failures/errors/skips, debug lint with zero errors and
+41 warnings, signed release assembly, and release vital lint. Both Chromium
+guest/display suites passed. `git diff --check` passed.
+
+APK manifest checks confirm `io.github.sneedster.harmonicast`, version 1.1.22
+and code 86. `apksigner` verifies the signature and the certificate matches the
+published v1.1.21 APK, whose local SHA-256 matches GitHub's release asset digest.
+Stable APK: `android/releases/harmonicast-1.1.22.apk`.
+SHA-256: `55314b16da0abf51c7017fbfca95f96189fa665b9934401abb925d57a0316e90`.
+
+No physical-device installation or artwork acceptance was performed for this
+stable package. Live Plex covers, old-cache backfill, real embedded-picture
+extraction, TV, Android Auto and prolonged worker scheduling remain unverified.

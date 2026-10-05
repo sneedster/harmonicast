@@ -30,6 +30,12 @@ class MediaArtworkProvider : ContentProvider() {
             return Uri.Builder().scheme("content").authority("${context.packageName}.media-artwork")
                 .appendPath(key).build()
         }
+        /** Private lookup for player callbacks; upstream URLs never enter session metadata. */
+        internal fun source(context: Context, uri: Uri?): String? {
+            if (uri?.scheme != "content" || uri.authority != "${context.packageName}.media-artwork" ||
+                uri.pathSegments.size != 1 || uri.query != null || uri.fragment != null) return null
+            return sources.get(uri.lastPathSegment)
+        }
     }
 
     override fun onCreate() = true

@@ -496,6 +496,7 @@ class GuestRoomGateway(
     private val displaySkip: () -> Unit = {},
     private val accessAllowed: () -> Boolean = { true },
 ) {
+    private val appContext = context.applicationContext
     private val acquisition = AcquisitionRuntime.get(context)
     private val libraryScript = context.assets.open("room/library.js").bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
     private val guestPageTemplate = context.assets.open("guest/index.html")
@@ -681,6 +682,9 @@ class GuestRoomGateway(
         .callTimeout(8, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
     private suspend fun loadDisplayArtwork(song: Song): String? {
         val url = core.library.artworkUrl(song) ?: return null
+        if (url.startsWith("file:")) return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            OfflineArtwork.local(appContext, url)?.let { "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(it) }
+        }
         return loadRoomImage(url)
     }
     private suspend fun loadRoomImage(url: String, catalog: Boolean = false, redirects: Int = 0): String? {

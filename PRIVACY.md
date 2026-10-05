@@ -14,12 +14,14 @@ receive track metadata and artwork. Sign out to remove the personal source;
 clear storage or uninstall to remove all local app data. Plex-side data is managed
 separately.
 
-Offline downloads and the rolling queue cache store complete audio and track
+Offline downloads and the rolling queue cache store complete audio, cover images and track
 metadata in private app storage, excluded from Android backup and device transfer.
 The queue cache defaults to 12 tracks and allows mobile data; its window and mobile
 preloading can be changed in Downloads. Manually saved downloads default to Wi-Fi
 only. Switching Plex account or library hides other download scopes; signing out
-deletes all saved audio. Clearing the rolling cache preserves manually saved tracks.
+deletes all saved audio and covers. Clearing the rolling cache preserves manually saved tracks
+and their covers. Artwork is fetched from the selected Plex server, with embedded
+file artwork used as a fallback; no new third-party artwork service is contacted.
 Offline download playback keeps play/skip history locally and does not replay Plex
 rating or history updates later. Sound profiles and visualizer settings stay on
 this device. TV visualizations analyze playback audio locally and do not record

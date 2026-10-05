@@ -12,8 +12,12 @@
   downloads. Wi-Fi-only defaults on; unmetered Ethernet also qualifies. Downloads
   use persistent background jobs, bounded retry, per-track progress and cancellation.
   At most 500 tracks per submitted batch, 256 MB per track, and 5 GB total. Audio
-  remains private and excluded from backups; artwork is not downloaded. Account
-  and library changes hide other scopes; sign-out deletes all saved audio. Account
+  and selected Plex covers remain private and excluded from backups. Covers use
+  bounded JPEG copies, with embedded file artwork as a fallback. Existing audio-only
+  downloads gain covers while connected without another audio download, respecting
+  their Wi-Fi preference. Missing covers are retried at most once every six hours;
+  an artwork failure never removes playable audio. Account
+  and library changes hide other scopes; sign-out deletes all saved audio and covers. Account
   token rotation creates a new scope. Play downloads uses a finite local queue.
   Offline play/skip timestamps remain local; Plex scrobbles and rating writes are
   skipped during this queue and are not replayed automatically later.

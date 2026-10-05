@@ -1181,7 +1181,8 @@ class HarmonicastMediaService : MediaLibraryService() {
             if (core !== activeCore) return
             val item = player.currentMediaItem ?: return
             if (item.mediaId != song.id) return
-            val metadata = AutoTrackRating.apply(item.mediaMetadata, song.rating)
+            val metadata = AutoTrackRating.apply(item.mediaMetadata, song.rating).buildUpon()
+                .setArtworkUri(MediaArtworkProvider.uri(this@HarmonicastMediaService, activeCore.library.artworkUrl(song))).build()
             if (metadata != item.mediaMetadata) {
                 player.replaceMediaItem(player.currentMediaItemIndex, item.buildUpon().setMediaMetadata(metadata).build())
             }
@@ -1233,7 +1234,8 @@ class HarmonicastMediaService : MediaLibraryService() {
         val isAuto = currentIsAuto.get()
         scope.launch {
             try {
-                core.playback.publish(Song(songId, title, artist, album, coverArt = coverArt), isPlaying, isAuto)
+                core.playback.publish(Song(songId, title, artist, album, coverArt = coverArt,
+                    artworkUri = MediaArtworkProvider.source(this@HarmonicastMediaService, item.mediaMetadata.artworkUri)), isPlaying, isAuto)
             } catch (e: Exception) {
                 Log.e("HarmonicastMedia", "Failed to sync play state", e)
             }

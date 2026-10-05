@@ -10,6 +10,8 @@ import kotlin.math.roundToInt
 
 internal object QueueTransactions { val mutex = Mutex() }
 
+internal fun notifyLocalArtworkChanged() = LocalCoreEvents.publish(CoreEvent.CHANGED)
+
 private object LocalCoreEvents {
     val ratingMutex = Mutex()
     val listeners = CopyOnWriteArrayList<(CoreEvent) -> Unit>()
@@ -85,15 +87,18 @@ class LocalHarmonicastCore(
         override suspend fun playlistPage(id: String, offset: Int) = plex.playlistPage(source, id, offset)
         override fun streamUrl(song: Song) = offline?.uri(source, song.id) ?: currentSourceUrl(song, song.streamUri)
             ?: throw IllegalStateException("Plex track needs fresh playback metadata")
-        override fun artworkUrl(song: Song) = currentSourceUrl(song, song.artworkUri)
+        override fun artworkUrl(song: Song) = (if (configuredSource != null && sourceStillSelected()) offline?.artworkUri(source, song.id) else null)
+            ?: currentSourceUrl(song, song.artworkUri)
     }
 
     // Persisted queue/playback metadata may still contain a previous local endpoint.
     private fun currentSourceUrl(song: Song, value: String?): String? {
         val source = configuredSource ?: return value
         if (value == null || !song.id.startsWith("plex:${java.net.URLEncoder.encode(source.machineIdentifier, "UTF-8")}:")) return value
-        val original = value.toHttpUrlOrNull() ?: return value
         val base = source.baseUrl.toHttpUrlOrNull() ?: return value
+        if (value.startsWith("/library/metadata/") && '?' !in value && '#' !in value)
+            return base.resolve(value)?.newBuilder()?.setQueryParameter("X-Plex-Token", source.token)?.build()?.toString()
+        val original = value.toHttpUrlOrNull() ?: return value
         return original.newBuilder().scheme(base.scheme).host(base.host).port(base.port)
             .setQueryParameter("X-Plex-Token", source.token).build().toString()
     }
@@ -302,9 +307,20 @@ class LocalHarmonicastCore(
                 storage.write(mapOf(ReplayWindow.STATUS_KEY to ""))
             }
             val persistedSong = song?.let { value ->
-                if (value.streamUri != null) value
-                else previous.nowPlaying.song?.takeIf { it.id == value.id && it.streamUri != null }
-                    ?: offline?.song(source, value.id) ?: library.track(value.id) ?: value
+                val sameTrack = previous.nowPlaying.song?.takeIf { it.id == value.id }
+                val resolved = if (value.streamUri != null) value
+                    else sameTrack?.takeIf { it.streamUri != null }
+                        ?: offline?.song(source, value.id) ?: library.track(value.id) ?: value
+                // Cached audio metadata deliberately has no upstream URLs. Preserve artwork
+                // independently of streamUri when a player callback supplies it or we know it.
+                // Keep a server image path behind local cover handles so clearing cache
+                // can still fall back to Plex instead of persisting a deleted file URI.
+                val incomingArtwork = value.artworkUri?.takeUnless { it.startsWith("file:") }
+                val known = if (incomingArtwork == null && sameTrack?.artworkUri == null && resolved.artworkUri == null)
+                    queue.songs().firstOrNull { it.id == value.id } else null
+                resolved.copy(artworkUri = incomingArtwork ?: sameTrack?.artworkUri ?: resolved.artworkUri ?: known?.artworkUri,
+                    coverArt = value.coverArt.ifBlank { sameTrack?.coverArt.orEmpty() }
+                        .ifBlank { resolved.coverArt }.ifBlank { known?.coverArt.orEmpty() })
             }
             // Playback callbacks can carry metadata captured before a vote finished.
             val displayedSong = persistedSong?.let { persisted ->

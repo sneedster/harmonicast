@@ -99,12 +99,13 @@ internal object NearbyRoomWire {
         ?.takeIf { it.length == 4 && it.all(Char::isLetter) }
         .orEmpty()
 
-    fun status(roomCode: String, snapshot: PlaybackSnapshot, acquisitionAvailable: Boolean = false): ByteArray {
+    fun status(roomCode: String, snapshot: PlaybackSnapshot, acquisitionAvailable: Boolean = false,
+               resolvedArtworkKey: String? = null): ByteArray {
         val song = snapshot.nowPlaying.song
         return JSONObject()
             .put("room", roomCode)
             .put("acquisition", acquisitionAvailable)
-            .put("art", artworkKey(song))
+            .put("art", resolvedArtworkKey ?: artworkKey(song))
             .put("title", utf8Prefix(song?.title.orEmpty(), 96))
             .put("artist", utf8Prefix(song?.artist.orEmpty(), 72))
             .put("album", utf8Prefix(song?.album.orEmpty(), 64))
@@ -140,7 +141,7 @@ internal object NearbyRoomWire {
     fun artworkKey(song: Song?): String {
         if (song == null || song.artworkUri.isNullOrBlank()) return ""
         return MessageDigest.getInstance("SHA-256")
-            .digest(song.id.toByteArray(StandardCharsets.UTF_8))
+            .digest("${song.id}\u0000${song.artworkUri}".toByteArray(StandardCharsets.UTF_8))
             .take(8)
             .joinToString("") { "%02x".format(it) }
     }
@@ -271,7 +272,11 @@ class NearbyRoomHost(
                 return
             }
             val payload = if (characteristic.uuid == NearbyRoomWire.statusUuid) {
-                runCatching { NearbyRoomWire.status(roomCode, runBlocking { core.playback.snapshot() }, acquisition.roomAllowed.value && acquisition.account.state.value.available) }
+                runCatching {
+                    val snapshot = runBlocking { core.playback.snapshot() }
+                    NearbyRoomWire.status(roomCode, snapshot, acquisition.roomAllowed.value && acquisition.account.state.value.available,
+                        resolvedArtworkKey(snapshot.nowPlaying.song))
+                }
                     .getOrElse { "{\"room\":\"$roomCode\"}".toByteArray(StandardCharsets.UTF_8) }
             } else responses[device.address]
                 ?: "{\"pending\":true}".toByteArray(StandardCharsets.UTF_8)
@@ -382,31 +387,38 @@ class NearbyRoomHost(
             .toString().toByteArray(StandardCharsets.UTF_8)
     }
 
+    private fun resolvedArtworkKey(song: Song?): String = NearbyRoomWire.artworkKey(
+        song?.copy(artworkUri = core.library.artworkUrl(song)))
+
     private suspend fun loadArtwork(requestedKey: String): ByteArray {
         if (requestedKey.isBlank()) return ByteArray(0)
         synchronized(artworkLock) {
             if (cachedArtworkKey == requestedKey) return cachedArtwork
         }
         val song = core.playback.snapshot().nowPlaying.song ?: return ByteArray(0)
-        if (NearbyRoomWire.artworkKey(song) != requestedKey) return ByteArray(0)
         val url = core.library.artworkUrl(song) ?: return ByteArray(0)
+        if (resolvedArtworkKey(song) != requestedKey) return ByteArray(0)
         val encoded = runCatching {
-            artworkHttp.newCall(Request.Builder().url(url).build()).execute().use { response ->
+            val source = if (url.startsWith("file:")) OfflineArtwork.local(appContext, url)
+                else artworkHttp.newCall(Request.Builder().url(url).build()).execute().use { response ->
                 if (!response.isSuccessful) return@use ByteArray(0)
-                val source = response.body?.bytes() ?: return@use ByteArray(0)
-                val bitmap = BitmapFactory.decodeByteArray(source, 0, source.size) ?: return@use ByteArray(0)
-                val scaled = Bitmap.createScaledBitmap(bitmap, 112, 112, true)
-                ByteArrayOutputStream().use { output ->
-                    scaled.compress(Bitmap.CompressFormat.JPEG, 58, output)
-                    if (scaled !== bitmap) scaled.recycle()
-                    bitmap.recycle()
-                    output.toByteArray()
-                }
+                response.body?.bytes()
+            }
+            if (source == null) return@runCatching ByteArray(0)
+            val bitmap = BitmapFactory.decodeByteArray(source, 0, source.size) ?: return@runCatching ByteArray(0)
+            val scaled = Bitmap.createScaledBitmap(bitmap, 112, 112, true)
+            ByteArrayOutputStream().use { output ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, 58, output)
+                if (scaled !== bitmap) scaled.recycle()
+                bitmap.recycle()
+                output.toByteArray()
             }
         }.getOrDefault(ByteArray(0))
         synchronized(artworkLock) {
-            cachedArtworkKey = requestedKey
-            cachedArtwork = encoded
+            if (encoded.isNotEmpty()) {
+                cachedArtworkKey = requestedKey
+                cachedArtwork = encoded
+            }
         }
         return encoded
     }

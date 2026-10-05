@@ -13,6 +13,7 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Private complete files only; queued work contains hashes/track IDs, never access tokens. */
 class OfflineStore(private val context: Context) {
@@ -20,6 +21,8 @@ class OfflineStore(private val context: Context) {
     private fun directory(source: PersonalPlexSource) = File(base, scope(source)).apply { mkdirs() }
     private fun index(source: PersonalPlexSource) = File(directory(source), "tracks.json")
     private fun audio(source: PersonalPlexSource, id: String) = File(directory(source), "${digest(id)}.audio")
+    private fun artwork(source: PersonalPlexSource, id: String) = File(directory(source), "${digest(id)}.cover.jpg")
+    private fun artworkAttempt(source: PersonalPlexSource, id: String) = File(directory(source), "${digest(id)}.artwork-attempt")
     internal val cacheSettings get() = QueueCacheSettings(context)
     internal fun connected(): Boolean = context.getSystemService(android.net.ConnectivityManager::class.java).activeNetwork != null
     private fun cacheIndex(source: PersonalPlexSource) = File(directory(source), "cache.json")
@@ -27,7 +30,7 @@ class OfflineStore(private val context: Context) {
     private fun cacheMetadata(source: PersonalPlexSource): List<Song> = runCatching { decodeSongs(JSONArray(cacheIndex(source).takeIf { it.isFile }?.readText() ?: "[]")) }.getOrDefault(emptyList())
     fun cachedSongs(source: PersonalPlexSource): List<Song> = synchronized(lock) { cacheMetadata(source).filter { audio(source, it.id).let { file -> file.isFile && file.length() > 0 } } }
     fun availableSongs(source: PersonalPlexSource): List<Song> = synchronized(lock) { (songs(source) + cachedSongs(source)).distinctBy { it.id } }
-    fun cachedBytes(source: PersonalPlexSource) = cachedSongs(source).sumOf { audio(source, it.id).length() }
+    fun cachedBytes(source: PersonalPlexSource) = cachedSongs(source).sumOf { audio(source, it.id).length() + artwork(source, it.id).length() }
     private fun targets(source: PersonalPlexSource): List<String> = runCatching { val data = JSONArray(targetsFile(source).readText()); (0 until data.length()).map { data.getString(it) } }.getOrDefault(emptyList())
     fun songs(source: PersonalPlexSource): List<Song> = synchronized(lock) {
         metadata(source).filter { audio(source, it.id).let { file -> file.exists() && file.length() > 0 } }
@@ -40,7 +43,13 @@ class OfflineStore(private val context: Context) {
         if ((metadata(source) + cacheMetadata(source)).none { it.id == id }) null
         else audio(source, id).takeIf { it.isFile && it.length() > 0 }?.let { Uri.fromFile(it).toString() }
     }
-    fun bytes(source: PersonalPlexSource) = songs(source).sumOf { audio(source, it.id).length() }
+    fun artworkUri(source: PersonalPlexSource, id: String): String? = synchronized(lock) {
+        if (uri(source, id) == null) null
+        else artwork(source, id).takeIf { it.isFile && it.length() > 0 }?.let { Uri.fromFile(it).toString() }
+    }
+    private fun needsArtwork(source: PersonalPlexSource, id: String): Boolean = artworkUri(source, id) == null &&
+        System.currentTimeMillis() - artworkAttempt(source, id).lastModified() >= ARTWORK_RETRY_MS
+    fun bytes(source: PersonalPlexSource) = songs(source).sumOf { audio(source, it.id).length() + artwork(source, it.id).length() }
     private fun generations(): JSONObject = runCatching { JSONObject(File(base, "generations.json").readText()) }.getOrDefault(JSONObject())
     private fun bump(key: String) {
         base.mkdirs()
@@ -56,7 +65,10 @@ class OfflineStore(private val context: Context) {
         val manager = WorkManager.getInstance(context)
         if (!generations().has(scope(source))) bump(scope(source))
         songs.distinctBy { it.id }.forEach { song ->
-            if (uri(source, song.id) != null) { promote(source, song.id); return@forEach }
+            if (uri(source, song.id) != null) {
+                promote(source, song.id)
+                if (!needsArtwork(source, song.id)) return@forEach
+            }
             val request = OneTimeWorkRequestBuilder<OfflineDownloadWorker>()
                 .setInputData(workDataOf("source" to scope(source), "track" to song.id, "title" to song.title, "generation" to version(source, song.id)))
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build())
@@ -71,24 +83,34 @@ class OfflineStore(private val context: Context) {
         work.tags.firstOrNull { it.startsWith("offline_track:") }?.substringAfter(":")?.let { bump("${tag(source)}:$it") }
         WorkManager.getInstance(context).cancelWorkById(work.id); Unit
     }
-    private fun clean(song: Song) = song.copy(streamUri = null, artworkUri = null, coverArt = "", addedByEmail = "")
+    private fun clean(song: Song): Song {
+        // Keep only the image path, so connected playback can resolve it using the
+        // currently selected endpoint/token. No credentials or old hosts enter the index.
+        val path = song.artworkUri?.let { it.toHttpUrlOrNull()?.encodedPath ?: it }
+            ?.takeIf { it.startsWith("/library/metadata/") && '?' !in it && '#' !in it }
+        return song.copy(streamUri = null, artworkUri = path, coverArt = "", addedByEmail = "")
+    }
+    private fun deleteFiles(source: PersonalPlexSource, id: String) {
+        audio(source, id).delete(); artwork(source, id).delete(); artworkAttempt(source, id).delete()
+    }
     private fun promote(source: PersonalPlexSource, id: String) {
         if (metadata(source).any { it.id == id }) return
         val cached = cachedSongs(source).firstOrNull { it.id == id } ?: return
         writeIndex(source, metadata(source) + cached)
         writeCache(source, cacheMetadata(source).filterNot { it.id == id })
     }
+    internal fun promoteSaved(source: PersonalPlexSource, id: String) = synchronized(lock) { promote(source, id) }
     fun remove(source: PersonalPlexSource, id: String) = synchronized(lock) {
         WorkManager.getInstance(context).cancelUniqueWork(workName(source, id))
         bump(workName(source, id))
         writeIndex(source, metadata(source).filterNot { it.id == id })
-        if (cacheMetadata(source).none { it.id == id }) audio(source, id).delete()
+        if (cacheMetadata(source).none { it.id == id }) deleteFiles(source, id)
     }
     fun clear(source: PersonalPlexSource) = synchronized(lock) {
         cancel(source)
         val saved = metadata(source)
         writeIndex(source, emptyList())
-        saved.filter { song -> cacheMetadata(source).none { it.id == song.id } }.forEach { audio(source, it.id).delete() }
+        saved.filter { song -> cacheMetadata(source).none { it.id == song.id } }.forEach { deleteFiles(source, it.id) }
     }
     fun clearAll() = synchronized(lock) { WorkManager.getInstance(context).cancelAllWorkByTag("offline_music"); base.deleteRecursively(); Unit }
 
@@ -106,8 +128,9 @@ class OfflineStore(private val context: Context) {
         writeJson(targetsFile(source), JSONArray(ids))
         val removed = cacheMetadata(source).filter { it.id !in ids }
         writeCache(source, cacheMetadata(source).filter { it.id in ids })
-        removed.filter { song -> metadata(source).none { it.id == song.id } }.forEach { audio(source, it.id).delete() }
-        desired.filter { uri(source, it.id) == null }.forEach { song ->
+        removed.filter { song -> metadata(source).none { it.id == song.id } }.forEach { deleteFiles(source, it.id) }
+        desired.filter { song -> metadata(source).none { it.id == song.id } &&
+            (uri(source, song.id) == null || needsArtwork(source, song.id)) }.forEach { song ->
             val request = OneTimeWorkRequestBuilder<OfflineDownloadWorker>()
                 .setInputData(workDataOf("source" to scope(source), "track" to song.id, "title" to song.title,
                     "saved" to false, "generation" to version(source, song.id, false)))
@@ -116,6 +139,12 @@ class OfflineStore(private val context: Context) {
                 .addTag(cacheRequestTag(source, song.id)).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
             manager.enqueueUniqueWork(cacheWorkName(source, song.id), ExistingWorkPolicy.KEEP, request)
         }
+        // Repair pre-artwork saved downloads using their own Wi-Fi preference, without
+        // re-downloading audio or making them part of the rolling eviction pool.
+        val savedWifiOnly = context.getSharedPreferences("harmonicast", Context.MODE_PRIVATE)
+            .getString("local.downloadWifiOnly", null) != "false"
+        val missing = songs(source).filter { needsArtwork(source, it.id) }.take(500)
+        if (missing.isNotEmpty()) enqueue(source, missing, savedWifiOnly)
     }
     private fun cacheRequestTag(source: PersonalPlexSource, id: String) = "queue_cache_request:${digest(id)}:${digest(version(source, id, false))}"
     internal fun currentCacheWorks(source: PersonalPlexSource, works: List<WorkInfo>): List<WorkInfo> = synchronized(lock) {
@@ -144,6 +173,25 @@ class OfflineStore(private val context: Context) {
             writeCache(source, cacheMetadata(source).filterNot { it.id == song.id })
         } else writeCache(source, previous.filterNot { it.id == song.id } + clean(song))
     }
+    internal fun saveArtwork(source: PersonalPlexSource, song: Song, bytes: ByteArray?, expectedVersion: String, saved: Boolean) = synchronized(lock) {
+        if (expectedVersion != version(source, song.id, saved) || uri(source, song.id) == null ||
+            (!saved && song.id !in targets(source))) return@synchronized
+        // Backfill a credential-free path even if downloading/extracting pixels failed.
+        val path = clean(song).artworkUri
+        if (path != null) {
+            fun update(items: List<Song>) = items.map { if (it.id == song.id) it.copy(artworkUri = path) else it }
+            writeIndex(source, update(metadata(source))); writeCache(source, update(cacheMetadata(source)))
+        }
+        if (bytes != null && bytes.isNotEmpty() && bytes.size <= MAX_ARTWORK &&
+            base.walkTopDown().filter { it.isFile }.sumOf { it.length() } + bytes.size <= MAX_TOTAL &&
+            (metadata(source).any { it.id == song.id } || cachedBytes(source) + bytes.size <= MAX_CACHE)) {
+            val pending = File(directory(source), "${digest(song.id)}.cover.tmp")
+            try { pending.writeBytes(bytes); check(pending.renameTo(artwork(source, song.id))) }
+            finally { pending.delete() }
+        }
+        artworkAttempt(source, song.id).writeText("")
+        notifyLocalArtworkChanged()
+    }
     private fun writeCache(source: PersonalPlexSource, songs: List<Song>) = writeJson(cacheIndex(source), JSONArray().apply { songs.forEach { put(encodeSong(it)) } })
     private fun writeJson(target: File, data: JSONArray) {
         val pending = File(target.parentFile, target.name + ".tmp")
@@ -158,6 +206,8 @@ class OfflineStore(private val context: Context) {
     companion object {
         private val lock = Any()
         const val MAX_TRACK = 256L * 1024 * 1024
+        const val MAX_ARTWORK = 512 * 1024
+        private const val ARTWORK_RETRY_MS = 6L * 60 * 60 * 1000
         const val MAX_CACHE = 512L * 1024 * 1024
         fun cacheTag(source: PersonalPlexSource) = "queue_cache:${scope(source)}"
         fun cacheWorkName(source: PersonalPlexSource, id: String) = "${cacheTag(source)}:${digest(id)}"
@@ -179,7 +229,15 @@ class OfflineDownloadWorker(context: Context, params: WorkerParameters) : Corout
         val saved = inputData.getBoolean("saved", true)
         val generation = inputData.getString("generation") ?: return@withContext Result.failure()
         if (generation != store.version(source, id, saved)) return@withContext Result.failure()
-        if (store.uri(source, id) != null) { if (saved) store.enqueue(source, listOfNotNull(store.song(source, id)), false); return@withContext Result.success() }
+        if (store.uri(source, id) != null) {
+            val cached = store.song(source, id) ?: return@withContext Result.failure()
+            if (saved) store.promoteSaved(source, id)
+            val song = try { LocalPlexClient(api.storage).track(source, id) ?: cached }
+                catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (_: Exception) { cached }
+            prepareArtwork(api, store, source, song, generation, saved)
+            return@withContext Result.success()
+        }
         val partial = store.partial(source, id, this@OfflineDownloadWorker.id.toString())
         try {
             setProgress(workDataOf("title" to inputData.getString("title"), "bytes" to 0L))
@@ -223,11 +281,24 @@ class OfflineDownloadWorker(context: Context, params: WorkerParameters) : Corout
             if (api.profile.personalSource?.let(OfflineStore::scope) != OfflineStore.scope(source)) return@withContext Result.failure()
             if (isStopped) throw kotlinx.coroutines.CancellationException()
             store.commit(source, song, partial, generation, saved)
+            prepareArtwork(api, store, source, song, generation, saved)
             Result.success()
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: java.io.IOException) { if (runAttemptCount < 3) Result.retry() else failure("Connection lost. Retry this download.") }
         catch (e: Exception) { failure(if (e is IllegalStateException) e.message ?: "Could not save audio" else "Could not download audio. Reconnect to Plex and retry.") }
         finally { partial.delete() }
+    }
+    private suspend fun prepareArtwork(api: AppStorage, store: OfflineStore, source: PersonalPlexSource,
+                                       song: Song, generation: String, saved: Boolean) {
+        try {
+            if (store.artworkUri(source, song.id) != null) return
+            val audioUri = store.uri(source, song.id) ?: return
+            val bytes = OfflineArtwork.load(File(java.net.URI(audioUri)), song.artworkUri?.takeIf { it.startsWith("http") })
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (!isStopped && api.profile.personalSource?.let(OfflineStore::scope) == OfflineStore.scope(source))
+                store.saveArtwork(source, song, bytes, generation, saved)
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { /* Complete audio remains playable when optional artwork fails. */ }
     }
     private fun failure(message: String) = Result.failure(workDataOf("error" to message, "track" to inputData.getString("track"), "title" to inputData.getString("title")))
 }
