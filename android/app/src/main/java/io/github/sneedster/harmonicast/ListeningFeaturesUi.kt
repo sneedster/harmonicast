@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
         }
         SettingsDescription(mode.description)
     }
-    SettingsDescription("Uses bounded library candidates and respects your repeat window. Applies to the next automatic batch; queued requests stay in place. Start your mix after clearing Track Radio to switch from radio.")
+    SettingsDescription("Uses bounded library candidates and respects your repeat window. Applies to the next automatic batch; queued requests stay in place. Start your mix after clearing Artist Radio to switch from radio.")
     remove?.let { preset -> FocusRestoringAlertDialog(onDismissRequest = { remove = null }, title = { Text("Remove ${preset.name}?") },
         text = { Text("Your current mix settings will stay in place.") },
         confirmButton = { TextButton(onClick = { vm.removeMixPreset(preset.id); remove = null }, modifier = Modifier.tvFocusFeedback()) { Text("Remove") } },

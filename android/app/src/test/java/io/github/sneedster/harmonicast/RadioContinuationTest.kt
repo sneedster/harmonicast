@@ -20,13 +20,18 @@ class RadioContinuationTest {
     private fun core(storage: Memory, fetch: suspend (String) -> List<Song>): LocalHarmonicastCore {
         val http = object : PlexHttp {
             override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
-                assertTrue("Radio must not fall back to unrelated library pools: $url", url.contains("/nearest?"))
-                assertTrue(url.contains(if (url.contains("maxDistance=0.5")) "limit=500" else "limit=100"))
+                if (url.endsWith("/library/metadata/10000")) return """{"MediaContainer":{"Metadata":[{"type":"artist","ratingKey":"10000","librarySectionID":"7","title":"Artist"}]}}"""
+                if (!url.contains("/nearest?")) {
+                    val key = url.substringAfterLast('/')
+                    assertTrue(key.matches(Regex("\\d+")))
+                    return """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"$key","librarySectionID":"7","title":"Song $key","grandparentTitle":"Artist","grandparentRatingKey":"10000"}]}}"""
+                }
+                assertTrue(url.contains("limit=500") || url.contains("limit=100"))
                 val tracks = fetch(url)
                 return JSONObject().put("MediaContainer", JSONObject().put("Metadata", JSONArray().apply {
                     tracks.forEach { song -> put(JSONObject().put("type", "track")
                         .put("ratingKey", song.id.substringAfterLast(':')).put("librarySectionID", "7")
-                        .put("title", song.title).put("grandparentTitle", song.artist)
+                        .put("title", song.title).put("grandparentTitle", song.artist).put("distance", 0.01)
                         .put("Media", JSONArray().put(JSONObject().put("Part", JSONArray()
                             .put(JSONObject().put("key", "/part/${song.id.substringAfterLast(':')}")))))) }
                 })).toString()
@@ -55,14 +60,14 @@ class RadioContinuationTest {
         core.queue.clear(); assertEquals("false", storage.read("local.radioActive"))
     }
 
-    @Test fun emptyQueueContinuesFromLastPlayedSongAndSurvivesCoreRecreation() = runBlocking {
+    @Test fun emptyQueueKeepsOriginalSeedAndSurvivesCoreRecreation() = runBlocking {
         val storage = Memory()
         val calls = mutableListOf<String>()
         val fetch: suspend (String) -> List<Song> = { url ->
             calls += url
             when {
-                url.contains("/1/nearest") -> (2..11).map { song(it) }
-                url.contains("/11/nearest") -> listOf(song(100, "Song 1"), song(101, "Song 2")) + (12..21).map { song(it) }
+                url.contains("/1/nearest") && calls.size == 1 -> (2..11).map { song(it) }
+                url.contains("/1/nearest") -> listOf(song(100, "Song 1"), song(101, "Song 2")) + (12..21).map { song(it) }
                 else -> error("Unexpected seed")
             }
         }
@@ -79,7 +84,7 @@ class RadioContinuationTest {
         core = core(storage, fetch)
         assertEquals(song(12).id, core.queue.dequeueWithAutomaticFallback().song!!.id)
         assertEquals(2, calls.size)
-        assertTrue(calls.last().contains("/11/nearest"))
+        assertTrue(calls.last().contains("/1/nearest"))
         assertEquals(9, core.queue.songs().size)
         assertTrue(core.queue.songs().none { it.title in setOf("Song 1", "Song 2") })
     }
@@ -91,7 +96,7 @@ class RadioContinuationTest {
         core.playback.publish(song(1), true, false)
         assertEquals(0, core.queue.radio())
         assertNull(core.queue.dequeueWithAutomaticFallback().song)
-        assertTrue(storage.read(ReplayWindow.STATUS_KEY)!!.contains("No fresh sonic matches"))
+        assertTrue(storage.read(ReplayWindow.STATUS_KEY)!!.contains("No fresh songs from this artist"))
         core.playback.publish(null, false, false)
         fresh = true
         assertEquals(song(2).id, core.queue.dequeueWithAutomaticFallback().song!!.id)
@@ -151,11 +156,11 @@ class RadioContinuationTest {
         core.playback.publish(song(1), true, false)
         TrackRadioSettings(storage).distance = 0.15
         core.queue.radio()
-        assertEquals(listOf("0.15", "0.2", "0.25"), calls.map { it.substringAfter("maxDistance=") })
+        assertEquals(listOf("0.15"), calls.map { it.substringAfter("maxDistance=") })
         calls.clear()
         TrackRadioSettings(storage).distance = 0.10
         core.queue.enableAutomaticPlayback()
-        assertEquals(listOf("0.1", "0.15", "0.2"), calls.map { it.substringAfter("maxDistance=") })
+        assertEquals(listOf("0.1"), calls.map { it.substringAfter("maxDistance=") })
     }
 
     @Test fun sourceResetClearsRadioSessionButKeepsDistancePreference() {
@@ -167,5 +172,38 @@ class RadioContinuationTest {
         assertEquals("", storage.read("local.radioSeed"))
         assertEquals("[]", storage.read("local.radioRecent"))
         assertEquals(0.15, TrackRadioSettings(storage).distance, 0.0)
+    }
+
+    @Test fun startingArtistRadioReplacesTheAutomaticTailButKeepsManualRequests() = runBlocking {
+        val storage = Memory()
+        storage.write(mapOf("local.queue" to JSONArray().apply {
+            put(encodeSong(song(50)))
+            put(encodeSong(song(51).copy(isManual = false)))
+        }.toString()))
+        val core = core(storage) { (2..11).map { song(it) } }
+        core.playback.publish(song(1), true, false)
+        assertEquals(10, core.queue.radio())
+        val queued = core.queue.songs()
+        assertEquals(song(50).id, queued.first().id)
+        assertTrue(queued.first().isManual)
+        assertFalse(queued.any { it.id == song(51).id })
+        assertEquals(10, queued.count { it.isRadio })
+    }
+
+    @Test fun detourDuringAStationReturnsToTheOriginalArtistAndTrack() = runBlocking {
+        val storage = Memory()
+        val calls = mutableListOf<String>()
+        val core = core(storage) { url ->
+            calls += url
+            if (url.contains("maxDistance=0.5")) (2..14).map { song(it) } else (2..11).map { song(it) }
+        }
+        core.playback.publish(song(1), true, false)
+        core.queue.radio()
+        core.playback.publish(core.queue.dequeue().song!!, true, true)
+        assertEquals(3, core.queue.somewhereDifferent())
+        repeat(3) { core.playback.publish(core.queue.dequeue().song!!, true, true) }
+        core.queue.enableAutomaticPlayback()
+        assertTrue(calls.last().contains("/1/nearest?"))
+        assertEquals(song(1).id, decodeSong(JSONObject(storage.read("local.radioSeed")!!)).id)
     }
 }

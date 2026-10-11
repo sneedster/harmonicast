@@ -19,27 +19,37 @@ class TrackRadioTest {
         values["local.radioDistance"] = "NaN"
         assertEquals(0.25, TrackRadioSettings(storage).distance, 0.0)
     }
-    @Test fun wideningCountsDistinctSongsAndStopsAtTen() = runBlocking {
-        val calls = mutableListOf<Double>()
-        val selected = radioBatch(current, emptyList(), startDistance = 0.10) { distance ->
-            calls += distance
-            val count = if (distance < 0.15) 4 else 12
-            (1..count).flatMap { n -> (1..4).map { copy -> Song("$n-$copy", "Track $n", "Artist") } }
-        }
-        assertEquals(listOf(0.10, 0.15), calls)
-        assertEquals(12, selected.size)
+    private fun candidate(id: String, artist: String, distance: Double, album: String = id) = ArtistRadioCandidate(
+        Song(id, "Track $id", artist, album, streamUri = "https://plex/part/$id", albumArtist = artist), distance,
+    )
+
+    @Test fun artistAndSoundAreBothRequiredWithoutWideningOrUnrelatedFallback() {
+        val close = candidate("close", "Related", 0.10)
+        val far = candidate("far", "Related", 0.26)
+        val unrelated = candidate("unrelated", "Other", 0.01)
+        val missing = candidate("missing", "Related", Double.NaN)
+        val unplayable = candidate("unplayable", "Related", 0.05).let { it.copy(song = it.song.copy(streamUri = null)) }
+        assertEquals(listOf(close.song), artistRadioBatch(current, emptyList(), setOf("Artist", "related"),
+            listOf(far, unrelated, missing, unplayable, close), 0.25))
+        assertEquals(emptyList<Song>(), artistRadioBatch(current, emptyList(), setOf("Artist", "Related"),
+            listOf(far, unrelated), 0.25))
     }
 
-    @Test fun wideningHasCeilingAndRestartsForEachBatch() = runBlocking {
-        val calls = mutableListOf<Double>()
-        repeat(2) {
-            val selected = radioBatch(current, emptyList()) { distance ->
-                calls += distance
-                listOf(Song("one", "Track", "Artist"))
-            }
-            assertEquals(1, selected.size)
-        }
-        assertEquals(listOf(0.25, 0.30, 0.35, 0.25, 0.30, 0.35), calls)
+    @Test fun selectionBalancesArtistsAndAlbumsWhileKeepingClosestSongsWithinEachArtist() {
+        val candidates = listOf(candidate("a1", "Artist", 0.01, "A"), candidate("a2", "Artist", 0.02, "A"),
+            candidate("a3", "Artist", 0.05, "B"), candidate("b1", "Related", 0.08, "C"), candidate("b2", "Related", 0.09, "D"))
+        val selected = artistRadioBatch(current, emptyList(), setOf("Artist", "Related"), candidates, 0.25)
+        assertEquals(listOf("b1", "a1", "b2", "a3", "a2"), selected.map { it.id })
+        assertEquals(selected.size, selected.map { it.id }.distinct().size)
+    }
+
+    @Test fun selectionExcludesRecentAliasesAndCapsTheBatchAtTwenty() {
+        val recent = candidate("old", "Related", 0.10).song
+        val alias = ArtistRadioCandidate(recent.copy(id = "alias"), 0.02)
+        val candidates = listOf(alias) + (1..30).map { candidate("$it", "Related", 0.1) }
+        val selected = artistRadioBatch(current, listOf(recent), setOf("Related"), candidates, 0.25)
+        assertEquals(20, selected.size)
+        assertEquals(false, selected.any { it.title == recent.title })
     }
 
     private val current = Song("seed", "Seed", "Artist")

@@ -198,9 +198,12 @@ class LocalHarmonicastCore(
             val additions = distinctRadioTracks(current, queued + near + readSongs("local.radioRecent"), far)
                 .shuffled().take(3).map { it.copy(isManual = false, isRadio = true) }
             if (additions.isEmpty() || !sourceStillSelected()) return@withLock 0
+            val stationSeed = if (storage.read("local.radioActive") == "true")
+                storage.read("local.radioSeed")?.takeIf { it.isNotBlank() } ?: encodeSong(current).toString()
+                else encodeSong(current).toString()
             // Preserve requests; this brief detour replaces only the automatic tail.
             writeSongs("local.queue", queued.filter { it.isManual } + additions)
-            storage.write(mapOf("local.offlinePlayback" to "false", "local.radioActive" to "true", "local.radioReturnSeed" to encodeSong(current).toString()))
+            storage.write(mapOf("local.offlinePlayback" to "false", "local.radioActive" to "true", "local.radioSeed" to stationSeed, "local.radioReturnSeed" to stationSeed))
             rememberRadioSong(current)
             LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
             additions.size
@@ -208,17 +211,17 @@ class LocalHarmonicastCore(
         override suspend fun radio(): Int = QueueTransactions.mutex.withLock {
             val current = playback.snapshot().nowPlaying.song ?: return@withLock 0
             val queued = songs()
-            val additions = radioBatch(current, queued + readSongs("local.radioRecent"), TrackRadioSettings(storage).distance) { distance ->
-                plex.related(source, current.id, limit = 100, maxDistance = distance)
-            }
+            val station = storage.read("local.radioSeed")?.takeIf { it.isNotBlank() }?.let { decodeSong(JSONObject(it)) }
+            if (storage.read("local.radioActive") == "true" && station?.id == current.id && queued.any { it.isRadio }) return@withLock 0
+            val requests = queued.filter { it.isManual }
+            val additions = plex.artistRadio(source, current, requests + readSongs("local.radioRecent"), TrackRadioSettings(storage).distance)
                 .map { it.copy(isManual = false, isRadio = true) }
             if (!sourceStillSelected()) return@withLock 0
             storage.write(mapOf("local.offlinePlayback" to "false", "local.radioReturnSeed" to "", "local.radioActive" to "true", "local.radioSeed" to encodeSong(current).toString()))
             rememberRadioSong(current)
-            if (additions.isNotEmpty()) {
-                writeSongs("local.queue", queued + additions)
-                LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
-            }
+            writeSongs("local.queue", requests + additions)
+            storage.write(mapOf(ReplayWindow.STATUS_KEY to if (additions.isEmpty()) ARTIST_RADIO_EMPTY_MESSAGE else ""))
+            LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
             return@withLock additions.size
         }
         override suspend fun enableAutomaticPlayback() {
@@ -230,17 +233,16 @@ class LocalHarmonicastCore(
                 if (storage.read("local.radioActive") != "true") return@withLock false
                 if (songs().isNotEmpty()) return@withLock true
                 val seed = storage.read("local.radioReturnSeed")?.takeIf { it.isNotBlank() }?.let { decodeSong(JSONObject(it)) }
-                    ?: playback.snapshot().nowPlaying.song
                     ?: storage.read("local.radioSeed")?.takeIf { it.isNotBlank() }?.let { decodeSong(JSONObject(it)) }
+                    ?: playback.snapshot().nowPlaying.song
                 val additions = if (seed == null) emptyList() else
-                    radioBatch(seed, readSongs("local.radioRecent"), TrackRadioSettings(storage).distance) { distance ->
-                        plex.related(source, seed.id, limit = 100, maxDistance = distance)
-                    }
+                    plex.artistRadio(source, seed, readSongs("local.radioRecent"), TrackRadioSettings(storage).distance)
                         .map { it.copy(isManual = false, isRadio = true) }
+                if (!sourceStillSelected()) return@withLock true
                 writeSongs("local.queue", additions)
                 storage.write(mapOf("local.radioReturnSeed" to ""))
                 storage.write(mapOf(ReplayWindow.STATUS_KEY to if (additions.isEmpty())
-                    "No fresh sonic matches found. Start Track Radio from another song or clear the queue to leave radio." else ""))
+                    ARTIST_RADIO_EMPTY_MESSAGE else ""))
                 LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
                 true
             }
@@ -263,7 +265,8 @@ class LocalHarmonicastCore(
                     }.let { PlexJukeboxPools(it.filter { song -> (song.rating ?: 0.0) > 1.0 }, it.filter { song -> song.rating == null }, it) }
                 val share = ratedTrackShare()
                 val start = storage.read("local.jukeboxMixIndex")?.toIntOrNull()?.coerceAtLeast(0) ?: 0
-                val selection = chooseJukeboxTracks(pools, needed, share, start, MusicTuningStore(storage).read())
+                val selection = chooseJukeboxTracks(pools, needed, share, start, MusicTuningStore(storage).read(),
+                    existingSongs = listOfNotNull(state.nowPlaying.song) + waiting)
                 // Preserve requests added during candidate loading.
                 QueueTransactions.mutex.withLock {
                 // A user may have started radio while the general mix was loading.
@@ -336,7 +339,8 @@ class LocalHarmonicastCore(
             storage.write(mapOf("local.playback" to value.toString()))
             if (displayedSong != null && isPlaying) QueueTransactions.mutex.withLock {
                 if (storage.read("local.radioActive") == "true") {
-                    storage.write(mapOf("local.radioSeed" to encodeSong(displayedSong).toString()))
+                    if (storage.read("local.radioSeed").isNullOrBlank())
+                        storage.write(mapOf("local.radioSeed" to encodeSong(displayedSong).toString()))
                     rememberRadioSong(displayedSong)
                 }
             }
@@ -479,19 +483,27 @@ internal fun chooseJukeboxTracks(
     ratedShare: Int,
     mixIndex: Int,
     tuning: MusicTuning = MusicTuning(),
+    existingSongs: List<Song> = emptyList(),
     random: () -> Double = Math::random,
 ): JukeboxSelection {
     val chosen = mutableListOf<Song>()
     val used = mutableSetOf<String>()
+    // Rolling cache refills often select just one song. Keep diversity across
+    // the current listening window and new batch whenever the pools allow it.
+    val albums = existingSongs.mapTo(mutableSetOf(), ::albumKey)
     var cursor = mixIndex.coerceAtLeast(0)
     val ratedSlots = ratedShare.coerceIn(0, 10)
-    fun pick(pool: List<Song>): Song? {
-        val candidates = pool.filterNot { it.id in used }
+    fun pick(pool: List<Song>, preferUnusedAlbums: Boolean): Song? {
+        val eligible = pool.filterNot { it.id in used }
+        if (eligible.isEmpty()) return null
+        val candidates = if (preferUnusedAlbums) eligible.filterNot { albumKey(it) in albums } else eligible
         if (candidates.isEmpty()) return null
         val weighted = candidates.map { it to selectionWeight(it.rating, tuning) }
         var target = random().coerceIn(0.0, 0.999999) * weighted.sumOf { it.second }
-        return weighted.firstOrNull { (_, weight) -> target.also { target -= weight } <= weight }?.first
+        val song = weighted.firstOrNull { (_, weight) -> target.also { target -= weight } <= weight }?.first
             ?: weighted.last().first
+        albums += albumKey(song)
+        return song
     }
     while (chosen.size < count) {
         val slot = cursor % 10
@@ -504,9 +516,15 @@ internal fun chooseJukeboxTracks(
             10 -> pools.fallback.filter { (it.rating ?: 0.0) > 1.0 }
             else -> pools.fallback
         }
-        val song = pick(primary)
-            ?: (if (ratedSlots in 1..9) pick(secondary) else null)
-            ?: pick(strictFallback)
+        // Look for a fresh album in every allowed pool before relaxing album
+        // avoidance. Try same-category fallback tracks first to preserve the mix.
+        val primaryFallback = strictFallback.filter {
+            if (exploration) it.rating == null else (it.rating ?: 0.0) > 1.0
+        }
+        val allowedPools = listOf(primary, primaryFallback) +
+            (if (ratedSlots in 1..9) listOf(secondary) else emptyList()) + listOf(strictFallback)
+        val song = allowedPools.firstNotNullOfOrNull { pick(it, preferUnusedAlbums = true) }
+            ?: allowedPools.firstNotNullOfOrNull { pick(it, preferUnusedAlbums = false) }
             ?: break
         chosen += song
         used += song.id
@@ -514,6 +532,17 @@ internal fun chooseJukeboxTracks(
     }
     return JukeboxSelection(chosen, cursor)
 }
+
+/**
+ * Album identity for batch spreading. Legacy queue metadata saved before Plex
+ * track/album artist separation has no album, so those tracks keep their own
+ * identity instead of collapsing into one "empty album" group.
+ */
+internal fun albumKey(song: Song): String =
+    if (song.album.isBlank()) song.id
+    else "${song.albumArtist ?: ""}\u0000${song.album}".lowercase()
+
+internal const val ARTIST_RADIO_EMPTY_MESSAGE = "No fresh songs from this artist or related artists match the starting song's sound. Start Artist Radio from another song, adjust the sound match range, or clear the queue to leave radio."
 
 internal fun adjustPersonalRating(rating: Double?, event: String, progress: Double, viewCount: Int,
     tuning: MusicTuning = MusicTuning()): Double {

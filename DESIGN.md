@@ -300,23 +300,43 @@ so one unavailable source does not discard successful categories.
 
 Acquisition submissions allow three minutes for source validation and show in-progress feedback; uncertain responses direct listeners to request history. Acquisition recent-library checks use the Plex album date index and include all fetched tracks, avoiding the expensive global track-date sort.
 
-## Continuous sonic Track Radio
+## Artist Radio with sound matching
 
-SettingsScreen owns a Track Radio category using existing MaterialTheme text,
-SettingsDescription, Material Slider, and tvFocusFeedback controls. The starting
-sonic distance is a device-local host preference, 0.05–0.30 in 0.01 increments,
-default 0.25. Minus/plus buttons provide precise TV and non-drag operation; the
-slider saves on completion. Changes affect the next batch, not queued songs.
-No palette, typography, or global navigation conventions change.
+SettingsScreen owns Artist Radio using the existing MaterialTheme text,
+SettingsDescription, Material Slider, and tvFocusFeedback controls. Sound match
+range retains the device-local host preference, 0.05–0.30 in 0.01 increments,
+default 0.25. Minus/plus buttons provide TV and non-drag operation; the slider
+saves on completion. Changes affect the next batch, not queued songs. No palette,
+typography, or navigation owner changes.
 
-TrackRadioSettings owns persistence/validation; radioBatch owns candidate
-selection and bounded widening. Start at the saved distance for each batch,
-request 100 candidates, filter seed/queue/recent artist-title duplicates, and
-queue up to 20 tracks. If fewer than ten remain, widen by 0.05 at most twice.
-The queue authority persists radio mode and the last 100 played tracks; depletion
-continues from the last played song. Empty sonic results stay empty and report
-through the existing automaticMixStatus text. Clear queue/source reset ends the
-radio session. The preference remains device-local across source resets.
+LocalPlexClient intersects the starting performer's direct Similar metadata with
+up to 500 sonic candidates from that original track. Compilation seeds resolve
+the actual track artist instead of Various Artists. Candidates must belong to the
+selected library, be playable, and have a finite distance within the saved range.
+Missing artist relationships permit only the seed performer; no genre or unrelated
+library fallback is added. The range never widens automatically. Plex's observed
+metadata exposes sonic distance but no tempo/energy values: matching feel is best
+effort, with no strict BPM guarantee. Settings state this limitation plainly.
+
+artistRadioBatch excludes seed/queue/recent artist-title aliases, balances artists,
+and prefers albums absent from the listening window, choosing close matches within
+each artist. It queues up to 20 tracks and allows a short or empty batch rather
+than relaxing the artist or sound requirements. Starting radio preserves manual
+requests and replaces the previous automatic tail. Repeating the same start while
+its radio songs are queued is idempotent, with existing ready feedback.
+
+The queue authority persists the original seed across playback, manual requests,
+depletion, process recreation, and explicit detours; it remembers the last 100
+played tracks separately. Empty results report through automaticMixStatus; clear
+or source reset ends the station. The preference survives source resets. Existing
+phone/TV radio buttons, Media3 custom action, and settings all say Artist Radio;
+transport action IDs remain compatible.
+
+Canonical owners: SettingsScreen owns navigation/scrolling and shared controls;
+HarmonicastViewModel owns pending/notice/error feedback; LocalHarmonicastCore owns
+queue state and cancellation/source guards. SettingsScreenTest checks the sound
+range and recovery controls; ArtistRadioClientTest, TrackRadioTest, and
+RadioContinuationTest verify selection, transport, exclusions, and session state.
 
 ## Phone now-playing layout — v1.1.14
 
@@ -333,7 +353,7 @@ and existing transport components remain the visual owners.
 ## Android Auto track ratings
 
 HarmonicastMediaService owns the Media3 custom actions. Thumbs up/down precede
-Track Radio and Clear queue; Android Auto owns placement and may use More.
+Artist Radio and Clear queue; Android Auto owns placement and may use More.
 Reuse core.guests.vote so each press changes Plex by one point and thumbs down
 retains the existing automatic-track skip rule. Disable rating actions without a
 current track or usable personal Plex source; the core rechecks rating capability.
@@ -426,7 +446,7 @@ continue to use the same ViewModel actions and authenticated MediaController.
 ## Listening features and demoscene backgrounds
 
 Home offers automatic mix and the three rediscovery modes in matching square
-cards: two columns on phones and four on wide screens. Track Radio starts from
+cards: two columns on phones and four on wide screens. Artist Radio starts from
 Now Playing, where its current-song context is visible; it has no Home panel.
 Each square samples up to four album covers from eligible tracks for that mix.
 Dark shading protects the titles; palette gradients and icons remain visible when
@@ -443,7 +463,14 @@ Settings > Automatic mix uses existing RemoteTextField, Material buttons,
 SettingsDescription, tvFocusFeedback, and FocusRestoringAlertDialog for removal.
 Home's rediscovery actions preserve manual requests while replacing the automatic
 tail and ending the previous radio session. Bounded candidate reads respect the
-repeat window and report an empty mix rather than silently broadening it.
+repeat window and report an empty mix rather than silently broadening it. Plex
+re-randomizes `sort=random` for every request, so each random read is a bounded
+sample rather than a page of a stable shuffle. Oldest-first fallback reads use
+stable pages. Automatic batches
+prefer albums absent from the current song, upcoming queue, and new selections,
+including single-track rolling-cache top-ups. The picker checks all eligible
+pools before repeating an album, trying fallback tracks in the requested rating
+category first. Album repeats still fill the queue when no other album is available.
 
 SoundProfileStore uses the existing excluded device_equalizer preferences. Settings
 > Equalizer keeps one DSP owner and adds named snapshots of all bands, preamp,
@@ -495,6 +522,6 @@ PlayerPalette roles. Composition disposal turns off sampling.
 
 Take me somewhere different uses the queue owner and keeps manual requests first.
 It chooses up to three nonduplicate sonic candidates outside the nearest 100,
-using a wider bounded Plex request, then resumes from the original radio seed
-with the saved distance. Clear queue ends the detour. No saved radio preference
+using a wider bounded Plex request, then resumes the fixed Artist Radio seed
+with the saved sound match range. Clear queue ends the detour. No saved radio preference
 or rating consent changes. Plex sonic analysis remains a prerequisite.

@@ -722,7 +722,7 @@ class HarmonicastViewModel : ViewModel() {
         try {
             TrackRadioSettings(api.storage).distance = distance
             trackRadioDistance = TrackRadioSettings(api.storage).distance
-        } catch (e: Exception) { error = e.message ?: "Could not save Track Radio distance" }
+        } catch (e: Exception) { error = e.message ?: "Could not save Artist Radio sound match range" }
     }
 
     fun saveReplayWindow(days: Int) {
@@ -829,15 +829,27 @@ class HarmonicastViewModel : ViewModel() {
         }
     }
 
+    var radioBusy by mutableStateOf(false)
+        private set
+
     fun queueSimilar() {
+        if (!isActivePlayer || radioBusy) return
+        radioBusy = true
+        val captured = core
         viewModelScope.launch {
             try {
-                val added = core.queue.radio()
-                if (added > 0) showTemporaryNotice("Track Radio ready · $added songs queued")
-                else error = "No Track Radio songs were found"
+                val added = captured.queue.radio()
+                if (captured !== core) return@launch
+                if (added > 0) showTemporaryNotice("Artist Radio ready · $added songs queued")
+                else if (captured.queue.songs().any { it.isRadio }) showTemporaryNotice("Artist Radio is already ready")
+                else error = ARTIST_RADIO_EMPTY_MESSAGE
                 refresh()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                error = e.message ?: "Could not queue Track Radio"
+                if (captured === core) error = e.message ?: "Could not queue Artist Radio"
+            } finally {
+                radioBusy = false
             }
         }
     }
@@ -1458,8 +1470,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     if (vm.isHost && vm.nowPlaying.song != null) {
-                        IconButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = "Start Track Radio")
+                        IconButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer && !vm.radioBusy, modifier = Modifier.tvFocusFeedback()) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = "Start Artist Radio")
                         }
                     }
                     IconButton(onClick = { vm.refresh() }, modifier = Modifier.tvFocusFeedback()) {

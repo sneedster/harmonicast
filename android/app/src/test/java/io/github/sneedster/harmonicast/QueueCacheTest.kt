@@ -133,6 +133,38 @@ class QueueCacheTest {
         assertEquals(song(99).id, core.queue.songs().first().id)
         assertEquals(12, core.queue.songs().size)
     }
+    @Test fun singleTrackTopUpAvoidsBothCurrentAndQueuedAlbums() = runBlocking {
+        store.cacheSettings.count = 3
+        for (blockedAlbumInQueue in listOf(false, true)) {
+            val api = AppStorage(context.getSharedPreferences("album-refill-$blockedAlbumInQueue", Context.MODE_PRIVATE), context)
+            api.profile.savePersonalSource(source)
+            api.storage.write(mapOf("local.ratedTrackShare" to "10"))
+            val current = song(1).copy(album = if (blockedAlbumInQueue) "C" else "A")
+            val waiting = song(2).copy(album = if (blockedAlbumInQueue) "A" else "C", isManual = false)
+            api.storage.write(mapOf("local.queue" to org.json.JSONArray().put(encodeSong(waiting)).toString()))
+            val http = object : PlexHttp {
+                override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+                    val query = java.net.URLDecoder.decode(url, "UTF-8")
+                    val entries = org.json.JSONArray()
+                    if (!query.contains("userRating=-1")) {
+                        val ratedPool = query.contains("userRating>=1")
+                        val id = if (ratedPool) 20 else 21
+                        entries.put(org.json.JSONObject()
+                            .put("ratingKey", id.toString()).put("type", "track").put("librarySectionID", "7")
+                            .put("title", "Track $id").put("grandparentTitle", "Artist")
+                            .put("parentTitle", if (ratedPool) "A" else "B").put("userRating", 8)
+                            .put("Media", org.json.JSONArray().put(org.json.JSONObject().put("Part", org.json.JSONArray()
+                                .put(org.json.JSONObject().put("key", "/audio/$id"))))))
+                    }
+                    return org.json.JSONObject().put("MediaContainer", org.json.JSONObject().put("Metadata", entries)).toString()
+                }
+            }
+            val core = LocalHarmonicastCore(source, api.storage, LocalPlexClient(api.storage, http), store)
+            core.playback.publish(current, true, true)
+            core.queue.enableAutomaticPlayback()
+            assertEquals(listOf(waiting.id, "plex:cache-machine:21"), core.queue.songs().map { it.id })
+        }
+    }
     @Test fun fullCacheBudgetRejectsNewAudioWithoutLosingPlayableFiles() {
         val tracks = (1..3).map(::song)
         store.syncQueueCache(source, tracks)

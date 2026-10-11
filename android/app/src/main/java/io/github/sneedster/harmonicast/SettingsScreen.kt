@@ -35,7 +35,7 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
     PLAYBACK("Playback", Icons.Default.PlayCircle),
     EQUALIZER("Equalizer", Icons.Default.GraphicEq),
     MIX("Automatic mix", Icons.Default.Shuffle),
-    RADIO("Track Radio", Icons.Default.Radio),
+    RADIO("Artist Radio", Icons.Default.Radio),
     RATINGS("Automatic ratings", Icons.Default.Star),
     ACQUISITION("Music acquisition", Icons.Default.CloudDownload),
     PLEX("Plex account", Icons.Default.AccountCircle),
@@ -98,7 +98,7 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
                                 SettingsCategory.PLAYBACK -> if (television) "Playback on this TV" else if (vm.keepScreenOnWhileCharging) "Stay awake while charging" else "Screen & background playback"
                                 SettingsCategory.EQUALIZER -> "Shape the sound on this device"
                                 SettingsCategory.MIX -> "${vm.ratedTrackShare} rated / ${10 - vm.ratedTrackShare} unrated · ${selectionLabels[vm.musicTuning.selection]}"
-                                SettingsCategory.RADIO -> "Sonic distance ${String.format(Locale.ROOT, "%.2f", vm.trackRadioDistance)}"
+                                SettingsCategory.RADIO -> "Sound match range ${String.format(Locale.ROOT, "%.2f", vm.trackRadioDistance)}"
                                 SettingsCategory.RATINGS -> if (!vm.automaticPlexRatings) "Off" else if (vm.musicTuning.defaultRatings) "On · Default tuning" else "On · Custom tuning"
                                 SettingsCategory.ACQUISITION -> "Connect an existing MusicGrabber service"
                                 SettingsCategory.PLEX -> vm.plexSourceLabel.ifBlank { "Connect your music library" }
@@ -231,27 +231,27 @@ private val strengthLabels = listOf("Off", "Half", "Normal", "Strong", "Double")
 
 @Composable internal fun TrackRadioSettingsContent(distance: Double, enabled: Boolean, save: (Double) -> Unit) {
     var draft by remember(distance) { mutableFloatStateOf(distance.toFloat()) }
-    Text("Starting sonic distance", style = MaterialTheme.typography.titleMedium)
-    SettingsDescription("Find songs by how they sound in your Plex library. Lower values keep matches closer; higher values allow more variety.")
+    Text("Sound match range", style = MaterialTheme.typography.titleMedium)
+    SettingsDescription("Mix the starting artist with related artists from your Plex library, keeping close to the starting song’s sound. Lower values keep sound matches closer; higher values allow more variety.")
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedIconButton(onClick = { save(distance - 0.01) }, enabled = enabled && distance > 0.05, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Remove, "Decrease sonic distance") }
+        OutlinedIconButton(onClick = { save(distance - 0.01) }, enabled = enabled && distance > 0.05, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Remove, "Decrease sound match range") }
         Text(String.format(Locale.ROOT, "%.2f", draft), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-        OutlinedIconButton(onClick = { save(distance + 0.01) }, enabled = enabled && distance < 0.30, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Add, "Increase sonic distance") }
+        OutlinedIconButton(onClick = { save(distance + 0.01) }, enabled = enabled && distance < 0.30, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Add, "Increase sound match range") }
     }
     Slider(value = draft, onValueChange = { draft = it }, onValueChangeFinished = {
         save(draft.toDouble())
         draft = distance.toFloat()
     }, valueRange = 0.05f..0.30f, steps = 24, enabled = enabled,
-        modifier = Modifier.fillMaxWidth().tvFocusFeedback().semantics { contentDescription = "Starting sonic distance" })
+        modifier = Modifier.fillMaxWidth().tvFocusFeedback().semantics { contentDescription = "Sound match range" })
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text("Close matches", style = MaterialTheme.typography.bodySmall)
         Text("More variety", style = MaterialTheme.typography.bodySmall)
     }
-    SettingsDescription("If fewer than 10 distinct songs remain, radio widens by 0.05, up to twice. Each new batch starts at your chosen distance and queues up to 20 songs. At ${String.format(Locale.ROOT, "%.2f", distance)}, the widest attempt is ${String.format(Locale.ROOT, "%.2f", distance + 0.10)}.")
-    SettingsDescription("When the queue ends, radio follows the last song played. It avoids the last 100 songs played during radio and keeps a shorter queue if there are not enough fresh matches. Clear the queue to end radio.")
-    SettingsDescription("Changes apply to the next batch. Songs already queued stay in place. Default: 0.25. Distance is not a percentage.")
-    OutlinedButton(onClick = { save(0.25) }, enabled = enabled && distance != 0.25, modifier = Modifier.tvFocusFeedback()) { Text("Restore default distance") }
-    if (!enabled) SettingsDescription("Only the host can change Track Radio settings for this device.")
+    SettingsDescription("The sound match range stays fixed; radio never widens it automatically to fill the queue. Each batch queues up to 20 distinct songs, spreading artists and albums where possible.")
+    SettingsDescription("Radio stays anchored to the artist and song you started from. It avoids the last 100 songs played during radio and keeps a shorter queue if there are not enough fresh matches. Clear the queue to end radio.")
+    SettingsDescription("Sound matching is best effort, not an exact tempo or energy filter. Changes apply to the next batch. Songs already queued stay in place. Default: 0.25. The range is not a percentage.")
+    OutlinedButton(onClick = { save(0.25) }, enabled = enabled && distance != 0.25, modifier = Modifier.tvFocusFeedback()) { Text("Restore default range") }
+    if (!enabled) SettingsDescription("Only the host can change Artist Radio settings for this device.")
 }
 private val selectionLabels = listOf("Equal chance", "Mild", "Normal", "Strong", "Very strong")
 
@@ -271,14 +271,14 @@ private val selectionLabels = listOf("Equal chance", "Mild", "Normal", "Strong",
     val tuning = vm.musicTuning
     SteppedSetting("Avoid recent repeats", "Keep songs out of the automatic mix after they were played or skipped. Uses Plex last-played dates plus listening on this device.",
         ReplayWindow.DAY_OPTIONS.indexOf(vm.replayWindowDays), ReplayWindow.LABELS, vm.isPersonalMode && vm.isHost) { vm.saveReplayWindow(ReplayWindow.DAY_OPTIONS[it]) }
-    SettingsDescription("Default: 1 week. Applies to automatic songs already queued as they come up. Explicit requests, Track Radio, and Previous still work. Skips in other apps are only known when Plex records them.")
+    SettingsDescription("Default: 1 week. Applies to automatic songs already queued as they come up. Explicit requests, Artist Radio, and Previous still work. Skips in other apps are only known when Plex records them.")
     if (vm.automaticMixStatus.isNotBlank()) SettingsDescription(vm.automaticMixStatus)
     HorizontalDivider()
     SteppedSetting("Rated-track share", "Choose how many of every ten automatic picks come from rated tracks. The rest explore unrated tracks.",
         vm.ratedTrackShare, (0..10).map { when (it) { 0 -> "All unrated"; 10 -> "All rated"; else -> "$it rated · ${10-it} unrated" } }, vm.isHost && !vm.settingsSaving) { vm.saveRatedTrackShare(it, announce = false) }
     HorizontalDivider()
     SteppedSetting("Prefer higher ratings", "Choose how strongly higher ratings are favored within each candidate pool. Equal chance gives every candidate the same weight.", tuning.selection, selectionLabels, vm.isHost && vm.isPersonalMode) { vm.saveMusicTuning(tuning.copy(selection = it)) }
-    SettingsDescription("Changes apply to the next automatic batch. Tracks already queued stay in place. Track Radio and manual requests use their existing order.")
+    SettingsDescription("Changes apply to the next automatic batch. Tracks already queued stay in place. Artist Radio and manual requests use their existing order.")
     SettingsDescription("Rated candidates above 1 remain eligible. This preference is separate from the rated/unrated balance and works even when automatic Plex ratings are off.")
     val ratio = selectionWeight(8.0, tuning) / selectionWeight(4.0, tuning)
     SettingsDescription("Example: a track rated 8 has ${decimal(ratio)}× the selection weight of a track rated 4 in the same pool. These are relative weights, not guaranteed library-wide probabilities.")

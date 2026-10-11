@@ -5,7 +5,7 @@ The public release line starts at v1.1.0; v1.1.1 adds singles and EPs to artist 
 
 ## Product scope
 
-Preserve weighted automatic mixes, adaptive ratings, Track Radio, request-first
+Preserve weighted automatic mixes, adaptive ratings, Artist Radio, request-first
 queues, guest fairness and voting, nearby rooms, browser guest controls and displays,
 native playback transfer and take-back, shared read-only Plex libraries, and Android Auto.
 Plex is the supported playback source. Optional MusicGrabber acquisition is implemented in v1.1.9
@@ -68,16 +68,13 @@ and prolonged background scheduling still need device acceptance. See
 
 ## Ongoing quality
 
-- Track Radio stays within Plex and uses sonic track similarity (`metadata/nearest`),
-  not similar-artist recommendations. Artist/title deduplication now excludes album
-  copies of the seed, queued tracks, and other suggestions; a short result stays short.
-  Continuous radio now refills from the last played track, excludes the last 100
-  radio-session plays, and requests 100 candidates for up to 20 distinct picks.
-  Settings > Track Radio controls the starting distance (default 0.25); batches
-  with fewer than ten picks widen by 0.05 at most twice, then keep a shorter queue.
-  Each batch resets to the saved distance. Clear queue ends radio mode.
-  Shipped in the locally installed v1.1.14 Pixel build; live listening acceptance is pending.
-  See the [live sonic-distance experiment](docs/experiments/sonic-distance-2026-09-16.md).
+- Artist Radio mixes the starting performer with directly related artists and
+  filters those candidates by sonic similarity to the original track. It balances
+  artists/albums, excludes duplicate copies and the last 100 played tracks, and
+  preserves the original seed across refills and restarts. The sound match range
+  stays fixed; sparse matches produce short queues. Plex metadata inspected on
+  2026-10-10 exposed no tempo/energy values, so this is best-effort feel matching,
+  not a strict BPM filter. Physical listening acceptance remains pending.
 
 - Keep phone and TV browsing responsive, with bounded queries, pagination and retained scroll position.
 - Maintain the Nocturne design and persistent Nocturne, Aurora and Ember palettes.

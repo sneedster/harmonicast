@@ -419,12 +419,13 @@ class LocalPlexClient(
         val bounded = limit.coerceIn(1, 100)
         suspend fun pool(filter: String, category: (Song) -> Boolean): List<Song> {
             val base = "/library/sections/${source.libraryKey}/all?type=10"
+            // Random ordering is regenerated per request; take one bounded sample.
             val random = songs(source, serverContainer(source.baseUrl, source.token,
                 "$base&sort=random&limit=$bounded&X-Plex-Container-Size=$bounded$filter"))
             val candidates = random.filter { category(it) && eligible(it) }.associateByTo(linkedMapOf(), Song::id)
             if (candidates.size >= minOf(5, bounded) || random.size < bounded) return candidates.values.toList()
-            // A random sample can be dominated by recent plays. Top up from oldest
-            // candidates with bounded, stable pages; never relax the replay cutoff.
+            // A random sample can be dominated by recent plays. Top up with oldest
+            // candidates from bounded, stable pages; never relax the replay cutoff.
             for (page in 0 until 4) {
                 val offset = page * bounded
                 val container = serverContainer(source.baseUrl, source.token,
@@ -485,6 +486,38 @@ class LocalPlexClient(
                 "/library/metadata/$ratingKey/nearest?limit=${limit.coerceIn(1, 500)}&maxDistance=$maxDistance",
             ),
         ).filter { it.id != id }
+    }
+
+    /** Direct artist relationships intersected with a fixed seed's sonic neighborhood. */
+    internal suspend fun artistRadio(source: PersonalPlexSource, seed: Song, excluded: List<Song>, maxDistance: Double): List<Song> {
+        require(maxDistance.isFinite() && maxDistance in 0.05..0.30)
+        val track = metadata(source, seed.id) ?: return emptyList()
+        val freshSeed = mapSong(source, track) ?: return emptyList()
+        val performer = normalizeRadioTag(freshSeed.artist)
+        if (performer.isBlank() || performer == normalizeRadioTag("Unknown artist")) return emptyList()
+        // Compilations belong to an album artist such as Various Artists. Resolve
+        // the actual performer instead of building a compilation-artist station.
+        val artistKey = if (performer == normalizeRadioTag(track.optString("grandparentTitle"))) {
+            track.optString("grandparentRatingKey")
+        } else {
+            metadataArray(serverContainer(source.baseUrl, source.token,
+                "/library/sections/${source.libraryKey}/search?query=${encodePlex(freshSeed.artist)}&type=8&limit=8"))
+                .firstOrNull { it.optString("type") == "artist" && normalizeRadioTag(it.optString("title")) == performer }
+                ?.optString("ratingKey").orEmpty()
+        }
+        val artists = mutableSetOf(freshSeed.artist)
+        if (artistKey.matches(Regex("\\d+"))) {
+            val artist = metadataArray(serverContainer(source.baseUrl, source.token, "/library/metadata/$artistKey"))
+                .firstOrNull { it.optString("type") == "artist" && it.optString("librarySectionID") == source.libraryKey &&
+                    normalizeRadioTag(it.optString("title")) == performer }
+            artists += tags(artist?.optJSONArray("Similar"))
+        }
+        val key = ratingKey(source, seed.id)
+        val nearest = metadataArray(serverContainer(source.baseUrl, source.token,
+            "/library/metadata/$key/nearest?limit=500&maxDistance=$maxDistance"))
+            .filter { it.optString("librarySectionID") == source.libraryKey }
+            .mapNotNull { item -> mapSong(source, item)?.let { ArtistRadioCandidate(it, item.optDouble("distance")) } }
+        return artistRadioBatch(freshSeed, excluded, artists, nearest, maxDistance)
     }
 
     suspend fun playlists(source: PersonalPlexSource): List<PlexPlaylist> {

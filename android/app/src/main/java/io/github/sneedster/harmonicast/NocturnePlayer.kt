@@ -99,10 +99,10 @@ import androidx.compose.ui.unit.sp
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 PrivateTrackRepairAction(song, vm.isPersonalMode && vm.canWriteToPlex && !vm.nearbyRoomState.connected)
                 if (compact) {
-                    IconButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Radio, "Track Radio") }
+                    IconButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer && !vm.radioBusy, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Radio, "Artist Radio") }
                     IconButton(onClick = { details = true; vm.loadArtistDiscovery(song) }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Info, "Discover") }
                 } else {
-                    TextButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Radio, null, Modifier.size(19.dp)); Text(" Track Radio") }
+                    TextButton(onClick = { vm.queueSimilar() }, enabled = vm.isActivePlayer && !vm.radioBusy, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Radio, null, Modifier.size(19.dp)); Text(" Artist Radio") }
                     TextButton(onClick = { details = true; vm.loadArtistDiscovery(song) }, modifier = Modifier.tvFocusFeedback()) { Icon(Icons.Default.Info, null, Modifier.size(19.dp)); Text(" Discover") }
                 }
                 Box {

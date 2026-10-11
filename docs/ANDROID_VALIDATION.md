@@ -1,5 +1,43 @@
 # Android validation
 
+## Artist Radio with sound matching — 2026-10-10
+
+Artist Radio intersects the seed performer's directly related artists with Plex's
+sonic neighbors of the original track. The original seed survives continuation,
+core recreation, and a Somewhere Different detour. Manual requests stay queued;
+starting a station replaces the automatic tail. Candidate filtering rejects
+unrelated artists, foreign libraries, missing/nonfinite distances, unavailable
+streams, and duplicate recording copies. A sparse station stays short instead
+of automatically widening its sound range.
+
+All 379 tests in 55 classes passed with zero failures, errors, or skips using
+`./android/build-debug.sh :app:testDebugUnitTest :app:lintDebug`. Debug assembly
+and Android lint passed; lint reports zero errors and 43 warnings. This includes
+the automatic-mix album-diversity corrections from the same review. The build
+remains local and uncommitted; no APK was installed or published.
+
+Read-only live checks exercised the actual LocalPlexClient against the selected
+Plex music library at the default 0.25 range. Bob Sinclar / Vision of Paradise
+returned 20 songs across four artists, followed by another 20 fresh songs.
+Goldfrapp / Rocket returned four songs across two artists; New Order / Love Less
+returned eight across five; Prince / Little Red Corvette returned three from the
+seed artist. Those three smaller stations had no fresh second batch. The
+temporary live probe was removed so the checked-in suite remains independent
+of a server connection.
+
+Plex exposed Similar artist tags and sonic distance but no BPM or energy fields
+in the inspected metadata. Sound matching is best effort, not a verified tempo
+guarantee. Physical listening and Android Auto interaction remain unverified.
+
+Native Compose settings checks cover the renamed category, saved sound range,
+default restoration, and scrolling. The rendered phone settings screenshot was
+inspected. The strict audit scoped to Android source has zero findings; the
+repository-wide audit reports 23 findings in unchanged browser/marketing files.
+No claim of a clean repository-wide UI audit is made. UI ownership and the
+station contract are recorded in DESIGN.md.
+Design-document lint passed with zero errors and one existing orphaned-token
+warning for colors.onSurface; shared theme tokens were not changed.
+
 ## Track artist across Now Playing — 2026-09-23 — v1.1.17 (79)
 
 The Plex parser previously chose grandparentTitle before originalTitle. The

@@ -28,7 +28,7 @@
   inside the 5 GB total limit. Saving an already cached track promotes it without
   another download. Cache pruning never deletes saved downloads. Normal automatic
   mixes maintain an upcoming tail while connected; manual requests retain their
-  order and Track Radio retains its separate continuation. Cached queue entries use
+  order and Artist Radio retains its separate continuation. Cached queue entries use
   metadata captured during preloading and still enforce the locally known replay
   window. Local file playback does not wait for rating writes over a slow link.
   Connection recovery restarts queue top-up; interrupted jobs retry via WorkManager.
@@ -45,7 +45,11 @@
   sonic neighborhood, excluding the nearest 100 and queue/session duplicates.
   Manual requests stay first; ordinary radio then resumes from the original seed.
   No matches reports a recoverable empty result and leaves the queue unchanged.
-- **Now Playing > Track Radio:** starts radio from the current song. The redundant
+- **Now Playing > Artist Radio:** starts a station anchored to the current song and its performer. It mixes that
+  performer with directly related artists, requires close sonic matches, and
+  spreads artists and albums. Manual requests stay first; the previous automatic
+  tail is replaced. Refills keep the original seed and never widen the sound
+  range to fill a batch. Sound matching is best effort, not an exact BPM filter. The redundant
   Home panel was removed. Automatic mix and the three rediscovery modes use
   matching square Home cards.
 - **Home artwork:** each mix card samples up to four distinct covers from eligible

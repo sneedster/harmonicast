@@ -62,8 +62,8 @@ class SettingsScreenTest {
 
     @Test fun trackRadioDistanceSliderSavesAndRestoresDefault() {
         setup()
-        open("Track Radio")
-        compose.onNodeWithContentDescription("Starting sonic distance")
+        open("Artist Radio")
+        compose.onNodeWithContentDescription("Sound match range")
             .performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(0.15f) }
         compose.runOnIdle {
             assertEquals(0.15, vm.trackRadioDistance, 0.0001)
@@ -71,7 +71,7 @@ class SettingsScreenTest {
             assertEquals(0.15, TrackRadioSettings(AppStorage(prefs).storage).distance, 0.0001)
         }
         screenshot("track-radio-phone")
-        compose.onNodeWithText("Restore default distance").performScrollTo().performClick()
+        compose.onNodeWithText("Restore default range").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(0.25, vm.trackRadioDistance, 0.0001) }
     }
 

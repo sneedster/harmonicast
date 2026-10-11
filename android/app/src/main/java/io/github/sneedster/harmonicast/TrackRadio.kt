@@ -14,23 +14,38 @@ internal class TrackRadioSettings(private val storage: ProfileStorage) {
         }
 }
 
-/** Try close matches first; every batch restarts here, never at the last expanded distance. */
-internal suspend fun radioBatch(
-    current: Song,
+internal data class ArtistRadioCandidate(val song: Song, val distance: Double)
+
+/** Artist relationships and sound are both requirements; a sparse pool stays short. */
+internal fun artistRadioBatch(
+    seed: Song,
     excluded: List<Song>,
-    startDistance: Double = 0.25,
-    fetch: suspend (Double) -> List<Song>,
+    artists: Set<String>,
+    candidates: List<ArtistRadioCandidate>,
+    maxDistance: Double,
 ): List<Song> {
-    require(startDistance.isFinite() && startDistance > 0)
-    val candidates = mutableListOf<Song>()
-    var unique = emptyList<Song>()
-    for (step in 0..2) {
-        val distance = kotlin.math.round((startDistance + step * 0.05) * 1000) / 1000
-        candidates += fetch(distance)
-        unique = distinctRadioTracks(current, excluded, candidates).take(20)
-        if (unique.size >= 10) break
+    require(maxDistance.isFinite() && maxDistance > 0)
+    val allowed = artists.mapTo(mutableSetOf(), ::normalizeRadioTag)
+    val close = candidates.filter {
+        it.distance.isFinite() && it.distance >= 0 && it.distance <= maxDistance &&
+            normalizeRadioTag(it.song.artist) in allowed && it.song.streamUri != null
+    }.sortedBy { it.distance }.map { it.song }
+    val remaining = distinctRadioTracks(seed, excluded, close).toMutableList()
+    val selected = mutableListOf<Song>()
+    val albums = (excluded + seed).mapTo(mutableSetOf(), ::albumKey)
+    val artistCounts = (excluded + seed).groupingBy { normalizeRadioTag(it.artist) }.eachCount().toMutableMap()
+    while (selected.size < 20 && remaining.isNotEmpty()) {
+        val diverse = remaining.filterNot { albumKey(it) in albums }.ifEmpty { remaining }
+        // Balance performers across the listening window. Within each artist,
+        // the stable order retains Plex's closest sound matches first.
+        val song = diverse.minBy { artistCounts[normalizeRadioTag(it.artist)] ?: 0 }
+        remaining.remove(song)
+        selected += song
+        albums += albumKey(song)
+        val artist = normalizeRadioTag(song.artist)
+        artistCounts[artist] = (artistCounts[artist] ?: 0) + 1
     }
-    return unique
+    return selected
 }
 
 /** Album/compilation copies must not pad a radio queue. Keep Plex's suggestion order. */
@@ -52,14 +67,15 @@ internal fun distinctRadioTracks(current: Song, queued: List<Song>, candidates: 
     }
 }
 
+internal fun normalizeRadioTag(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC)
+    .lowercase(Locale.ROOT)
+    .replace(Regex("[’‘]"), "'")
+    .replace(Regex("[‐‑–—]"), "-")
+    .trim().replace(Regex("\\s+"), " ")
+
 private fun radioIdentity(song: Song): Pair<String, String>? {
-    fun normalize(value: String) = Normalizer.normalize(value, Normalizer.Form.NFKC)
-        .lowercase(Locale.ROOT)
-        .replace(Regex("[’‘]"), "'")
-        .replace(Regex("[‐‑–—]"), "-")
-        .trim().replace(Regex("\\s+"), " ")
-    val artist = normalize(song.artist)
-    val title = normalize(song.title)
+    val artist = normalizeRadioTag(song.artist)
+    val title = normalizeRadioTag(song.title)
     // Missing tags do not establish identity. Version/remix qualifiers stay intact.
     return if (artist.isBlank() || title.isBlank()) null else artist to title
 }

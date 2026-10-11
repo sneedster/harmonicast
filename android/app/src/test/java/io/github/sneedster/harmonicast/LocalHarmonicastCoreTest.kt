@@ -54,13 +54,15 @@ class LocalHarmonicastCoreTest {
         val storage = MemoryStorage()
         val http = object : PlexHttp {
             override suspend fun request(url: String, method: String, headers: Map<String, String>, form: Map<String, String>): String {
+                if (url.endsWith("/library/metadata/1")) return """{"MediaContainer":{"Metadata":[{"type":"track","ratingKey":"1","librarySectionID":"7","title":"Song 1","grandparentTitle":"Artist","grandparentRatingKey":"10000"}]}}"""
+                if (url.endsWith("/library/metadata/10000")) return """{"MediaContainer":{"Metadata":[{"type":"artist","ratingKey":"10000","librarySectionID":"7","title":"Artist"}]}}"""
                 assertTrue(url.contains("/library/metadata/1/nearest?"))
                 val tracks = listOf(2 to "Song 1", 3 to "Song 9", 4 to "New track", 5 to "New track", 6 to "New track", 7 to "New track")
                 return org.json.JSONObject().put("MediaContainer", org.json.JSONObject().put("Metadata",
                     org.json.JSONArray().apply {
                         tracks.forEach { (id, title) -> put(org.json.JSONObject()
                             .put("type", "track").put("ratingKey", id.toString()).put("librarySectionID", "7")
-                            .put("title", title).put("grandparentTitle", "Artist").put("parentTitle", "Album $id")
+                            .put("title", title).put("grandparentTitle", "Artist").put("parentTitle", "Album $id").put("distance", 0.1)
                             .put("Media", org.json.JSONArray().put(org.json.JSONObject().put("Part",
                                 org.json.JSONArray().put(org.json.JSONObject().put("key", "/part/$id")))))) }
                     })).toString()
@@ -455,6 +457,78 @@ class LocalHarmonicastCoreTest {
         val pools = PlexJukeboxPools(rated, unrated, rated + unrated)
         assertEquals(listOf("rated"), chooseJukeboxTracks(pools, 2, 10, 0) { 0.0 }.songs.map { it.id.substringAfterLast(':') })
         assertEquals(listOf("new"), chooseJukeboxTracks(pools, 2, 0, 0) { 0.0 }.songs.map { it.id.substringAfterLast(':') })
+    }
+
+    @Test fun automaticMixSpreadsOneAlbumPerBatchWhileASingleAlbumPoolStillFills() {
+        // A Plex random pool carries several tracks from one album, and picking
+        // each track independently plays the batch like an album side. Each
+        // album offers a song once per batch, and albums stay keyed by artist
+        // and title so two artists can share an album name without colliding.
+        val tracks = (1..24).map {
+            song("t$it").copy(album = "Album ${(it - 1) / 2}", albumArtist = "Artist ${(it - 1) / 2}", rating = 8.0)
+        }
+        val picks = chooseJukeboxTracks(PlexJukeboxPools(tracks, emptyList(), tracks), 10, 10, 0) { 0.0 }
+        assertEquals(10, picks.songs.size)
+        assertEquals(10, picks.songs.map { "${it.albumArtist}|${it.album}" }.distinct().size)
+        assertNotEquals(albumKey(tracks[0]), albumKey(tracks[2].copy(albumArtist = "Someone else")))
+        // A strict pool with only one album repeats it instead of returning short.
+        val single = listOf(
+            song("only-1").copy(album = "Only", albumArtist = "One"),
+            song("only-2").copy(album = "Only", albumArtist = "One"),
+        )
+        assertEquals(2, chooseJukeboxTracks(PlexJukeboxPools(single, emptyList(), single), 2, 10, 0) { 0.0 }.songs.size)
+        // Tracks saved before Plex album metadata keep their own identity.
+        assertEquals(3, (1..3).map { song("legacy-$it") }.map(::albumKey).distinct().size)
+    }
+
+    @Test fun measuredPlexPoolShapeWouldRepeatAlbumsWithoutTheSpread() {
+        // Live read of the configured 39,055-track Plex library: a 100-track
+        // random sample spans ~99 distinct albums and a 400-track sample ~376,
+        // because Plex's random ordering still surfaces the occasional album
+        // pair or triple. This rebuilds that measured shape as independent
+        // per-refill pools and counts repeated albums inside a 12-song batch.
+        var seed = 20_260_921L
+        fun roll(): Double {
+            seed = seed * 6_364_136_223_846_793_005L + 1_442_695_040_888_963_407L
+            return (seed ushr 11).toDouble() / (1L shl 53).toDouble()
+        }
+        // Rates: 30% of 56 pools hold one repeated pair, 10% hold a triple,
+        // 2.5% hold two pairs - the stated rates at a 100-track sample.
+        fun nextPool(): List<Song> {
+            val albumCounts = mutableListOf<Int>().apply { repeat(56) { add(1) } }
+            val draw = roll()
+            when {
+                draw < 0.025 -> { albumCounts[0] = 2; albumCounts[1] = 2 }
+                draw < 0.125 -> albumCounts[0] = 3
+                draw < 0.425 -> albumCounts[0] = 2
+            }
+            var id = 0
+            return albumCounts.flatMapIndexed { album, tracks ->
+                (1..tracks).map { track ->
+                    val trackId = id++
+                    song("$album-$track").copy(
+                        id = "plex:machine:$trackId",
+                        album = "Album $album",
+                        albumArtist = "Artist ${album / 12}",
+                        rating = if (trackId % 2 == 0) 8.0 else null,
+                    )
+                }
+            }
+        }
+        var repeatedAlbums = 0
+        var batches = 0
+        repeat(400) {
+            val pool = nextPool()
+            val selected = chooseJukeboxTracks(
+                PlexJukeboxPools(pool.filter { it.rating != null }, pool.filter { it.rating == null }, pool),
+                12, 8, 0,
+            ).songs
+            val keys = selected.map(::albumKey)
+            repeatedAlbums += keys.size - keys.distinct().size
+            batches++
+        }
+        assertEquals("Every 12-song batch held one song per album", 0, repeatedAlbums)
+        assertEquals(400, batches)
     }
 
     @Test fun playbackRatingMatchesExistingCompletionAndSkipRules() {

@@ -604,11 +604,11 @@ class HarmonicastMediaService : MediaLibraryService() {
                                 SessionResult(SessionResult.RESULT_SUCCESS)
                             }
                             COMMAND_PLAY_SIMILAR -> {
-                                Log.d("HarmonicastMedia", "Android Auto requested Track Radio queue")
+                                Log.d("HarmonicastMedia", "Android Auto requested Artist Radio queue")
                                 val added = core.queue.radio()
                                 updateCustomLayout(added > 0)
                                 refreshAndroidAutoQueue(refreshBrowser = true)
-                                Log.d("HarmonicastMedia", "Queued $added Track Radio songs from Android Auto")
+                                Log.d("HarmonicastMedia", "Queued $added Artist Radio songs from Android Auto")
                                 SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putInt("added", added) })
                             }
                             COMMAND_CLEAR_QUEUE -> {
@@ -1152,7 +1152,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             .build(),
         CommandButton.Builder(if (radioQueueActive) CommandButton.ICON_CHECK_CIRCLE_FILLED else CommandButton.ICON_RADIO)
             .setSessionCommand(PLAY_SIMILAR_COMMAND)
-            .setDisplayName(if (radioQueueActive) "Radio queue ready" else "Queue Track Radio")
+            .setDisplayName(if (radioQueueActive) "Radio queue ready" else "Queue Artist Radio")
             .setSlots(CommandButton.SLOT_OVERFLOW)
             .build(),
         CommandButton.Builder(CommandButton.ICON_QUEUE_REMOVE)
@@ -1451,7 +1451,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 val queue = listOfNotNull(state.nowPlaying.song) + captured.queue.songs()
                 kotlinx.coroutines.withContext(Dispatchers.IO) { store.syncQueueCache(source, queue) }
                 // Keep the automatic tail full while connected. Explicit requests
-                // retain their order, and Track Radio keeps its separate continuity.
+                // retain their order, and Artist Radio keeps its separate continuity.
                 if (store.cacheSettings.enabled && store.connected() && state.isAutoQueue &&
                     api.storage.read("local.offlinePlayback") != "true" && api.storage.read("local.radioActive") != "true" &&
                     queueRefillJob?.isActive != true) {
