@@ -841,6 +841,7 @@ class HarmonicastViewModel : ViewModel() {
                 val added = captured.queue.radio()
                 if (captured !== core) return@launch
                 if (added > 0) showTemporaryNotice("Artist Radio ready · $added songs queued")
+                else if (api.storage.read(ReplayWindow.STATUS_KEY) == ARTIST_RADIO_EMPTY_MESSAGE) error = ARTIST_RADIO_EMPTY_MESSAGE
                 else if (captured.queue.songs().any { it.isRadio }) showTemporaryNotice("Artist Radio is already ready")
                 else error = ARTIST_RADIO_EMPTY_MESSAGE
                 refresh()

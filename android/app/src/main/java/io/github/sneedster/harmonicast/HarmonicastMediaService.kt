@@ -543,7 +543,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                     return scope.future {
                         playbackHistory.discardForward()
                         player.currentMediaItem?.let { RecentTrackPlays(api.storage).record(it.mediaId, System.currentTimeMillis()) }
-                        val item = dequeueRandomItem()
+                        val item = dequeueRandomItem(startMix = true)
                         MediaSession.MediaItemsWithStartPosition(item?.let(::listOf) ?: emptyList(), 0, 0)
                     }
                 }
@@ -606,7 +606,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                             COMMAND_PLAY_SIMILAR -> {
                                 Log.d("HarmonicastMedia", "Android Auto requested Artist Radio queue")
                                 val added = core.queue.radio()
-                                updateCustomLayout(added > 0)
+                                updateCustomLayout(core.queue.songs().any { it.isRadio })
                                 refreshAndroidAutoQueue(refreshBrowser = true)
                                 Log.d("HarmonicastMedia", "Queued $added Artist Radio songs from Android Auto")
                                 SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putInt("added", added) })
@@ -703,7 +703,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 }
             }
             TAKE_BACK_PLAYBACK_ACTION -> scope.launch { takeBackNativePlayback(true) }
-            START_RANDOM_PLAYBACK_ACTION -> { playbackHistory.discardForward(); advance("skip") }
+            START_RANDOM_PLAYBACK_ACTION -> { playbackHistory.discardForward(); advance("skip", startMix = true) }
             SKIP_PLAYBACK_ACTION -> advance("skip")
             CACHE_SETTINGS_ACTION -> {
                 api.profile.personalSource?.let { api.offline?.resetCacheWork(it) }
@@ -1301,7 +1301,7 @@ class HarmonicastMediaService : MediaLibraryService() {
         }
     }
 
-    private fun advance(reason: String) {
+    private fun advance(reason: String, startMix: Boolean = false) {
         scope.launch {
             if (changingTrack) return@launch
             changingTrack = true
@@ -1339,7 +1339,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                     return@launch
                 }
 
-                val response = core.queue.dequeueWithAutomaticFallback()
+                val response = if (startMix) core.queue.startAutomaticMix() else core.queue.dequeueWithAutomaticFallback()
                 val song = response.song
                 if (song != null) {
                     val mediaItem = createMediaItem(song)
@@ -1387,8 +1387,8 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     /** Enables the shared auto queue and returns its next playable track. */
-    private suspend fun dequeueRandomItem(): MediaItem? = try {
-        val response = core.queue.dequeueWithAutomaticFallback()
+    private suspend fun dequeueRandomItem(startMix: Boolean = false): MediaItem? = try {
+        val response = if (startMix) core.queue.startAutomaticMix() else core.queue.dequeueWithAutomaticFallback()
         val next = response.song ?: return null
         currentIsAuto.set(!response.isManual)
         createMediaItem(next)

@@ -36,7 +36,7 @@ class ArtistRadioClientTest {
         // Similar.id is a tag ID, not an artist ratingKey.
         .put("Similar", JSONArray().put(JSONObject().put("id", "99999").put("tag", "Related Artist")))
 
-    @Test fun artistRelationshipsIntersectWithSoundAndSelectedLibraryWithoutWidening() = runBlocking {
+    @Test fun wideningKeepsArtistRelationshipsAndSelectedLibraryRestrictions() = runBlocking {
         val http = Http { url -> when {
             url.endsWith("/metadata/1") -> container(seedMetadata())
             url.endsWith("/metadata/10") -> container(artistMetadata())
@@ -49,9 +49,10 @@ class ArtistRadioClientTest {
             else -> error("Unexpected endpoint")
         } }
         val selected = LocalPlexClient(Memory(), http).artistRadio(source, seed, emptyList(), 0.25)
-        assertEquals(setOf("plex:machine:3", "plex:machine:4"), selected.map { it.id }.toSet())
-        assertTrue(http.calls.last().endsWith("/1/nearest?limit=500&maxDistance=0.25"))
-        assertEquals(3, http.calls.size)
+        assertEquals(setOf("plex:machine:3", "plex:machine:4", "plex:machine:5"), selected.map { it.id }.toSet())
+        assertTrue(http.calls[2].endsWith("/1/nearest?limit=500&maxDistance=0.25"))
+        assertTrue(http.calls.last().endsWith("/1/nearest?limit=500&maxDistance=0.3"))
+        assertEquals(4, http.calls.size)
     }
 
     @Test fun compilationStationUsesActualTrackArtistAndExactArtistLookup() = runBlocking {

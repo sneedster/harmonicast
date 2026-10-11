@@ -247,7 +247,7 @@ private val strengthLabels = listOf("Off", "Half", "Normal", "Strong", "Double")
         Text("Close matches", style = MaterialTheme.typography.bodySmall)
         Text("More variety", style = MaterialTheme.typography.bodySmall)
     }
-    SettingsDescription("The sound match range stays fixed; radio never widens it automatically to fill the queue. Each batch queues up to 20 distinct songs, spreading artists and albums where possible.")
+    SettingsDescription("Radio starts at your target range, then widens in 0.05 steps up to 0.30 if needed to find 20 distinct songs. Each batch starts at your target again and spreads artists and albums where possible.")
     SettingsDescription("Radio stays anchored to the artist and song you started from. It avoids the last 100 songs played during radio and keeps a shorter queue if there are not enough fresh matches. Clear the queue to end radio.")
     SettingsDescription("Sound matching is best effort, not an exact tempo or energy filter. Changes apply to the next batch. Songs already queued stay in place. Default: 0.25. The range is not a percentage.")
     OutlinedButton(onClick = { save(0.25) }, enabled = enabled && distance != 0.25, modifier = Modifier.tvFocusFeedback()) { Text("Restore default range") }

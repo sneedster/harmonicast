@@ -54,6 +54,46 @@ class TrackRadioTest {
 
     private val current = Song("seed", "Seed", "Artist")
 
+    @Test fun wideningStartsAtTargetAndStopsOnceTwentyEligibleRecordingsFit() = runBlocking {
+        val calls = mutableListOf<Double>()
+        val close = (1..5).map { candidate("close$it", "Related", 0.18) }
+        val wider = (1..20).map { candidate("wide$it", "Related", 0.23) }
+        val unrelated = (1..30).map { candidate("other$it", "Other", 0.01) }
+        val selected = expandingArtistRadioBatch(current, emptyList(), setOf("Related"), 0.10) { distance ->
+            calls += distance
+            unrelated + close + wider
+        }
+        assertEquals(listOf(0.10, 0.15, 0.20, 0.25), calls)
+        assertEquals(20, selected.size)
+        assertEquals(20, selected.map { it.id }.distinct().size)
+        assertEquals(true, close.all { it.song in selected })
+        assertEquals(true, selected.all { it.artist == "Related" })
+    }
+
+    @Test fun fullTargetBatchDoesNotWidenAndEveryRefillRestartsAtTarget() = runBlocking {
+        val close = (1..20).map { candidate("$it", "Artist", 0.09) }
+        val calls = mutableListOf<Double>()
+        repeat(2) {
+            assertEquals(20, expandingArtistRadioBatch(current, emptyList(), setOf("Artist"), 0.10) { distance ->
+                calls += distance; close
+            }.size)
+        }
+        assertEquals(listOf(0.10, 0.10), calls)
+    }
+
+    @Test fun wideningCountsDistinctFreshTracksAndStopsAtTheUpperBound() = runBlocking {
+        val recent = candidate("recent", "Related", 0.10).song
+        val fresh = candidate("fresh", "Related", 0.29)
+        val tooFar = candidate("far", "Related", 0.31)
+        val calls = mutableListOf<Double>()
+        val selected = expandingArtistRadioBatch(current, listOf(recent), setOf("Related"), 0.27) { distance ->
+            calls += distance
+            listOf(fresh, tooFar, ArtistRadioCandidate(recent.copy(id = "alias"), 0.01))
+        }
+        assertEquals(listOf(0.27, 0.30), calls)
+        assertEquals(listOf(fresh.song), selected)
+    }
+
     @Test fun fourAlbumCopiesProduceOneSuggestionWithoutPadding() {
         val copies = (1..4).map { Song("copy-$it", "Track", "Artist", "Album $it") }
         assertEquals(listOf(copies.first()), distinctRadioTracks(current, emptyList(), copies))

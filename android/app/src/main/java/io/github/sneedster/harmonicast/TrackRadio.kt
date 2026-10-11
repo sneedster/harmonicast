@@ -16,6 +16,25 @@ internal class TrackRadioSettings(private val storage: ProfileStorage) {
 
 internal data class ArtistRadioCandidate(val song: Song, val distance: Double)
 
+/** Restart at the saved target for every batch, widening only until it fills. */
+internal suspend fun expandingArtistRadioBatch(
+    seed: Song,
+    excluded: List<Song>,
+    artists: Set<String>,
+    startDistance: Double,
+    fetch: suspend (Double) -> List<ArtistRadioCandidate>,
+): List<Song> {
+    require(startDistance.isFinite() && startDistance in 0.05..0.30)
+    val candidates = mutableListOf<ArtistRadioCandidate>()
+    var distance = startDistance
+    while (true) {
+        candidates += fetch(distance)
+        val selected = artistRadioBatch(seed, excluded, artists, candidates, distance)
+        if (selected.size == 20 || distance >= 0.30) return selected
+        distance = (kotlin.math.round((distance + 0.05) * 100) / 100).coerceAtMost(0.30)
+    }
+}
+
 /** Artist relationships and sound are both requirements; a sparse pool stays short. */
 internal fun artistRadioBatch(
     seed: Song,

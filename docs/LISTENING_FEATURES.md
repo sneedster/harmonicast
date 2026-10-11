@@ -48,8 +48,11 @@
 - **Now Playing > Artist Radio:** starts a station anchored to the current song and its performer. It mixes that
   performer with directly related artists, requires close sonic matches, and
   spreads artists and albums. Manual requests stay first; the previous automatic
-  tail is replaced. Refills keep the original seed and never widen the sound
-  range to fill a batch. Sound matching is best effort, not an exact BPM filter. The redundant
+  tail is replaced only when radio finds matches. Refills keep the original seed
+  and start at the saved sound target, widening in 0.05 steps up to 0.30 if needed
+  to fill 20 tracks. The target preference stays unchanged. Empty starts preserve
+  the queue, and starting your automatic mix leaves radio mode while keeping
+  manual requests. Sound matching is best effort, not an exact BPM filter. The redundant
   Home panel was removed. Automatic mix and the three rediscovery modes use
   matching square Home cards.
 - **Home artwork:** each mix card samples up to four distinct covers from eligible

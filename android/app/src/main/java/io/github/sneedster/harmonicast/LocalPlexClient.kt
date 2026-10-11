@@ -513,11 +513,12 @@ class LocalPlexClient(
             artists += tags(artist?.optJSONArray("Similar"))
         }
         val key = ratingKey(source, seed.id)
-        val nearest = metadataArray(serverContainer(source.baseUrl, source.token,
-            "/library/metadata/$key/nearest?limit=500&maxDistance=$maxDistance"))
-            .filter { it.optString("librarySectionID") == source.libraryKey }
-            .mapNotNull { item -> mapSong(source, item)?.let { ArtistRadioCandidate(it, item.optDouble("distance")) } }
-        return artistRadioBatch(freshSeed, excluded, artists, nearest, maxDistance)
+        return expandingArtistRadioBatch(freshSeed, excluded, artists, maxDistance) { distance ->
+            metadataArray(serverContainer(source.baseUrl, source.token,
+                "/library/metadata/$key/nearest?limit=500&maxDistance=$distance"))
+                .filter { it.optString("librarySectionID") == source.libraryKey }
+                .mapNotNull { item -> mapSong(source, item)?.let { ArtistRadioCandidate(it, item.optDouble("distance")) } }
+        }
     }
 
     suspend fun playlists(source: PersonalPlexSource): List<PlexPlaylist> {

@@ -312,23 +312,29 @@ typography, or navigation owner changes.
 LocalPlexClient intersects the starting performer's direct Similar metadata with
 up to 500 sonic candidates from that original track. Compilation seeds resolve
 the actual track artist instead of Various Artists. Candidates must belong to the
-selected library, be playable, and have a finite distance within the saved range.
+selected library, be playable, and have a finite distance within the current range.
 Missing artist relationships permit only the seed performer; no genre or unrelated
-library fallback is added. The range never widens automatically. Plex's observed
+library fallback is added. Each batch starts at the saved target, widening in 0.05
+steps up to 0.30 only when fewer than 20 fresh recordings qualify. The saved target
+is never overwritten by expansion. Plex's observed
 metadata exposes sonic distance but no tempo/energy values: matching feel is best
 effort, with no strict BPM guarantee. Settings state this limitation plainly.
 
 artistRadioBatch excludes seed/queue/recent artist-title aliases, balances artists,
 and prefers albums absent from the listening window, choosing close matches within
 each artist. It queues up to 20 tracks and allows a short or empty batch rather
-than relaxing the artist or sound requirements. Starting radio preserves manual
-requests and replaces the previous automatic tail. Repeating the same start while
+than relaxing the artist requirement or exceeding the 0.30 sound bound. A successful
+radio start preserves manual requests and replaces the previous automatic tail;
+an empty start preserves the existing queue and station. Repeating the same start while
 its radio songs are queued is idempotent, with existing ready feedback.
 
 The queue authority persists the original seed across playback, manual requests,
 depletion, process recreation, and explicit detours; it remembers the last 100
 played tracks separately. Empty results report through automaticMixStatus; clear
-or source reset ends the station. The preference survives source resets. Existing
+or source reset ends the station. Explicit automatic-mix starts also end radio,
+clear its seed/recent/status state, and preserve manual requests on phone, TV, and
+Android Auto. Background resumption and Next retain the active station.
+The preference survives source resets. Existing
 phone/TV radio buttons, Media3 custom action, and settings all say Artist Radio;
 transport action IDs remain compatible.
 

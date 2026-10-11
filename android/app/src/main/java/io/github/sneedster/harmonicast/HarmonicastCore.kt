@@ -66,6 +66,12 @@ interface MusicQueue {
 
 data class QueueSelection(val song: Song?, val isManual: Boolean = true)
 
+/** Explicit mix starts leave radio/offline mode while preserving manual requests. */
+suspend fun MusicQueue.startAutomaticMix(): QueueSelection {
+    resetAutomaticTail()
+    return dequeueWithAutomaticFallback()
+}
+
 /** Consume the current queue, seeding the automatic mix only when nothing is waiting. */
 suspend fun MusicQueue.dequeueWithAutomaticFallback(): QueueSelection {
     val waiting = dequeue()

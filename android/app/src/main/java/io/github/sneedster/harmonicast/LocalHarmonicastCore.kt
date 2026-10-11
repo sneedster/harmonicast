@@ -181,7 +181,7 @@ class LocalHarmonicastCore(
         override suspend fun resetAutomaticTail() = QueueTransactions.mutex.withLock {
             storage.write(mapOf("local.mixEpoch" to java.util.UUID.randomUUID().toString()))
             writeSongs("local.queue", songs().filter { it.isManual })
-            storage.write(mapOf("local.radioActive" to "false", "local.radioReturnSeed" to "", "local.offlinePlayback" to "false", "local.radioRecent" to "[]"))
+            storage.write(mapOf("local.radioActive" to "false", "local.radioSeed" to "", "local.radioReturnSeed" to "", "local.offlinePlayback" to "false", "local.radioRecent" to "[]", ReplayWindow.STATUS_KEY to ""))
             LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
         }
         override suspend fun clear() = QueueTransactions.mutex.withLock {
@@ -212,11 +212,19 @@ class LocalHarmonicastCore(
             val current = playback.snapshot().nowPlaying.song ?: return@withLock 0
             val queued = songs()
             val station = storage.read("local.radioSeed")?.takeIf { it.isNotBlank() }?.let { decodeSong(JSONObject(it)) }
-            if (storage.read("local.radioActive") == "true" && station?.id == current.id && queued.any { it.isRadio }) return@withLock 0
+            if (storage.read("local.radioActive") == "true" && station?.id == current.id && queued.any { it.isRadio }) {
+                storage.write(mapOf(ReplayWindow.STATUS_KEY to ""))
+                return@withLock 0
+            }
             val requests = queued.filter { it.isManual }
             val additions = plex.artistRadio(source, current, requests + readSongs("local.radioRecent"), TrackRadioSettings(storage).distance)
                 .map { it.copy(isManual = false, isRadio = true) }
             if (!sourceStillSelected()) return@withLock 0
+            if (additions.isEmpty()) {
+                storage.write(mapOf(ReplayWindow.STATUS_KEY to ARTIST_RADIO_EMPTY_MESSAGE))
+                LocalCoreEvents.publish(CoreEvent.CHANGED)
+                return@withLock 0
+            }
             storage.write(mapOf("local.offlinePlayback" to "false", "local.radioReturnSeed" to "", "local.radioActive" to "true", "local.radioSeed" to encodeSong(current).toString()))
             rememberRadioSong(current)
             writeSongs("local.queue", requests + additions)
@@ -542,7 +550,7 @@ internal fun albumKey(song: Song): String =
     if (song.album.isBlank()) song.id
     else "${song.albumArtist ?: ""}\u0000${song.album}".lowercase()
 
-internal const val ARTIST_RADIO_EMPTY_MESSAGE = "No fresh songs from this artist or related artists match the starting song's sound. Start Artist Radio from another song, adjust the sound match range, or clear the queue to leave radio."
+internal const val ARTIST_RADIO_EMPTY_MESSAGE = "No fresh songs from this artist or related artists match the starting song's sound. Try Artist Radio from another song or start your automatic mix."
 
 internal fun adjustPersonalRating(rating: Double?, event: String, progress: Double, viewCount: Int,
     tuning: MusicTuning = MusicTuning()): Double {

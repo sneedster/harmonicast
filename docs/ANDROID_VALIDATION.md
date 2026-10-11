@@ -1,5 +1,64 @@
 # Android validation
 
+## v1.1.24 stable radio recovery release packaging — 2026-10-10
+
+The target-expansion and automatic-mix recovery fixes below are packaged as
+stable v1.1.24, version code 88. Checked-in Gradle and release-helper defaults
+now produce this version without overrides.
+
+`./android/build-release.sh` passed the complete final gate: 385 tests in 55
+isolated classes with zero failures, errors, or skips; debug lint with zero
+errors and 43 existing warnings; signed release assembly and release vital lint.
+`git diff --check` passed. APK metadata confirms the unchanged package ID,
+version 1.1.24 and code 88. Signature verification passed, and the certificate
+matches published v1.1.23. The rebuilt APK equals the previously verified candidate.
+
+Stable APK: `android/releases/harmonicast-1.1.24.apk`.
+SHA-256: `e3b712bc1595b20956069954064f5d29d390f26026e6d59a35a4cb40d8c28d37`.
+Phone installation, physical listening, TV, and Android Auto interaction remain
+unverified. Live Plex and native settings evidence is recorded below.
+
+## Artist Radio target expansion and automatic-mix recovery — 2026-10-10
+
+Michael clarified that the sound range is a starting target, not a hard cutoff.
+Each batch now starts at the saved target and expands by 0.05 up to 0.30 until
+20 distinct fresh songs qualify. The original seed, direct related-artist rule,
+selected library, playable-stream checks, and recording deduplication remain.
+Expansion never overwrites the preference. An empty start preserves the existing
+queue/station. Explicit phone/TV and Android Auto automatic-mix starts clear radio
+state and replace its automatic tail while preserving manual requests; ordinary
+Next and background resumption retain radio continuity.
+
+The complete Android suite passed 385 tests in 55 classes with zero failures,
+errors, or skips using `./android/build-debug.sh :app:testDebugUnitTest :app:lintDebug`.
+Debug assembly and lint passed (zero errors, 43 existing warnings). The radio
+regressions cover bounded expansion, fresh-recording counts, restarting at the
+target, preserving queues/stations on empty starts, exhausted-station retry, and
+explicit automatic-mix recovery from both populated and empty radio states.
+The final feedback-only follow-up passed all 30 focused radio tests and a fresh
+debug lint/build check.
+
+A temporary read-only probe exercised the actual LocalPlexClient against Music
+library 1, starting at 0.10: Lady Gaga / Beautiful, Dirty, Rich queued 20 songs
+across 10 artists at 0.25; Prince / Controversy queued nine across three artists
+at 0.30; Sinéad O’Connor / Nothing Compares 2 U queued 20 across five artists at
+0.30. The probe was removed; retained tests require no server connection.
+
+The native Compose settings test passed and its phone screenshot was inspected.
+DESIGN.md lint reports zero errors and one existing orphaned-token warning.
+The scoped native static audit is clean. The broad repository audit still finds
+23 findings in unchanged browser/marketing files, with none in the changed UI.
+Signed candidate `android/releases/harmonicast-1.1.24.apk` was built with
+`HARMONICAST_SKIP_RELEASE_CHECKS=1 VERSION_NAME=1.1.24 VERSION_CODE=88
+./android/build-release.sh` after the checks above. Release assembly and vital
+lint passed. The manifest confirms 1.1.24 (88), and apksigner verification confirms
+the same signing certificate as published v1.1.23. SHA-256:
+`e3b712bc1595b20956069954064f5d29d390f26026e6d59a35a4cb40d8c28d37`.
+At this candidate checkpoint, version defaults remained at published v1.1.23;
+the candidate used explicit build overrides and was uncommitted and unpublished.
+Stable packaging is recorded above. Phone installation,
+physical listening, TV, and Android Auto interaction remain unverified.
+
 ## Artist Radio with sound matching — 2026-10-10
 
 Artist Radio intersects the seed performer's directly related artists with Plex's

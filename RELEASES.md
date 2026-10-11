@@ -1,5 +1,15 @@
 # Releases
 
+## v1.1.24 — Artist Radio that fills and automatic-mix recovery
+
+Version code: **88**.
+
+- Treat the Artist Radio sound match range as a starting target. Expand by 0.05 up to 0.30 when needed to find up to 20 fresh songs, while preserving the saved setting and original song/related-artist rules.
+- Preserve the existing queue and station when starting Artist Radio finds no songs.
+- Make explicit automatic-mix playback exit Artist Radio and refill normally, including after an empty radio attempt, while preserving manual requests.
+
+Validation: all 385 Android tests in 55 classes, debug lint, signed release assembly, release vital lint, APK version and same-certificate checks passed. Read-only live Plex checks at target 0.10 returned songs for Lady Gaga, Prince, and Sinéad O’Connor. Phone installation, physical listening, TV, and Android Auto acceptance remain unverified. See [Android validation](docs/ANDROID_VALIDATION.md).
+
 ## v1.1.23 — Artist Radio and more varied automatic mixes
 
 Version code: **87**.
