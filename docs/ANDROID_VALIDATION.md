@@ -14,7 +14,8 @@ All 379 tests in 55 classes passed with zero failures, errors, or skips using
 `./android/build-debug.sh :app:testDebugUnitTest :app:lintDebug`. Debug assembly
 and Android lint passed; lint reports zero errors and 43 warnings. This includes
 the automatic-mix album-diversity corrections from the same review. The build
-remains local and uncommitted; no APK was installed or published.
+was local and uncommitted at this implementation gate; stable release packaging
+is recorded below. No APK was installed for the implementation checks.
 
 Read-only live checks exercised the actual LocalPlexClient against the selected
 Plex music library at the default 0.25 range. Bob Sinclar / Vision of Paradise
@@ -931,3 +932,25 @@ SHA-256: `55314b16da0abf51c7017fbfca95f96189fa665b9934401abb925d57a0316e90`.
 No physical-device installation or artwork acceptance was performed for this
 stable package. Live Plex covers, old-cache backfill, real embedded-picture
 extraction, TV, Android Auto and prolonged worker scheduling remain unverified.
+
+## v1.1.23 stable Artist Radio and automatic-mix release — 2026-10-10
+
+Both the reviewed automatic-mix album-diversity fixes and Artist Radio are
+packaged as stable v1.1.23, version code 87. The checked-in Gradle defaults and
+release helper produce this version without overrides.
+
+`android/build-release.sh` passed its complete gate: 379 tests in 55 isolated
+classes with zero failures, errors, or skips; debug lint with zero errors and
+43 warnings; signed release assembly and release vital lint. Both Chromium
+guest/display suites passed, and `git diff --check` passed. Read-only live Plex
+selection and the native settings checks are detailed above.
+
+APK metadata confirms `io.github.sneedster.harmonicast`, version 1.1.23 and code
+87. Signature verification passed; the certificate matches the published
+v1.1.22 APK, whose local SHA-256 matches GitHub's asset digest.
+Stable APK: `android/releases/harmonicast-1.1.23.apk`.
+SHA-256: `60759d3eeecc7989cdcbc683896c5b8734314a9d13b63272af06052298983fbc`.
+
+No physical-device installation, listening acceptance, TV, or Android Auto
+trial was performed for this release. Sound matching remains best effort,
+with no strict tempo guarantee; sparse stations can exhaust their matches.

@@ -1,5 +1,15 @@
 # Releases
 
+## v1.1.23 — Artist Radio and more varied automatic mixes
+
+Version code: **87**.
+
+- Artist Radio mixes the starting performer with directly related artists while matching the original song's sound. Continuation stays anchored to that original song, including after restarting the app or taking a Somewhere Different detour.
+- Preserve manual requests when starting radio, replace the previous automatic tail, and avoid duplicate recordings. Settings → Artist Radio controls the sound match range; sparse stations stay short instead of widening automatically.
+- Spread automatic mixes across albums throughout rolling queue refills, including fallback candidates, while retaining rated/unrated mix settings.
+
+Sound matching is best effort: Plex does not expose BPM or energy in the inspected metadata, so exact tempo compatibility is not guaranteed. The full Android suite, read-only live Plex selection, and rendered settings checks passed. Physical listening, TV, and Android Auto acceptance remain unverified. See [Android validation](docs/ANDROID_VALIDATION.md).
+
 ## v1.1.22 — artwork that stays with your music
 
 Version code: **86**, superseding the code 85 artwork preview.
