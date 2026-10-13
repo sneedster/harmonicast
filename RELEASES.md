@@ -1,5 +1,14 @@
 # Releases
 
+## v1.1.25 — ratings on cached playback
+
+Version code: **89**.
+
+- Refresh metadata for songs already in the rolling queue cache so Now Playing retains current Plex ratings before any vote.
+- Preserve cached audio and keep stream credentials out of stored cache metadata.
+
+Validation: all 386 Android tests in 55 isolated classes, debug lint, signed release assembly, release vital lint, APK version, and same-certificate checks passed. Phone installation, physical listening, TV, and Android Auto acceptance remain unverified. See [Android validation](docs/ANDROID_VALIDATION.md).
+
 ## v1.1.24 — Artist Radio that fills and automatic-mix recovery
 
 Version code: **88**.

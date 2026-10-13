@@ -1,5 +1,26 @@
 # Android validation
 
+## v1.1.25 stable cached-rating release packaging — 2026-10-13
+
+Synchronized GitHub's rolling-cache metadata fix (`6d81da4`) into the local
+checkout and packaged it as stable v1.1.25, version code 89. Cached songs now
+refresh their metadata from the current queue snapshot, preserving Plex ratings
+before a vote without redownloading existing audio. The retained regression
+checks that the rating refreshes and the cached stream URI remains absent.
+Checked-in Gradle and release-helper defaults produce 1.1.25 (89).
+
+`./android/build-release.sh` passed the complete release gate: 386 tests in 55
+isolated classes, zero failures, errors, or skips; debug assembly and lint with
+zero errors and 43 existing warnings; signed release assembly and release vital
+lint. `git diff --check` passed. APK metadata confirms the unchanged application
+ID, version 1.1.25 and code 89. Signature verification passed, and the signing
+certificate matches the downloaded published v1.1.24 APK.
+
+Stable APK: `android/releases/harmonicast-1.1.25.apk`.
+SHA-256: `913d5679fa9f932dc12801b459550686898e88a33c9e48eb72b94b4f3ebf7146`.
+Phone installation, physical listening, TV, and Android Auto acceptance remain
+unverified for this release.
+
 ## v1.1.24 stable radio recovery release packaging — 2026-10-10
 
 The target-expansion and automatic-mix recovery fixes below are packaged as
