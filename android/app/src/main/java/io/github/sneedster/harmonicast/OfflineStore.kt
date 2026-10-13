@@ -126,8 +126,15 @@ class OfflineStore(private val context: Context) {
             bump(cacheWorkName(source, id)); manager.cancelUniqueWork(cacheWorkName(source, id))
         }
         writeJson(targetsFile(source), JSONArray(ids))
-        val removed = cacheMetadata(source).filter { it.id !in ids }
-        writeCache(source, cacheMetadata(source).filter { it.id in ids })
+        val cached = cacheMetadata(source)
+        val removed = cached.filter { it.id !in ids }
+        // Audio may already be cached from an older queue snapshot. Refresh its
+        // credential-free metadata from the current queue so fields such as the
+        // Plex rating are not frozen at the value present when audio was fetched.
+        val desiredById = desired.associateBy { it.id }
+        writeCache(source, cached.filter { it.id in ids }.map { old ->
+            desiredById[old.id]?.let(::clean) ?: old
+        })
         removed.filter { song -> metadata(source).none { it.id == song.id } }.forEach { deleteFiles(source, it.id) }
         desired.filter { song -> metadata(source).none { it.id == song.id } &&
             (uri(source, song.id) == null || needsArtwork(source, song.id)) }.forEach { song ->
