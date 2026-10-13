@@ -53,6 +53,18 @@ class QueueCacheTest {
         assertTrue(store.cachedSongs(source).isEmpty())
         assertNotNull(store.uri(source, tracks.first().id))
     }
+    @Test fun existingCacheRefreshesRatingFromCurrentQueueMetadata() {
+        val track = song(1)
+        store.syncQueueCache(source, listOf(track))
+        complete(track)
+        assertNull(store.cachedSongs(source).single().rating)
+
+        store.syncQueueCache(source, listOf(track.copy(rating = 8.0)))
+
+        val cached = store.cachedSongs(source).single()
+        assertEquals(8.0, cached.rating!!, 0.0)
+        assertNull(cached.streamUri)
+    }
     @Test fun prunedOrCancelledWorkCannotRestoreOldCacheFiles() {
         val old = song(1)
         store.syncQueueCache(source, listOf(old))
