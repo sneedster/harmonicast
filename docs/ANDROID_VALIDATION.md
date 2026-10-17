@@ -1,5 +1,86 @@
 # Android validation
 
+## v1.1.27 signed scrobbling and room follow-ups — 2026-10-17
+
+Packaged the reviewed changes as v1.1.27, version code 91, using the existing
+application ID and signing identity. Both checked-in version defaults agree.
+`./android/build-release.sh` passed without skipping its release checks: 429
+freshly executed tests across 61 classes, zero failures/errors/skips; debug lint
+with zero errors and 43 existing warnings; signed assembly and release vital lint.
+The existing deprecated TV-feature and Robolectric image-decoder diagnostics
+remained nonfatal. `git diff --check` passed.
+
+DeepSeek reviewed the final integrated source and release plan, then reviewed
+the complete guest-client polling context and scrobbling-control evidence.
+No introduced blocker remained. Conditional STOPPED-only concerns do not describe
+the actual PLAYING progress path; new-build destination acceptance remains pending.
+Two low-severity BLE suggestions (pending-call completion on disconnect and stale
+scan callbacks) were verified byte-identical to the prior release, not introduced
+by the one-line rejected-command heartbeat repair. Bounded reporting is best-effort;
+backlog saturation and additional teardown tests remain follow-up coverage.
+
+APK metadata confirms `io.github.sneedster.harmonicast`, version 1.1.27 (91).
+Signature verification passed; certificate SHA-256 matches the downloaded published
+v1.1.26 APK. Candidate: `android/releases/harmonicast-1.1.27.apk`.
+SHA-256: `ca2918774db83593610a4ce83b714d467d3ee13a4723e9a47a24dfc5a774f522`.
+The checksum asset uses the APK basename. No installation, new-build Last.fm
+delivery, physical listening, real car guest-stability, or TV acceptance was
+performed. The specific heartbeat regression is fixed; the reported rapid
+disconnect/reconnect symptom is not yet established as resolved.
+
+## Plex playback reporting and room follow-ups — local development, 2026-10-17
+
+Added Plex timeline reporting for eligible online owner playback, including
+play/pause/stop, track transitions, transferred native playback, and cached audio.
+Delivery is serialized away from playback; playing reports are throttled to ten
+seconds. Listening time excludes paused time and seek distance, and bounds credit
+across missing samples. The service no longer also marks completed tracks played.
+Offline queues, disconnected playback, joined guests, changed sources, and
+read-only shared sources are excluded. No retrospective offline-scrobble queue
+or separate Last.fm authentication was added.
+
+Native-Plex control evidence preceded implementation: L Devine / Die On The
+Dancefloor appeared on Last.fm after Plex Web timeline reporting published a
+cloud scrobble. This established the missing reporting boundary; it does not
+constitute live acceptance of the new Harmonicast build.
+
+Room startup now verifies the configured acquisition backend and applies its
+enabled default without requiring a Settings visit. Explicit refusals survive
+new rooms and restarts; shared hosts still need the owner's room grant. Downloads
+still require a request. The real gateway service fixture covers default-on and
+explicit-refusal startup. A BLE client regression demonstrated lost heartbeats
+after a rejected command; polling now resumes in that branch. This does not prove
+the owner's rapid in-car disconnect/reconnect symptom is resolved.
+
+After the eligibility fix, `./scripts/release-check.sh` passed with a freshly
+executed unfiltered Android suite: 429 tests across 61 isolated classes, zero
+failures, errors, or skips.
+Debug assembly passed; debug lint reported zero errors and 43 existing warnings
+(lint analysis executed again in the final gate). The known
+Robolectric image-decoder diagnostic appeared without test failures.
+`git diff --check` passed. Regression work included observed assertion failures
+before the corresponding reporting, room-default, and heartbeat fixes.
+
+The first independent review found an eligibility-history defect: queued observations
+sampled offline or while joined as a guest could be delivered once eligibility
+returned, and an eligible observation could include offline listening time.
+The fix checks eligibility before sampling, discards ineligible listening/session
+state, and binds queued observations to an eligibility epoch and playback target.
+The worker retains its delivery-time checks. Seven new service regressions cover
+offline/guest/source boundaries, blocked delivery, restored eligibility, fresh
+sessions, and listening-time exclusion. The preceding 422-test binary/receipt is
+superseded; the 429-test full gate above applies to the fixed source.
+
+Debug output: `android/app/build/outputs/apk/debug/app-debug.apk`.
+SHA-256: `2ca87eeff3529aa78d623f4bdcc85c5fed192e129546c031439ad4c1b6626d77`.
+This is not a signed stable-release upgrade. This development snapshot predates
+the release version bump from v1.1.26 (90). No commit, push, publication, installation, physical listening,
+new-build Last.fm delivery, real Android Auto/guest stability, or TV acceptance
+has been performed. Independent re-review passed with no introduced security or
+logic findings, and the reviewed production-file hashes match the final source.
+Additional service-destruction/profile-reload tests with in-flight delivery and
+native-output teardown remain non-blocking lifecycle coverage suggestions.
+
 ## v1.1.26 stable Android Auto guest-room packaging — 2026-10-17
 
 Packaged automatic guest-room startup for Android Auto projection as v1.1.26,

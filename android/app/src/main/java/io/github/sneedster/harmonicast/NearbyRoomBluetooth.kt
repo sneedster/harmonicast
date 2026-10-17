@@ -776,6 +776,7 @@ class NearbyRoomClient(context: Context, private val onState: (NearbyRoomState) 
             acquisitionResponse?.completeExceptionally(IllegalArgumentException(json.optString("error", "Room operation failed")))
             acquisitionResponse = null
             publish(roomState.copy(busy = false, error = json.optString("error", "Guest operation failed")))
+            handler.postDelayed(refreshStatus, STATUS_REFRESH_MS)
             return
         }
         if (pending.action.startsWith("acq-")) {

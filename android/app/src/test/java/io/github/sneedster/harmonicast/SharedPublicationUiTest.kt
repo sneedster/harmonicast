@@ -48,6 +48,7 @@ class SharedPublicationUiTest {
         compose.onNodeWithText("session-secret", substring = true).assertDoesNotExist()
         compose.onNodeWithText("Review publication").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithContentDescription("Permit room acquisition").assertIsOff()
+        compose.onNodeWithText("Approved shared hosts allow guest acquisition by default after access is verified, unless disabled on their device.").assertExists()
         compose.onNodeWithContentDescription("Downloads reach this music library").performScrollTo().performClick()
         compose.onNodeWithText("Review publication").performScrollTo().assertIsEnabled().performClick()
         assertEquals(1, reviews)

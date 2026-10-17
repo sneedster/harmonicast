@@ -94,6 +94,8 @@ interface PlaybackState {
     suspend fun publish(song: Song?, isPlaying: Boolean, isAutoQueue: Boolean = false)
     suspend fun savePosition(seconds: Double)
     suspend fun scrobble(id: String, submission: Boolean)
+    fun canReportTimeline(): Boolean = false
+    suspend fun reportTimeline(timeline: PlexPlaybackTimeline) = Unit
     suspend fun recordEvent(song: Song, event: String, progress: Double)
 }
 

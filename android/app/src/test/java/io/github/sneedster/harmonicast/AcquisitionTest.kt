@@ -349,7 +349,59 @@ class AcquisitionTest {
 }
 
 class AcquisitionRoomTest {
-    @Test fun roomPermissionDefaultsOffAndAllGuestSurfacesUseHostAuthority() = runBlocking {
+    @Test fun verifiedOwnerRoomDefaultsToAcquisitionWithoutStartingDownloads() = runBlocking {
+        val f = AcquisitionFixture(); f.connect(); val c = f.coordinator()
+        c.roomId.value = "room"
+        assertTrue(c.checkAccess(true))
+        assertTrue(c.roomAllowed.value)
+        assertEquals(0, f.network.submissions.get())
+        assertTrue(c.requests.value.isEmpty())
+    }
+
+    @Test fun explicitRoomRefusalSurvivesChecksNewRoomsAndCoordinatorRestart() = runBlocking {
+        val f = AcquisitionFixture(); f.connect(); val c = f.coordinator()
+        c.roomId.value = "first"; assertTrue(c.checkAccess(true))
+        c.setRoomAllowed(false)
+        assertTrue(c.checkAccess(true)); assertFalse(c.roomAllowed.value)
+        c.roomId.value = "second"
+        assertTrue(c.checkAccess(true)); assertFalse(c.roomAllowed.value)
+        val restarted = f.coordinator(); restarted.roomId.value = "third"
+        assertTrue(restarted.checkAccess(true)); assertFalse(restarted.roomAllowed.value)
+        restarted.setRoomAllowed(true)
+        val enabled = f.coordinator(); enabled.roomId.value = "fourth"
+        assertTrue(enabled.checkAccess(true)); assertTrue(enabled.roomAllowed.value)
+        assertEquals(0, f.network.submissions.get())
+    }
+
+    @Test fun defaultRequiresActiveRoomAndConfiguredAvailableBackend() = runBlocking {
+        val f = AcquisitionFixture(); val c = f.coordinator()
+        c.roomId.value = "room"
+        assertFalse(c.checkAccess(true)); assertFalse(c.roomAllowed.value)
+        assertTrue(f.storage.values.isEmpty())
+        f.connect(); c.roomId.value = ""
+        assertTrue(c.checkAccess(true)); assertFalse(c.roomAllowed.value)
+        c.roomId.value = "room"
+        f.network.validToken = "expired"; f.network.rejectPassword = true
+        assertFalse(c.checkAccess(true)); assertFalse(c.roomAllowed.value)
+        assertEquals(0, f.network.submissions.get())
+    }
+
+    @Test fun lateConnectionCheckCannotUndoExplicitRefusalOrRoomClosure() = runBlocking {
+        for (closeRoom in listOf(false, true)) {
+            val f = AcquisitionFixture(); f.connect(); val c = f.coordinator(); c.roomId.value = "room"
+            f.network.validToken = "expired"
+            f.network.loginStarted = CompletableDeferred(); f.network.releaseLogin = CompletableDeferred()
+            val checking = async { c.checkAccess(true) }
+            f.network.loginStarted!!.await()
+            if (closeRoom) { c.roomAllowed.value = false; c.roomId.value = "" }
+            else c.setRoomAllowed(false)
+            f.network.releaseLogin!!.complete(Unit)
+            assertTrue(checking.await()); assertFalse(c.roomAllowed.value)
+            assertEquals(0, f.network.submissions.get())
+        }
+    }
+
+    @Test fun unverifiedRoomAndAllGuestSurfacesUseHostAuthority() = runBlocking {
         val f = AcquisitionFixture(); f.connect(); val c = f.coordinator()
         val cap = RoomCapability.create(); c.roomId.value = "${cap.roomCode}:${cap.expiresAtMillis}"
         val router = GuestRoomRouter(f.core(), cap, acquisition = c)
@@ -359,7 +411,7 @@ class AcquisitionRoomTest {
         assertEquals(403, router.route(request(cap.displayBearer)).status)
         assertEquals(401, router.route(request("setup-token")).status)
         assertEquals(0, f.network.submissions.get())
-        c.setRoomAllowed(true)
+        assertTrue(c.checkAccess(true)); assertTrue(c.roomAllowed.value)
         val reply = router.route(request(cap.bearer)); assertEquals(202, reply.status)
         assertFalse(reply.body.contains("token-")); assertFalse(reply.body.contains("https://grabber")); assertFalse(reply.body.contains("password-secret"))
         assertEquals(202, router.route(request(cap.displayBearer)).status)

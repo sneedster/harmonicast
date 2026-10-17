@@ -14,7 +14,10 @@ internal object SessionMediaItems {
 
     fun track(context: Context, song: Song, streamUrl: String, artworkUrl: String?): MediaItem {
         val metadata = MediaMetadata.Builder()
-            .setExtras(Bundle().apply { putString("harmonicast.coverArt", text(song.coverArt)) })
+            .setExtras(Bundle().apply {
+                putString("harmonicast.coverArt", text(song.coverArt))
+                putLong("harmonicast.durationMs", song.duration.coerceAtLeast(0).toLong() * 1000)
+            })
             .setTitle(text(song.title)).setArtist(text(song.artist)).setAlbumTitle(text(song.album))
             .setAlbumArtist(text(song.albumArtist.orEmpty()))
             .setDisplayTitle(text(song.title)).setSubtitle(text(song.artist))

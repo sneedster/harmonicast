@@ -65,6 +65,23 @@
 - **Home > Recently played:** individual track titles and artists, ordered by play
   history, with album artwork. Local listening to downloaded tracks is included.
 
+## Playback reporting and room follow-ups (v1.1.27)
+
+Eligible online owner playback now reports Plex timeline state, position, duration,
+and accumulated listening time. Playing reports are throttled to ten seconds;
+pause/stop/track changes report immediately and delivery does not hold up local
+playback. Plex, not a second Harmonicast Last.fm client, decides when to scrobble.
+The old completion mark-played call is no longer sent. Explicit offline playback,
+disconnected playback, read-only shared sources, and joined guests do not report;
+there is no retrospective offline-scrobble queue.
+
+Room acquisition defaults on after startup verifies a configured MusicGrabber
+backend and permissions. Explicit refusals persist, including across new rooms
+and restarts; shared-library hosts still need the owner's room-acquisition grant.
+No request means no acquisition. A rejected BLE command now resumes status polling
+instead of silently stopping guest heartbeats. This specific regression is not
+proof that the reported rapid car reconnects are resolved.
+
 ## Validation
 
 Automated coverage exercises preset persistence and consent isolation, rediscovery

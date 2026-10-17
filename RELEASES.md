@@ -1,5 +1,24 @@
 # Releases
 
+## v1.1.27 — Plex scrobbling and room reliability
+
+Version code: **91**.
+
+- Report online owner playback state and progress to Plex so its existing
+  scrobbling integration can forward qualifying listens to Last.fm. Remove the
+  separate completion mark-played call to avoid duplicate play counting.
+- Restore nearby guest heartbeats after the host rejects a command. Rapid
+  disconnect/reconnect behavior in a real car still needs device validation.
+- Default room music acquisition on after verifying a configured backend and its
+  permissions. Remember explicit opt-outs; preserve the owner's shared-room grant
+  and recipient access restrictions. Downloads still require a request.
+
+Validation: all 429 Android tests in 61 classes, independent code re-review and
+DeepSeek release review, debug lint, signed release assembly, release vital lint,
+APK metadata, and same-certificate checks passed. New-build Last.fm delivery,
+rapid in-car guest reconnect behavior, physical
+listening, and TV acceptance remain unverified. See [Android validation](docs/ANDROID_VALIDATION.md).
+
 ## v1.1.26 — guest rooms for Android Auto
 
 Version code: **90**.

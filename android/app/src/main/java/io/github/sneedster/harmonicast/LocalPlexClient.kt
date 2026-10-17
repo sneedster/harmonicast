@@ -609,6 +609,20 @@ class LocalPlexClient(
         return thumb.takeIf { it.startsWith('/') }?.let { authenticatedUrl(source, it) }
     }
 
+    suspend fun reportTimeline(source: PersonalPlexSource, timeline: PlexPlaybackTimeline) {
+        val key = ratingKey(source, timeline.id)
+        val query = listOf(
+            "ratingKey" to key,
+            "key" to "/library/metadata/$key",
+            "state" to timeline.state.name.lowercase(java.util.Locale.ROOT),
+            "time" to timeline.positionMillis.toString(),
+            "duration" to timeline.durationMillis.toString(),
+            "playbackTime" to timeline.playbackTimeMillis.toString(),
+        ).joinToString("&") { (name, value) -> "$name=${encodePlex(value)}" }
+        http.request(authenticatedUrl(source, "/:/timeline?$query"), method = "GET",
+            headers = headers(source.token) + ("X-Plex-Session-Identifier" to timeline.sessionIdentifier))
+    }
+
     suspend fun scrobble(source: PersonalPlexSource, id: String) {
         val key = ratingKey(source, id)
         http.request(

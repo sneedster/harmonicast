@@ -167,7 +167,7 @@ internal class SharedPublicationModel : ViewModel() {
         SettingsDescription("${source.serverName} → ${source.libraryName}\nConfiguration: ${state.libraryName} / ${state.albumName}\n${candidate.url}\nAccount: ${candidate.username} (${candidate.role})")
         SettingsDescription("MusicGrabber path example: ${candidate.destination.ifBlank { "not reported" }}. Album routing may use a different folder. Confirm the actual download appears in ${source.libraryName} in Plex.")
         SettingsToggle("Downloads reach this music library", "I have verified this account's download destination and Plex import/scan into ${source.libraryName}.", destinationConfirmed, !busy, onDestination)
-        SettingsToggle("Permit room acquisition", "Approved shared hosts may enable acquisition for their nearby guests. Each room still starts with acquisition off.", rooms, !busy, onRooms)
+        SettingsToggle("Permit room acquisition", "Approved shared hosts allow guest acquisition by default after access is verified, unless disabled on their device.", rooms, !busy, onRooms)
         SettingsDescription("Plex recipients can read this password, use the account outside Harmonicast, share its job history, and change its password. Removing Plex access stops fresh app reads; rotate the MusicGrabber password to revoke copied credentials.")
         Button(onClick = onReview, enabled = !busy && destinationConfirmed, modifier = Modifier.tvFocusFeedback()) { Text("Review publication") }
 }

@@ -77,6 +77,15 @@ class HarmonicastMediaService : MediaLibraryService() {
     private var queueCacheJob: kotlinx.coroutines.Job? = null
     private var queueRefillJob: kotlinx.coroutines.Job? = null
     private var positionSaveJob: kotlinx.coroutines.Job? = null
+    private var plexTimelineTracker = PlexTimelineTracker()
+    private data class TimelineObservation(val epoch: Long, val target: PlaybackState, val timeline: PlexPlaybackTimeline)
+    private var plexTimelineEpoch = 0L
+    private var plexTimelineTarget: PlaybackState? = null
+    private val plexTimelineUpdates = kotlinx.coroutines.channels.Channel<TimelineObservation>(
+        capacity = 32, onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+    private var plexTimelineWorker: kotlinx.coroutines.Job? = null
+    private var plexTimelineClosed = false
     private var previousMediaItem: MediaItem? = null
     private data class HistoryItem(val mediaItem: MediaItem, val isAuto: Boolean)
     private val playbackHistory = PlaybackHistory<HistoryItem>()
@@ -177,8 +186,13 @@ class HarmonicastMediaService : MediaLibraryService() {
 
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED && nativeOutput == null) {
+                    reportPlexPlaybackState(PlexPlaybackState.STOPPED)
                     advance("ended")
                 }
+            }
+
+            override fun onEvents(player: Player, events: Player.Events) {
+                reportPlexPlaybackState()
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -811,6 +825,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             ?: Song(item.mediaId, metadata.title?.toString().orEmpty(), metadata.artist?.toString().orEmpty(), metadata.albumTitle?.toString().orEmpty())
         core.playback.publish(song, output.playing, currentIsAuto.get())
         core.playback.savePosition(output.position / 1000.0)
+        reportPlexPlaybackState()
     }
 
     private suspend fun takeBackNativePlayback(resume: Boolean) {
@@ -837,7 +852,10 @@ class HarmonicastMediaService : MediaLibraryService() {
             syncCurrentPlaybackState(player.isPlaying)
             core.playback.savePosition(position / 1000.0)
             nativeOutputStatus.value = if (resume && stopped) "Playback returned to this device" else "Receiver disconnected; playback is paused here"
-        } finally { nativeOutputBusy = false }
+        } finally {
+            nativeOutputBusy = false
+            reportPlexPlaybackState()
+        }
     }
 
     private fun enableGuestControl(startedForAuto: Boolean = false) {
@@ -887,6 +905,11 @@ class HarmonicastMediaService : MediaLibraryService() {
             )
             guestRoomGateway = gateway
             val room = gateway.start()
+            scope.launch {
+                if (guestRoomGateway === gateway && guard.permitsRequests()) {
+                    AcquisitionRuntime.get(this@HarmonicastMediaService).checkAccess(true)
+                }
+            }
             val nearby = NearbyRoomHost(this, core, room.roomCode, gateway::routeNearby, gateway::touchNearby,
                 offerPlayer = { id, value ->
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -993,6 +1016,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun reloadProfile() {
+        reportPlexPlaybackState(PlexPlaybackState.STOPPED)
         queueCacheJob?.cancel(); queueRefillJob?.cancel()
         api.profile.personalSource?.let { api.offline?.resetCacheWork(it) }
         disableGuestControl()
@@ -1220,7 +1244,6 @@ class HarmonicastMediaService : MediaLibraryService() {
         scope.launch {
             try {
                 recordPlaybackEvent(previous, "complete", 1.0)
-                core.playback.scrobble(previous.mediaId, submission = true)
 
                 val response = core.queue.dequeueWithAutomaticFallback()
                 val dequeued = response.song
@@ -1236,6 +1259,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun syncCurrentPlaybackState(isPlaying: Boolean) {
+        reportPlexPlaybackState()
         if (nativeOutput != null) return
         val item = player.currentMediaItem ?: return
         val songId = item.mediaId
@@ -1262,6 +1286,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 // ExoPlayer reports milliseconds; the Harmonicast API stores
                 // seconds so browser and Android hosts can resume consistently.
                 val positionSeconds = player.currentPosition / 1000.0
+                reportPlexPlaybackState()
                 if (positionSeconds >= 0) {
                     try {
                         core.playback.savePosition(positionSeconds)
@@ -1278,6 +1303,58 @@ class HarmonicastMediaService : MediaLibraryService() {
         positionSaveJob = null
     }
 
+    private fun invalidatePlexTimeline() {
+        plexTimelineEpoch += 1
+        plexTimelineTarget = null
+        plexTimelineTracker = PlexTimelineTracker()
+    }
+
+    /** Sample on the player thread; deliver serially without holding up cached playback. */
+    private fun reportPlexPlaybackState(forceState: PlexPlaybackState? = null) {
+        if (plexTimelineClosed || !::player.isInitialized || !::core.isInitialized) return
+        val target = core.playback
+        if (!target.canReportTimeline()) {
+            // Discard the session without crediting the gap or emitting an offline stop.
+            invalidatePlexTimeline()
+            return
+        }
+        if (plexTimelineTarget !== target) {
+            invalidatePlexTimeline()
+            plexTimelineTarget = target
+        }
+        if (forceState == null && (changingTrack || nativeOutputBusy)) return
+        val item = player.currentMediaItem
+        val output = nativeOutput
+        val state = forceState ?: when {
+            item == null -> PlexPlaybackState.STOPPED
+            output != null -> if (output.playing) PlexPlaybackState.PLAYING else PlexPlaybackState.PAUSED
+            player.playbackState == Player.STATE_ENDED || player.playbackState == Player.STATE_IDLE -> PlexPlaybackState.STOPPED
+            player.isPlaying -> PlexPlaybackState.PLAYING
+            else -> PlexPlaybackState.PAUSED
+        }
+        val duration = player.duration.takeIf { it > 0 }
+            ?: item?.mediaMetadata?.extras?.getLong("harmonicast.durationMs") ?: 0L
+        val updates = plexTimelineTracker.update(item?.mediaId, state,
+            output?.position ?: player.currentPosition, duration, android.os.SystemClock.elapsedRealtime())
+        if (updates.isEmpty()) return
+        if (plexTimelineWorker?.isActive != true) plexTimelineWorker = scope.launch {
+            for ((epoch, queuedTarget, timeline) in plexTimelineUpdates) {
+                if (epoch != plexTimelineEpoch) continue
+                if (queuedTarget !== core.playback || !queuedTarget.canReportTimeline()) {
+                    invalidatePlexTimeline()
+                    continue
+                }
+                try { queuedTarget.reportTimeline(timeline) }
+                catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) {
+                    // Never print credential-bearing request URLs or exception messages.
+                    Log.w("HarmonicastMedia", "Plex playback report failed (${e.javaClass.simpleName})")
+                }
+            }
+        }
+        updates.forEach { plexTimelineUpdates.trySend(TimelineObservation(plexTimelineEpoch, target, it)) }
+    }
+
     private fun playHistoryItem(item: HistoryItem, playWhenReady: Boolean) {
         currentIsAuto.set(item.isAuto)
         player.setMediaItem(item.mediaItem, 0)
@@ -1285,13 +1362,6 @@ class HarmonicastMediaService : MediaLibraryService() {
         if (output != null) output.load(item.mediaItem, 0, playWhenReady)
         else { player.prepare(); player.playWhenReady = playWhenReady }
         syncCurrentPlaybackState(playWhenReady)
-        scope.launch {
-            try {
-                core.playback.scrobble(item.mediaItem.mediaId, submission = false)
-            } catch (e: Exception) {
-                Log.e("HarmonicastMedia", "History scrobble failed", e)
-            }
-        }
     }
 
     private fun goBack(forcePrevious: Boolean = false) {
@@ -1318,28 +1388,15 @@ class HarmonicastMediaService : MediaLibraryService() {
             if (changingTrack) return@launch
             changingTrack = true
             try {
+                reportPlexPlaybackState(PlexPlaybackState.STOPPED)
                 val currentMediaItem = player.currentMediaItem
                 if (currentMediaItem != null) {
-                    val oldId = currentMediaItem.mediaId
                     val progress = if (player.duration > 0) {
                         ((nativeOutput?.position ?: player.currentPosition).toFloat() / player.duration).coerceIn(0f, 1f)
                     } else 0f
 
                     if (reason == "ended") {
                         recordPlaybackEvent(currentMediaItem, "complete", 1.0)
-                        try {
-                            val completedCore = core
-                            if (hasLocalAudio(oldId)) scope.launch {
-                                try { completedCore.playback.scrobble(oldId, submission = true) }
-                                catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                                catch (e: Exception) { Log.w("HarmonicastMedia", "Completion scrobble waits for Plex (${e.javaClass.simpleName})") }
-                            } else completedCore.playback.scrobble(oldId, submission = true)
-                        } catch (e: kotlinx.coroutines.CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            // History delivery must not prevent the next song from playing.
-                            Log.w("HarmonicastMedia", "Completion scrobble failed (${e.javaClass.simpleName})", e)
-                        }
                     } else {
                         recordPlaybackEvent(currentMediaItem, "skip", progress.toDouble())
                     }
@@ -1358,7 +1415,6 @@ class HarmonicastMediaService : MediaLibraryService() {
                     val isAuto = !response.isManual
                     currentIsAuto.set(isAuto)
                     core.playback.publish(song, isPlaying = true, isAutoQueue = isAuto)
-                    core.playback.scrobble(song.id, submission = false)
                     // Keep the Media3 timeline to one current item. Its
                     // legacy Android Auto Queue screen otherwise jumps to the
                     // active item whenever Media3 republishes playback state.
@@ -1378,6 +1434,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 Log.e("HarmonicastMedia", "advance failed (${e.javaClass.simpleName})", e)
             } finally {
                 changingTrack = false
+                reportPlexPlaybackState()
             }
         }
     }
@@ -1437,7 +1494,6 @@ class HarmonicastMediaService : MediaLibraryService() {
                 val isAuto = !response.isManual
                 currentIsAuto.set(isAuto)
                 core.playback.publish(song, isPlaying = true, isAutoQueue = isAuto)
-                core.playback.scrobble(song.id, submission = false)
                 player.setMediaItem(createMediaItem(song), 0)
                 player.prepare()
                 player.play()
@@ -1492,6 +1548,9 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        reportPlexPlaybackState(PlexPlaybackState.STOPPED)
+        plexTimelineClosed = true
+        plexTimelineUpdates.close()
         runCatching { cacheConnectivity.unregisterNetworkCallback(cacheNetworkCallback) }
         queueCacheJob?.cancel(); queueRefillJob?.cancel()
         if (::carConnection.isInitialized) carConnection.type.removeObserver(carConnectionObserver)

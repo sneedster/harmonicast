@@ -138,6 +138,39 @@ class SharedAcquisitionTest {
         assertTrue(restarted.reconnect())
     }
 
+    @Test fun defaultRoomAcquisitionRequiresOwnersExplicitRoomGrant() = runBlocking {
+        val f = AcquisitionFixture(); f.source = source
+        val plex = SharedPlexStub(source); val mg = SharedGrabberStub()
+        plex.summary = JSONObject(plex.summary).put("allowRoomAcquisition", false).toString()
+        val shared = manager(f.storage, plex, mg) { f.source }
+        val c = AcquisitionCoordinator(f.account, f.catalog, f.storage, { f.source }, { f.core() }, { emptyList() }, false, shared)
+        c.roomId.value = "room"
+        assertTrue(c.checkAccess(true)); assertFalse(c.roomAllowed.value)
+        assertTrue(runCatching { c.setRoomAllowed(true) }.isFailure)
+        assertTrue(runCatching { c.submit(f.recordingId, "Guest", "room") }.isFailure)
+        assertEquals(0, mg.posts)
+        assertFalse(SharedAcquisitionRecord.parse(plex.summary, source).rooms)
+    }
+
+    @Test fun approvedSharedHostDefaultsOnWithoutDownloadingButKeepsRecipientOptOut() = runBlocking {
+        val f = AcquisitionFixture(); f.source = source
+        val plex = SharedPlexStub(source); val mg = SharedGrabberStub()
+        val shared = manager(f.storage, plex, mg) { f.source }
+        val c = AcquisitionCoordinator(f.account, f.catalog, f.storage, { f.source }, { f.core() }, { emptyList() }, false, shared)
+        c.roomId.value = "room"
+        assertTrue(c.checkAccess(true)); assertTrue(c.roomAllowed.value)
+        assertEquals(0, mg.posts)
+        shared.optOut()
+        assertFalse(c.checkAccess(true)); assertFalse(c.roomAllowed.value)
+        val restartedShared = manager(f.storage, plex, mg) { f.source }
+        val restarted = AcquisitionCoordinator(f.account, f.catalog, f.storage, { f.source }, { f.core() }, { emptyList() }, false, restartedShared)
+        restarted.roomId.value = "new-room"
+        val logins = mg.logins
+        assertFalse(restarted.checkAccess(true)); assertFalse(restarted.roomAllowed.value)
+        assertTrue(restartedShared.state.value.optedOut)
+        assertEquals(logins, mg.logins); assertEquals(0, mg.posts)
+    }
+
     @Test fun rotationsKeepJobIdentityButDifferentAccountsAndConfigurationsDoNot() = runBlocking {
         val store = AcquisitionMemory(); val plex = SharedPlexStub(source); val mg = SharedGrabberStub(); val shared = manager(store, plex, mg)
         assertTrue(shared.refresh(true)); val identity = shared.account.connection()!!.identity

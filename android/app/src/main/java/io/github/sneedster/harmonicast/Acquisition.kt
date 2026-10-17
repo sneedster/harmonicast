@@ -303,8 +303,15 @@ internal class AcquisitionCoordinator(val ownerAccount: MusicGrabberAccount, val
     val account: MusicGrabberAccount get() = if (source()?.canWriteToPlex == false && shared != null) shared.account else ownerAccount
     suspend fun checkAccess(force: Boolean = false): Boolean {
         if (NearbyGuestParticipation.active) { roomAllowed.value = false; return false }
-        if (source()?.canWriteToPlex == false) return shared?.refresh(force) == true
-        return PlexAccessPolicy.forSource(source()).canSubmitAcquisition && ownerAccount.check(force)
+        val selected = source()
+        val room = roomId.value
+        val available = if (selected?.canWriteToPlex == false) shared?.refresh(force) == true
+            else PlexAccessPolicy.forSource(selected).canSubmitAcquisition && ownerAccount.check(force)
+        if (source() != selected || NearbyGuestParticipation.active) { roomAllowed.value = false; return false }
+        if (roomId.value == room) roomAllowed.value = room.isNotBlank() && available &&
+            storage.read("acquisition.rooms.allowed") != "false" &&
+            (selected?.canWriteToPlex == true || shared?.state?.value?.rooms == true)
+        return available
     }
     fun invalidateSharedAccess() { roomAllowed.value = false; shared?.invalidate() }
     val requests = MutableStateFlow(readRequests())
@@ -373,6 +380,7 @@ internal class AcquisitionCoordinator(val ownerAccount: MusicGrabberAccount, val
     fun visible(participant: String?, room: String? = null) = requests.value.filter { (participant == null || it.participant == participant) && (room == null || it.room == room) }.takeLast(50)
     suspend fun setRoomAllowed(value: Boolean) {
         if (value) require(checkAccess(true) && (source()?.canWriteToPlex == true || shared?.state?.value?.rooms == true)) { "Shared room acquisition must be permitted by the owner and the connection must be available" }
+        storage.write(mapOf("acquisition.rooms.allowed" to value.toString()))
         roomAllowed.value = value
     }
     suspend fun submit(recordingId: String, participant: String = "Owner", room: String = ""): AcquisitionRequestState =

@@ -77,11 +77,23 @@ security; its code and browser session must be treated as temporary credentials.
 Login values are sent in request bodies, never URLs, and are not saved to browser
 storage or returned by the setup API. No public relay or hosted setup service is used.
 
-Room acquisition starts disabled for each new room. When the host enables it,
-guest requests use the host's configured MusicGrabber account and are attributed
+Room acquisition defaults on only after a configured MusicGrabber connection and
+its acquisition permissions have been verified. An explicit host opt-out is
+remembered across rooms and restarts; shared-library hosts also require the
+owner's published room-acquisition grant. No acquisition starts without a request.
+Guest requests use the host's configured MusicGrabber account and are attributed
 to the requesting participant. Guests never receive service credentials. Accepted
 requests may finish and enter the host's queue after room acquisition is disabled
-or the room closes. Shared read-only Plex users cannot host or acquire music.
+or the room closes. Recipient opt-outs and the owner's shared-access restrictions
+remain in force.
+
+During eligible online owner playback, Harmonicast sends the track identifier,
+play/pause/stop state, playback position, duration, and accumulated listening time
+to the selected Plex server. Plex can forward qualifying listens through its
+configured scrobbling integrations, including Last.fm. Harmonicast does not need
+separate Last.fm credentials. Explicit offline queues, disconnected playback,
+shared read-only sources, and joined guest sessions do not submit these reports;
+offline listens are not automatically replayed later.
 
 Questions: [GitHub issues](https://github.com/sneedster/harmonicast/issues).
 Harmonicast is not affiliated with or endorsed by Plex.

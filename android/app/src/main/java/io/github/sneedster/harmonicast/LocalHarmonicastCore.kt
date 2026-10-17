@@ -363,6 +363,16 @@ class LocalHarmonicastCore(
                 .put("position", seconds.coerceAtLeast(0.0))
             storage.write(mapOf("local.playback" to value.toString()))
         }
+        override fun canReportTimeline(): Boolean {
+            val selected = if (storage.read("home.mode") == null) configuredSource
+                else HomeProfileStore(storage).personalSource
+            return sourceStillSelected() && storage.read("local.offlinePlayback") != "true" &&
+                offline?.connected() != false && PlexAccessPolicy.forSource(configuredSource).canWriteToPlex &&
+                PlexAccessPolicy.forSource(selected).canWriteToPlex
+        }
+        override suspend fun reportTimeline(timeline: PlexPlaybackTimeline) {
+            if (canReportTimeline()) plex.reportTimeline(source, timeline)
+        }
         override suspend fun scrobble(id: String, submission: Boolean) {
             if (sourceStillSelected() && storage.read("local.offlinePlayback") != "true" && source.canWriteToPlex && offline?.connected() != false && submission) plex.scrobble(source, id)
         }

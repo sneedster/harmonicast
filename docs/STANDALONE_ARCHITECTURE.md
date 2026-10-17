@@ -70,8 +70,11 @@ request record; recovery cannot enqueue the same fulfillment twice. Acquisitions
 use the ordinary manual-request fairness rules. Pending guest acquisitions reserve
 slots in the existing five-request allowance, including ordinary track requests.
 
-A room-scoped permission is off by default and enforced by the gateway for browser,
-display, and Bluetooth operations. Only safe catalogue/request DTOs cross that
+A room-scoped permission defaults on after a configured acquisition connection
+passes an access check; explicit host refusals persist across rooms/restarts and
+shared hosts still require the owner's published room grant. Startup checks the
+connection without requiring a Settings visit. The gateway enforces the permission
+for browser, display, and Bluetooth operations. Only safe catalogue/request DTOs cross that
 boundary. Bluetooth uses bounded pages and full recording IDs for submission;
 display labels may be shortened to fit transport limits.
 
