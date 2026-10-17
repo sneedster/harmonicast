@@ -1,5 +1,15 @@
 # Releases
 
+## v1.1.26 — guest rooms for Android Auto
+
+Version code: **90**.
+
+- Automatically open a guest room when Android Auto projection connects, using the existing Plex-access check and guest permissions.
+- Close only the Auto-started room when projection disconnects, including cancelling a pending room-access check. Preserve rooms opened or opening manually.
+- Respect manual room closure until the next Auto connection; repeated connection updates do not reopen sharing. Music acquisition remains off by default.
+
+Validation: all 395 Android tests in 56 isolated classes, debug lint, signed release assembly, release vital lint, APK version, and same-certificate checks passed. Live Android Auto connection, passenger joining, phone installation, physical listening, and TV acceptance remain unverified for this release. See [Android validation](docs/ANDROID_VALIDATION.md).
+
 ## v1.1.25 — ratings on cached playback
 
 Version code: **89**.
@@ -7,7 +17,7 @@ Version code: **89**.
 - Refresh metadata for songs already in the rolling queue cache so Now Playing retains current Plex ratings before any vote.
 - Preserve cached audio and keep stream credentials out of stored cache metadata.
 
-Validation: all 386 Android tests in 55 isolated classes, debug lint, signed release assembly, release vital lint, APK version, and same-certificate checks passed. Phone installation, physical listening, TV, and Android Auto acceptance remain unverified. See [Android validation](docs/ANDROID_VALIDATION.md).
+Validation: all 386 Android tests in 55 isolated classes, debug lint, signed release assembly, release vital lint, APK version, and same-certificate checks passed. Michael subsequently confirmed physical listening for v1.1.25. TV and Android Auto acceptance remain unverified. See [Android validation](docs/ANDROID_VALIDATION.md).
 
 ## v1.1.24 — Artist Radio that fills and automatic-mix recovery
 

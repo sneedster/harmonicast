@@ -1,5 +1,47 @@
 # Android validation
 
+## v1.1.26 stable Android Auto guest-room packaging — 2026-10-17
+
+Packaged automatic guest-room startup for Android Auto projection as v1.1.26,
+version code 90. Checked-in Gradle and release-helper defaults produce this version.
+
+`./android/build-release.sh` passed the full release gate: 395 tests in 56 isolated
+classes, zero failures, errors, or skips; debug assembly and lint with zero errors
+and 43 existing warnings; signed release assembly and release vital lint.
+`git diff --check` passed. APK metadata confirms the unchanged application ID,
+version 1.1.26 and code 90. Signature verification passed, and the certificate
+matches the downloaded published v1.1.25 APK.
+
+The pre-commit review found an ownership leak after automatic gateway-start
+failure. Ownership is now assigned per accepted start attempt and cleared on
+startup failure. A ninth service regression exercises the real gateway's startup
+exception path and proves a subsequent manual retry survives Auto disconnect.
+The full 395-test suite passed after the fix; signed release packaging and lint
+were then repeated against the fixed source.
+
+Stable APK: `android/releases/harmonicast-1.1.26.apk`.
+SHA-256: `515697bafd105783a084edf0bc3308164b33dde4082cf1b949ae9fa03fb66851`.
+No installation, physical listening, live Android Auto connection, passenger join,
+or physical TV acceptance was performed for this release. Michael's earlier
+physical-listening confirmation applies to v1.1.25, not this new behavior.
+
+## Android Auto guest-room auto-start — development
+
+The media service starts a guest room on a new Android Auto projection connection,
+using the existing Plex-access check. Projection disconnect cancels a pending
+automatic start or closes the Auto-started room. Existing manual rooms and pending
+manual starts are preserved. Closing a room during projection keeps it closed
+until the next connection; duplicate projection updates do not reopen it.
+
+`./scripts/release-check.sh` passed 394 tests in 56 isolated classes with zero
+failures, errors, or skips, plus debug assembly and debug lint (zero errors and
+43 existing warnings). Eight new Robolectric service-observer tests cover the
+access gate, disconnect cleanup, manual-room preservation, repeated notifications,
+manual closure/reconnection, and native-car/non-projection connections.
+`git diff --check` passed. At this implementation checkpoint, no signed release,
+installation, live Android Auto connection, or passenger guest-join test was
+performed for this change.
+
 ## v1.1.25 stable cached-rating release packaging — 2026-10-13
 
 Synchronized GitHub's rolling-cache metadata fix (`6d81da4`) into the local
@@ -20,6 +62,10 @@ Stable APK: `android/releases/harmonicast-1.1.25.apk`.
 SHA-256: `913d5679fa9f932dc12801b459550686898e88a33c9e48eb72b94b4f3ebf7146`.
 Phone installation, physical listening, TV, and Android Auto acceptance remain
 unverified for this release.
+
+Subsequent owner confirmation: Michael confirmed physical listening for v1.1.25
+on 2026-10-17. This does not establish TV or Android Auto acceptance, or acceptance
+of the new v1.1.26 automatic-room behavior.
 
 ## v1.1.24 stable radio recovery release packaging — 2026-10-10
 

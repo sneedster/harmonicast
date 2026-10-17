@@ -50,9 +50,18 @@ class HarmonicastMediaService : MediaLibraryService() {
     private val androidAutoControllers = mutableSetOf<MediaSession.ControllerInfo>()
     private lateinit var carConnection: androidx.car.app.connection.CarConnection
     private var carProjectionConnected: Boolean? = null
+    private var guestRoomStartedForAuto = false
     private val carConnectionObserver = androidx.lifecycle.Observer<Int> { type ->
+        val wasConnected = carProjectionConnected == true
         carProjectionConnected = type == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_PROJECTION
         Log.i("HarmonicastAuto", "Car projection connected: $carProjectionConnected")
+        // Only a new projection connection opens sharing. Repeated notifications must
+        // not reopen a room the user closed, and pre-existing manual rooms stay theirs.
+        if (carProjectionConnected == true && !wasConnected && !roomShareState.value.enabled && roomStartJob?.isActive != true) {
+            enableGuestControl(startedForAuto = true)
+        } else if (carProjectionConnected == false && guestRoomStartedForAuto) {
+            disableGuestControl()
+        }
         if (carProjectionConnected == true && androidAutoControllers.isNotEmpty()) claimAndroidAutoPlayback()
     }
 
@@ -831,13 +840,14 @@ class HarmonicastMediaService : MediaLibraryService() {
         } finally { nativeOutputBusy = false }
     }
 
-    private fun enableGuestControl() {
+    private fun enableGuestControl(startedForAuto: Boolean = false) {
         val source = api.profile.personalSource
         if (source == null || !PlexAccessPolicy.forSource(source).canHostRoom) {
             disableGuestControl("Choose a Plex music library and leave the joined room before hosting")
             return
         }
         if (roomShareState.value.enabled || roomStartJob?.isActive == true) return
+        guestRoomStartedForAuto = startedForAuto
         val generation = ++roomStartGeneration
         val guard = PlexRoomAccessGuard(source, { api.profile.personalSource }, LocalPlexClient(api.storage)::canAccessMusicLibrary)
         roomAccessGuard = guard
@@ -905,6 +915,7 @@ class HarmonicastMediaService : MediaLibraryService() {
             monitorGuestRoom(gateway, guard)
             Log.d("HarmonicastMedia", "Guest room enabled: ${roomShareState.value.roomCode}")
         } catch (e: Exception) {
+            guestRoomStartedForAuto = false
             guestRoomGateway?.stop()
             guestRoomGateway = null
             AcquisitionRuntime.get(this).apply { roomAllowed.value = false; roomId.value = "" }
@@ -945,6 +956,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun disableGuestControl(message: String = "") {
+        guestRoomStartedForAuto = false
         roomStartGeneration++
         roomStartJob?.cancel()
         roomStartJob = null

@@ -10,7 +10,13 @@ same local playback through Media3.
 
 ## Nearby rooms
 
-Sharing is explicit and temporary. The host advertises a room only while enabled.
+Sharing is temporary. Rooms can be opened manually or automatically when the media
+service observes a new Android Auto projection connection. Automatic starts reuse
+the same live Plex-access check and room permissions. Only an Auto-started room
+(including a pending access check) closes on projection disconnect; a pre-existing
+manual room is preserved. Repeated projection notifications do not reopen a room
+that was closed manually or expired. Media-browser connections alone do not open
+sharing. The host advertises a room only while enabled.
 Native guests use nearby discovery and room-scoped capabilities. Browser guests
 and displays use the HTTP gateway and bundled pages hosted by the Android device.
 Keep these room endpoints separate from Plex credentials and owner-only controls.

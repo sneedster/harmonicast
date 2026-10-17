@@ -56,6 +56,13 @@ curve-editor preview starts flat/off on upgrade. See [implementation and validat
 Use **Rooms** to join or host a room, share guest/display QR codes, or transfer and
 take back playback. The Settings hub also links to Rooms.
 
+Starting with v1.1.26, connecting Android Auto projection automatically opens
+a guest room after the usual Plex-access check. Disconnecting closes only the room
+started by Auto; a room already open or opening manually stays open. You can end
+the automatic room in Rooms; it stays closed until the next Auto connection.
+Nearby Bluetooth discovery needs its existing permissions, and browser guests
+still need a reachable shared local network. Room acquisition stays off by default.
+
 For browser guests, choose **Invite guests**. Type the short local address shown
 on the host (for example, `http://192.168.1.20:8788`) and enter the room's four-letter
 code. Both devices need the same Wi-Fi. No long invitation URL is required; QR

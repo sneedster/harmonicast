@@ -28,7 +28,12 @@ this device. TV visualizations analyze playback audio locally and do not record
 microphone audio or send audio analysis to a service.
 
 Opening a room temporarily enables nearby discovery and a local HTTP guest/display
-interface. Guests see shared metadata, requests, votes, and playback state.
+interface. Starting with v1.1.26, an Android Auto projection connection also
+opens a room automatically after verifying Plex access. Disconnecting closes an
+Auto-started room, but preserves a room opened manually beforehand. You can close
+the room in Rooms without disconnecting Auto. Existing Bluetooth permissions and
+local-network reachability are still required for their respective transports.
+Guests see shared metadata, requests, votes, and playback state.
 Invitation links/QR codes grant temporary access; treat them as access credentials.
 Ending a room revokes access. Native transfer sends current audio through the host
 to the chosen receiver. Guests/receivers do not receive the host's Plex token.
