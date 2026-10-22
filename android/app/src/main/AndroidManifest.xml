@@ -24,6 +24,7 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <queries>
         <package android:name="com.google.android.projection.gearhead" />
+        <package android:name="com.google.android.googlequicksearchbox" />
         <package android:name="com.android.systemui" />
         <package android:name="com.android.bluetooth" />
         <package android:name="android" />

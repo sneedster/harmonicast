@@ -32,6 +32,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import java.util.concurrent.atomic.AtomicReference
 import androidx.compose.runtime.mutableStateOf
 
@@ -48,6 +49,7 @@ class HarmonicastMediaService : MediaLibraryService() {
     private var webSocketStopped = false
     private val currentIsAuto = AtomicReference(false)
     private val androidAutoControllers = mutableSetOf<MediaSession.ControllerInfo>()
+    private val autoSearches = mutableMapOf<MediaSession.ControllerInfo, AutoLibrarySearch>()
     private lateinit var carConnection: androidx.car.app.connection.CarConnection
     private var carProjectionConnected: Boolean? = null
     private var guestRoomStartedForAuto = false
@@ -313,8 +315,10 @@ class HarmonicastMediaService : MediaLibraryService() {
                 // search results. Keep this explicit: a normal phone
                 // MediaController happens to work with the defaults, which
                 // otherwise makes an Auto regression easy to miss.
+                // Starting a search and fetching its results need separate grants.
                 val availableSessionCommands = ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_SEARCH)
+                    .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_SEARCH_RESULT)
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_CHILDREN)
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_ITEM)
                     .add(SessionCommand.COMMAND_CODE_LIBRARY_GET_LIBRARY_ROOT)
@@ -346,6 +350,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                 session: MediaSession,
                 controller: MediaSession.ControllerInfo,
             ) {
+                autoSearches.remove(controller)?.clear()
                 if (isAndroidAutoController(controller)) {
                     androidAutoControllers.remove(controller)
                 }
@@ -663,11 +668,18 @@ class HarmonicastMediaService : MediaLibraryService() {
                 params: LibraryParams?
             ): ListenableFuture<LibraryResult<Void>> {
                 Log.d("HarmonicastMedia", "onSearch for: $query")
+                val search = autoSearches.getOrPut(browser) { AutoLibrarySearch(scope, { core.library }) }
+                val pending = search.search(query)
                 scope.launch {
                     try {
-                        val results = core.library.searchPage(query, 0, 1)
-                        Log.d("HarmonicastMedia", "Search results found: ${results.total}")
-                        session.notifySearchResultChanged(browser, query, results.total, params)
+                        val results = pending.await()
+                        Log.d("HarmonicastMedia", "Search results found: ${results.size}")
+                        session.notifySearchResultChanged(browser, query, results.size, params)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        // Finish legacy requests for superseded prefixes without another Plex read.
+                        if (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                            session.notifySearchResultChanged(browser, query, 0, params)
+                        } else throw e
                     } catch (e: Exception) {
                         Log.e("HarmonicastMedia", "Search failed", e)
                         session.notifySearchResultChanged(browser, query, 0, params)
@@ -687,9 +699,8 @@ class HarmonicastMediaService : MediaLibraryService() {
                 Log.d("HarmonicastMedia", "onGetSearchResult for: $query")
                 return scope.future {
                     try {
-                        require(page >= 0 && pageSize > 0)
-                        val offset = Math.multiplyExact(page, pageSize)
-                        val items = core.library.searchPage(query, offset, pageSize).songs.map(::createMediaItem)
+                        val search = autoSearches.getOrPut(browser) { AutoLibrarySearch(scope, { core.library }) }
+                        val items = search.page(query, page, pageSize).map(::createMediaItem)
                         Log.d("HarmonicastMedia", "Returning ${items.size} search items")
                         LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
                     } catch (e: Exception) {
@@ -1016,6 +1027,8 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     private fun reloadProfile() {
+        autoSearches.values.forEach { it.clear() }
+        autoSearches.clear()
         reportPlexPlaybackState(PlexPlaybackState.STOPPED)
         queueCacheJob?.cancel(); queueRefillJob?.cancel()
         api.profile.personalSource?.let { api.offline?.resetCacheWork(it) }
@@ -1548,6 +1561,8 @@ class HarmonicastMediaService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        autoSearches.values.forEach { it.clear() }
+        autoSearches.clear()
         reportPlexPlaybackState(PlexPlaybackState.STOPPED)
         plexTimelineClosed = true
         plexTimelineUpdates.close()

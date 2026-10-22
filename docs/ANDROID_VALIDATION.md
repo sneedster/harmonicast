@@ -1,5 +1,90 @@
 # Android validation
 
+## v1.1.28 signed Android Auto search release — 2026-10-21
+
+Packaged the search repair as stable v1.1.28, version code 93, superseding the
+installed code 92 preview. Both checked-in version defaults agree.
+`./android/build-release.sh` passed without skipping checks: 437 tests across 64
+isolated classes, zero failures/errors/skips; debug lint with zero errors and 43
+existing warnings; signed release assembly and release vital lint.
+`git diff --check` passed.
+
+APK metadata confirms `io.github.sneedster.harmonicast`, version 1.1.28 (93).
+Signature verification passed and the certificate matches the published v1.1.27
+APK, whose local bytes were checked against its GitHub asset digest.
+Stable APK: `android/releases/harmonicast-1.1.28.apk`.
+SHA-256: `4164fa7fb983ec75d0d9bc49c05e872c76376d84739a137c1c15f81a716b3346`.
+The checksum asset uses the APK basename.
+
+The stable package directly upgraded the Pixel's preview without clearing data;
+installed version 1.1.28 (93) was checked and MainActivity launched. This restores
+the plain semantic version name required by ordinary in-app update checks.
+The preview's same search implementation returned all three Alina Baraz tracks
+in about 0.8 seconds through the Android Auto Desktop Head Unit, as recorded below.
+Full spoken-command and physical-car acceptance remain pending; the desktop tool
+could not open its microphone. No new physical car or TV test was performed during
+stable packaging.
+
+## Android Auto search repair — local preview, 2026-10-21
+
+Michael reported no matches from both the car's Search screen and voice search.
+The original v1.1.27 (91) was reproduced on the Pixel 10 Pro through the Android
+Auto Desktop Head Unit. Typed `alina baraz` requests entered `onSearch` and
+`onGetSearchResult`, then repeatedly failed with `SocketTimeoutException` while
+reading Plex response headers. The final query eventually returned three matches
+after several minutes of queued work. The Google voice controller also connected as
+`com.google.android.googlequicksearchbox` and was rejected by the caller policy.
+
+The repair:
+
+- Use Plex's indexed search with artist/album expansion for car results, bounded
+  to 40 tracks. Avoid the all-tracks OR scan used by the old car search path.
+- Debounce typing for 300 ms, cancel superseded lookups, and reuse one result
+  snapshot for the result count and all pages. Complete obsolete legacy prefix
+  requests without another Plex lookup. Clear snapshots on disconnect or profile
+  reload and invalidate them when the library changes.
+- Grant `COMMAND_CODE_LIBRARY_GET_SEARCH_RESULT` as well as search-start access.
+  A real Media3 browser test reproduced `ERROR_PERMISSION_DENIED` before this fix.
+  Media3's legacy bridge fetches internally, so this omission alone did not explain
+  the reproduced Auto timeout.
+- Admit the Google voice-search package only with UID/package ownership and a
+  verified production signing lineage. The Pixel's APK verified with the public
+  Google production root listed in [Android UAMP's caller allowlist](https://github.com/android/uamp/blob/main/common/src/main/res/xml/allowed_media_browser_callers.xml).
+  Unrelated packages, wrong UIDs, wrong signers and multiple signers remain denied.
+
+Read-only server checks found three Alina Baraz tracks using both the old filter
+and indexed artist expansion. Phone search was refreshed and showed Alina Baraz
+album matches while the original Auto search timed out.
+
+Regression coverage includes production browser connection and callbacks,
+notifications, pagination, empty results, the compatibility bridge's unpaged
+request size, voice media-item resolution, prefix cancellation, shared count/page
+snapshots, source invalidation and Google controller authentication including
+signing-key rotation. The public test certificate contains no private key.
+
+`VERSION_NAME=1.1.28-auto-search-preview VERSION_CODE=92 ./android/build-release.sh`
+passed its complete gate: 437 tests across 64 isolated classes, zero failures,
+errors or skips; debug lint with zero errors and 43 existing warnings; signed
+assembly and release vital lint. APK signature verification passed with the same
+certificate as the existing release. SHA-256:
+`4128e9a4421f28b28d7ee71e9ca5ec90437585cf9e1b5c14f21215038d44e99e`.
+
+Installed the signed preview over v1.1.27 on the Pixel without clearing app data.
+In the Desktop Head Unit, typing `alina baraz` returned all three tracks in about
+0.8 seconds: the final query logged at 1792645136.341, with three items returned
+at 1792645137.107. Superseded prefixes completed with zero items, with no further
+Plex reads for those obsolete queries. See the
+[verified result screen](validation/android-auto-search-2026-10-21/alina-baraz-results.png).
+
+Full spoken-command acceptance remains pending: the Desktop Head Unit failed to
+open its PortAudio microphone input, including for prerecorded speech. Caller
+authentication and voice media-item resolution passed the regression tests.
+No physical car or TV test was performed. Stopped the temporary head-unit server
+and removed the test ADB forwarding; playback was left paused. The preview is
+installed locally, not published. A later stable package must exceed version code
+92. The updater only compares plain semantic version names, so the preview phone
+needs a direct stable installation before ordinary in-app update checks resume.
+
 ## v1.1.27 signed scrobbling and room follow-ups — 2026-10-17
 
 Packaged the reviewed changes as v1.1.27, version code 91, using the existing

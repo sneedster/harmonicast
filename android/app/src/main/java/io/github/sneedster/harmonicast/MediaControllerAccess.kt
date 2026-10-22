@@ -11,11 +11,17 @@ import java.security.MessageDigest
 /** Names alone (including Media3's Auto/notification helpers) are not caller authentication. */
 internal object MediaControllerAccess {
     const val ANDROID_AUTO = "com.google.android.projection.gearhead"
+    const val GOOGLE_VOICE_SEARCH = "com.google.android.googlequicksearchbox"
     // Google production certificates published by android/uamp's allowed_media_browser_callers.xml.
     // Deliberately exclude its development and simulator keys. Includes the rotated release key.
     private val autoCertificates = setOf(
         "fdb00c43dbde8b51cb312aa81d3b5fa17713adb94b28f598d77f8eb89daceedf",
         "1ca8dcc0bed3cbd872d2cb791200c0292ca9975768a82d676b8b424fb65b5295",
+    )
+    // Google voice search is a separate controller even while Android Auto projects.
+    // Production signing root from the same UAMP allowlist; rotated APKs retain it in their lineage.
+    private val voiceCertificates = setOf(
+        "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83",
     )
     private val systemControllers = setOf("android", "com.android.systemui", "com.android.bluetooth")
 
@@ -28,7 +34,12 @@ internal object MediaControllerAccess {
         // Media3 reads the UID from Binder; the supplied package name must belong to that UID.
         if (uid < 0 || pm.getPackagesForUid(uid)?.contains(packageName) != true) return false
         if (packageName == context.packageName) return uid == Process.myUid()
-        if (packageName == ANDROID_AUTO) {
+        val certificates = when (packageName) {
+            ANDROID_AUTO -> autoCertificates
+            GOOGLE_VOICE_SEARCH -> voiceCertificates
+            else -> null
+        }
+        if (certificates != null) {
             val signatures = if (Build.VERSION.SDK_INT >= 28) {
                 val info = pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES).signingInfo
                     ?: return false
@@ -37,7 +48,7 @@ internal object MediaControllerAccess {
             } else pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES).signatures
             return signatures?.any { signature ->
                 MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
-                    .joinToString("") { "%02x".format(it) } in autoCertificates
+                    .joinToString("") { "%02x".format(it) } in certificates
             } == true
         }
         // Only the named OS media surfaces; neither arbitrary system apps nor notification listeners.

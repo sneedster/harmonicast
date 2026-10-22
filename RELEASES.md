@@ -1,5 +1,22 @@
 # Releases
 
+## v1.1.28 — Android Auto search
+
+Version code: **93**, superseding the code 92 search preview.
+
+- Return car search results through Plex's indexed lookup instead of the slow
+  full-library filter. Wait briefly while typing and share one set of up to 40
+  matches between the result count and pages.
+- Grant search-result retrieval and authenticate the Google voice-search
+  controller using its production signing history and package/UID ownership.
+
+Validation: all 437 Android tests in 64 classes, debug lint, signed release
+assembly, release vital lint, APK metadata and same-certificate checks. The signed
+preview installed over v1.1.27 on the Pixel; Android Auto Desktop Head Unit search
+returned three Alina Baraz tracks in about 0.8 seconds. Full spoken-command and
+physical-car acceptance remain pending because the desktop tool could not open
+its microphone. See [Android validation](docs/ANDROID_VALIDATION.md).
+
 ## v1.1.27 — Plex scrobbling and room reliability
 
 Version code: **91**.
