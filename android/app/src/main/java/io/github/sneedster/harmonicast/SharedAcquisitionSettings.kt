@@ -23,7 +23,7 @@ internal class SharedPublicationModel : ViewModel() {
     var gateway by mutableStateOf<AcquisitionSetupGateway?>(null); private set
     var busy by mutableStateOf(false); private set
     var message by mutableStateOf(""); private set
-    var account: MusicGrabberAccount? = null; private set
+    var account: AcquisitionAccount? = null; private set
     private var operation: Job? = null
     private var generation = 0
     fun initialize(initialUrl: String = "", valid: () -> Boolean) {
@@ -34,7 +34,7 @@ internal class SharedPublicationModel : ViewModel() {
             override fun read(key: String) = values[key]
             override fun write(values: Map<String, String>) { this.values.putAll(values) }
         }
-        account = MusicGrabberAccount(memory, AndroidSecretCipher(), restricted = true, contextValid = valid)
+        account = AcquisitionAccount(memory, AndroidSecretCipher(), restricted = true, contextValid = valid)
     }
     fun run(action: suspend () -> Unit) {
         if (busy) return

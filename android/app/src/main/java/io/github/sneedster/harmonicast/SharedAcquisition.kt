@@ -46,7 +46,7 @@ internal class SharedAcquisition(private val storage: ProfileStorage, cipher: Se
     private val mutex = Mutex()
     private val plex = LocalPlexClient(storage, plexHttp)
     val state = MutableStateFlow(SharedAcquisitionState())
-    val account = MusicGrabberAccount(privateStorage, cipher, serviceHttp, readSpacingMillis = readSpacingMillis, restricted = true,
+    val account = AcquisitionAccount(privateStorage, cipher, serviceHttp, readSpacingMillis = readSpacingMillis, restricted = true,
         contextValid = { bound != null && source() == bound && !NearbyGuestParticipation.active && bound?.canWriteToPlex == false })
     private fun current(expected: PersonalPlexSource, generation: Int) {
         require(epoch == generation && source() == expected && !NearbyGuestParticipation.active) { "Plex source changed" }

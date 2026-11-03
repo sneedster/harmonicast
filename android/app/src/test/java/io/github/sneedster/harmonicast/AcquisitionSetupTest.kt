@@ -66,7 +66,7 @@ class AcquisitionSetupTest {
 
     @Test fun sharedWebSetupOnlyStagesRestrictedAccountAndNeverReturnsSecrets() = runBlocking {
         val network = SharedGrabberStub()
-        val account = MusicGrabberAccount(AcquisitionMemory(), TestSecretCipher(), network, readSpacingMillis = 0, restricted = true)
+        val account = AcquisitionAccount(AcquisitionMemory(), TestSecretCipher(), network, readSpacingMillis = 0, restricted = true)
         val gateway = AcquisitionSetupGateway(RuntimeEnvironment.getApplication(), account, "127.0.0.1", initialUrl = "https://shared.example")
         try {
             gateway.start(); val base = gateway.state.value.url
@@ -87,4 +87,23 @@ class AcquisitionSetupTest {
             assertNull(account.connection())
         } finally { gateway.close() }
     }
+    @Test fun soulSyncSetupStagesKeyUntilAndroidSaveAndSharedSetupRejectsIt() = runBlocking {
+        val network = SoulSyncStub()
+        val account = AcquisitionAccount(AcquisitionMemory(), TestSecretCipher(), network, readSpacingMillis = 0)
+        val gateway = AcquisitionSetupGateway(RuntimeEnvironment.getApplication(), account, "127.0.0.1", initialProviderId = "soulsync")
+        try {
+            gateway.start(); val base = gateway.state.value.url
+            val token = JSONObject(call(base, "/pair", JSONObject().put("code", gateway.state.value.code)).second).getString("token")
+            val result = call(base, "/validate", JSONObject().put("url", "https://soul").put("providerId", "soulsync")
+                .put("apiKey", "staged-soul-key"), token)
+            assertEquals(200, result.first)
+            assertFalse(result.second.contains("staged-soul-key")); assertNull(account.connection())
+            assertEquals("soulsync", gateway.state.value.staged!!.providerId)
+            gateway.save(); assertEquals("soulsync", account.connection()!!.providerId)
+            assertEquals(0, network.posts)
+        } finally { gateway.close() }
+        val shared = AcquisitionAccount(AcquisitionMemory(), TestSecretCipher(), network, restricted = true)
+        assertTrue(runCatching { shared.validate(AcquisitionLogin("https://soul", apiKey = "key", providerId = "soulsync")) }.isFailure)
+    }
+
 }

@@ -1,5 +1,29 @@
 # Releases
 
+## v1.1.29 — SoulSync music acquisition
+
+Version code: **94**.
+
+- Choose SoulSync or MusicGrabber in Settings → Music acquisition and in the
+  paired browser setup. Existing MusicGrabber connections and request recovery
+  remain supported.
+- Submit SoulSync requests through its native API, track their progress, and wait
+  for a matching playable track in Plex before adding it to the queue. Uncertain
+  submissions and expired tracking are never automatically resubmitted.
+- Keep SoulSync API keys encrypted on Android. SoulSync supports the owner's
+  personal connection and guest requests through the owner's room; shared Plex
+  credential publication and private bad-file replacement remain MusicGrabber-only.
+
+Validation: all 449 Android tests in 65 isolated classes passed with zero failures,
+errors, or skips. Debug lint reported zero errors and 43 existing warnings. Debug
+assembly, signed release assembly, release vital lint, browser setup checks, APK
+metadata, and same-certificate verification against published v1.1.28 passed.
+No device installation, physical listening, TV, or Android Auto check was performed.
+
+See the [SoulSync setup guide](docs/SOULSYNC_SETUP.md) and
+[validation notes](docs/SOULSYNC_VALIDATION.md). A real SoulSync acquisition through
+lossless download, import, Plex indexing, and phone playback remains unverified.
+
 ## v1.1.28 — Android Auto search
 
 Version code: **93**, superseding the code 92 search preview.

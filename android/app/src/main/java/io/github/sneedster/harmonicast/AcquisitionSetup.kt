@@ -32,9 +32,9 @@ internal class SetupPairing(private val now: () -> Long = System::currentTimeMil
     @Synchronized fun authorized(candidate: String?) = active() && candidate != null && token != null && MessageDigest.isEqual(candidate.toByteArray(), token!!.toByteArray())
     @Synchronized fun close() { revoked = true; token = null }
 }
-internal class AcquisitionSetupGateway(private val context: Context, private val account: MusicGrabberAccount? = null,
+internal class AcquisitionSetupGateway(private val context: Context, private val account: AcquisitionAccount? = null,
     private val testBindAddress: String? = null, private val pairing: SetupPairing = SetupPairing(),
-    private val initialUrl: String = "") {
+    private val initialUrl: String = "", private val initialProviderId: String = "musicgrabber") {
     val state = MutableStateFlow(AcquisitionSetupState())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val workers = java.util.concurrent.ThreadPoolExecutor(1, 2, 10, java.util.concurrent.TimeUnit.SECONDS,
@@ -87,6 +87,7 @@ internal class AcquisitionSetupGateway(private val context: Context, private val
         if (first[0] == "GET" && first[1] == "/") {
             val page = if (account == null) "shared-plex/index.html" else "setup/index.html"
             val html = context.assets.open(page).bufferedReader().use { it.readText() }
+                .replace("data-provider=\"musicgrabber\"", "data-provider=\"${AcquisitionProviders.get(initialProviderId).id}\"")
             respond(client, 200, if (account?.restricted == true) html.replace("data-purpose=\"personal\"", "data-purpose=\"shared\"") else html, true); return
         }
         // Download-only mode serves fixed, non-secret assets. It has no pairing,
@@ -121,7 +122,7 @@ internal class AcquisitionSetupGateway(private val context: Context, private val
             try {
                 if (!pairing.active()) throw IllegalArgumentException("Setup expired")
                 val candidate = account.validate(AcquisitionLogin(body.optString("url"), body.optString("username"), body.optString("password"),
-                    body.optBoolean("remember", true), body.optBoolean("apiKeyMode"), body.optString("apiKey")))
+                    body.optBoolean("remember", true), body.optBoolean("apiKeyMode"), body.optString("apiKey"), body.optString("providerId", "musicgrabber")))
                 if (!pairing.active()) { account.revoke(candidate); throw IllegalArgumentException("Setup expired") }
                 staged?.let { account.revoke(it) }; staged = candidate
                 val completion = if (account.restricted) "Dedicated account tested. Review and publish it on the Android device. Nothing has been published yet."

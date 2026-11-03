@@ -517,6 +517,9 @@ current source. Existing audio gains artwork without being downloaded again.
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 |---|---|---|---|---|
 | Artwork | Cover, HarmonicastViewModel.artworkUrl, MediaArtworkProvider | Listening features and offline artwork behavior above | Native player, queue, downloads and Media3 handles | ArtworkCacheTest, MediaSessionPrivacyTest |
+| Form | LoginField, AcquisitionSettingsModel, AcquisitionSetupGateway | docs/SOULSYNC_SETUP.md, docs/MUSICGRABBER_SETUP.md | Personal provider choice; shared MusicGrabber account | SoulSyncAcquisitionTest, AcquisitionSetupTest, scripts/acquisition-browser-test.cjs |
+| Service choice | Material FilterChip; native setup-page radio inputs | Acquisition service selection above | Android; paired browser | Android build and paired-browser keyboard checks |
+| Setup feedback | SettingsDescription and model message; setup page message live region | Staged setup workflow above | Pending, failed, staged, expired | AcquisitionSetupTest, scripts/acquisition-browser-test.cjs |
 
 Settings > Appearance on TV owns demoscene selection and optional classic neon.
 DemoVisualizer renders plasma, starfield or a wireframe cube behind Now Playing;
@@ -531,3 +534,19 @@ It chooses up to three nonduplicate sonic candidates outside the nearest 100,
 using a wider bounded Plex request, then resumes the fixed Artist Radio seed
 with the saved sound match range. Clear queue ends the detour. No saved radio preference
 or rating consent changes. Plex sonic analysis remains a prerequisite.
+
+## Acquisition service selection
+
+Settings > Music acquisition retains LoginField, SettingsDescription, native
+Material FilterChip service choices, the existing inline error, and TV focus
+feedback. AcquisitionSettingsModel owns the form state; switching service clears
+secrets and preserves the entered URL for editing. SoulSync asks for an API key;
+MusicGrabber retains session login and its advanced key option. Busy connection
+operations disable service switching. Saved credentials are never prefilled.
+
+The paired setup page uses native radio inputs for service selection and the
+existing staged-until-Android-save workflow. Native platform radio behavior is
+intentional; no select popup is introduced. API keys are masked with an accessible
+show/hide action, failure preserves input, and completion/expiry clears secrets.
+Shared setup fixes the provider to MusicGrabber and server-side validation rejects
+SoulSync keys. These rules come from the adapter permissions in SOULSYNC_SETUP.md.

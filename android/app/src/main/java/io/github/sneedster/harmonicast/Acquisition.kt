@@ -105,22 +105,24 @@ internal class AndroidSecretCipher : SecretCipher {
     }
 }
 internal data class AcquisitionLogin(val url: String, val username: String = "", val password: String = "", val remember: Boolean = true,
-    val apiKeyMode: Boolean = false, val apiKey: String = "") {
+    val apiKeyMode: Boolean = false, val apiKey: String = "", val providerId: String = "musicgrabber") {
     override fun toString() = "AcquisitionLogin(redacted)"
 }
 internal data class AcquisitionConnection(val url: String, val username: String, val accountId: String, val token: String,
     val password: String = "", val apiKeyMode: Boolean = false, val apiKey: String = "", val role: String = "",
-    val destination: String = "", val scopeId: String = "") {
+    val destination: String = "", val scopeId: String = "", val providerId: String = "musicgrabber") {
     override fun toString() = "AcquisitionConnection(redacted)"
-    val identity: String get() = "$url|${if (apiKeyMode) "api-key" else accountId}" + if (scopeId.isBlank()) "" else "|$scopeId"
+    val provider: AcquisitionProvider get() = AcquisitionProviders.get(providerId)
+    // Preserve legacy identities so existing MusicGrabber requests can resume after an upgrade.
+    val identity: String get() = provider.identity(this)
     fun json() = JSONObject().put("url", url).put("username", username).put("accountId", accountId).put("token", token)
-        .put("password", password).put("apiKeyMode", apiKeyMode).put("apiKey", apiKey).put("role", role).put("destination", destination).put("scopeId", scopeId)
-    fun headers() = if (apiKeyMode) if (apiKey.isBlank()) emptyMap() else mapOf("X-API-Key" to apiKey) else mapOf("Authorization" to "Bearer $token")
+        .put("password", password).put("apiKeyMode", apiKeyMode).put("apiKey", apiKey).put("role", role).put("destination", destination).put("scopeId", scopeId).put("providerId", providerId)
+    fun headers() = provider.headers(this)
 }
 internal data class AcquisitionConnectionState(val configured: Boolean = false, val available: Boolean = false, val checking: Boolean = false,
     val message: String = "Not configured", val url: String = "", val username: String = "")
 
-internal class MusicGrabberAccount(private val storage: ProfileStorage, private val cipher: SecretCipher,
+internal class AcquisitionAccount(private val storage: ProfileStorage, private val cipher: SecretCipher,
     private val http: AcquisitionHttp = AcquisitionNetwork(), private val now: () -> Long = System::currentTimeMillis,
     private val readSpacingMillis: Long = 5_000, val restricted: Boolean = false,
     private val contextValid: () -> Boolean = { true }) {
@@ -135,55 +137,16 @@ internal class MusicGrabberAccount(private val storage: ProfileStorage, private 
     fun connection(): AcquisitionConnection? = storage.read("acquisition.credentials")?.takeIf { it.isNotBlank() }?.let {
         runCatching { val j = JSONObject(cipher.open(it)); AcquisitionConnection(j.getString("url"), j.optString("username"), j.getString("accountId"),
             j.optString("token"), j.optString("password"), j.optBoolean("apiKeyMode"), j.optString("apiKey"),
-            j.optString("role"), j.optString("destination"), j.optString("scopeId")) }.getOrElse {
+            j.optString("role"), j.optString("destination"), j.optString("scopeId"), j.optString("providerId", "musicgrabber")).also { it.provider } }.getOrElse {
             state.value = AcquisitionConnectionState(message = "Saved login is unavailable. Connect again")
             null
         }
     }
     suspend fun validate(input: AcquisitionLogin): AcquisitionConnection {
         require(contextValid()) { "Plex source changed; start again" }
+        require(!restricted || input.providerId == MusicGrabberProvider.id) { "Shared access requires MusicGrabber's dedicated non-admin account" }
         val url = if (restricted) sharedAcquisitionUrl(input.url) else acquisitionUrl(input.url)
-        val config = http.call("$url/api/config")
-        if (restricted) {
-            require(!input.apiKeyMode && input.remember) { "Shared access requires a dedicated username and password" }
-            require(config.opt("users_exist") == true && config.optString("auth_mode") == "session") {
-                "Enable MusicGrabber multi-user mode with an administrator and a dedicated non-admin account"
-            }
-            val denied = try { http.call("$url/api/auth/me"); false }
-                catch (e: AcquisitionFailure) { if (e.status == 401) true else throw e }
-            require(denied) { "MusicGrabber must require a login for shared access" }
-        }
-        require(config.has("auth_required") || config.has("version")) { "This URL did not return MusicGrabber configuration" }
-        var candidate: AcquisitionConnection? = null
-        try {
-            candidate = if (input.apiKeyMode) AcquisitionConnection(url, "API key", "api-key", "", apiKeyMode = true, apiKey = input.apiKey.trim())
-            else {
-                require(input.username.isNotBlank() && input.password.isNotEmpty()) { "Enter your MusicGrabber username and password" }
-                val login = http.call("$url/api/auth/login", "POST", body = JSONObject().put("username", input.username.trim()).put("password", input.password))
-                val token = login.getString("token")
-                candidate = AcquisitionConnection(url, input.username.trim(), "", token)
-                val user = http.call("$url/api/auth/me", headers = candidate.headers())
-                if (restricted) require(user.optString("role") in setOf("peon", "user") && user.opt("id") is String && user.getString("id").isNotBlank()) {
-                    "Use a verified non-admin MusicGrabber account (peon recommended)"
-                }
-                val result = AcquisitionConnection(url, user.getString("username"), user.getString("id"), token,
-                    if (input.remember) input.password else "", role = user.optString("role"),
-                    destination = config.optString("singles_path_example").ifBlank { config.optString("music_dir") })
-                candidate = result
-                require(!user.optBoolean("force_password_change")) { "Change your password in MusicGrabber, then connect again" }
-                result
-            }
-            require(candidate.apiKeyMode || (candidate.token.isNotBlank() && candidate.accountId.isNotBlank())) { "MusicGrabber returned an invalid login" }
-            val access = http.call("$url/api/bulk-imports?limit=1", headers = candidate.headers())
-            require(access.optJSONArray("imports") != null) { "MusicGrabber acquisition API is unavailable" }
-            if (restricted) {
-                val denied = try { http.call("$url/api/users", headers = candidate.headers()); false }
-                    catch (e: AcquisitionFailure) { if (e.status == 403) true else throw e }
-                require(denied) { "This MusicGrabber account has administrator access" }
-            }
-            require(contextValid()) { "Plex source changed; start again" }
-            return candidate
-        } catch (e: Exception) { candidate?.let { revoke(it) }; throw e }
+        return AcquisitionProviders.get(input.providerId).validate(input, url, http, restricted, contextValid)
     }
     suspend fun save(candidate: AcquisitionConnection) = mutex.withLock {
         require(contextValid()) { "Plex source changed; start again" }
@@ -193,11 +156,7 @@ internal class MusicGrabberAccount(private val storage: ProfileStorage, private 
         state.value = AcquisitionConnectionState(true, true, message = "Connected", url = candidate.url, username = candidate.username)
         if (old != null && old.token != candidate.token) revoke(old)
     }
-    suspend fun revoke(connection: AcquisitionConnection) {
-        if (!connection.apiKeyMode && connection.token.isNotBlank()) withContext(NonCancellable) {
-            runCatching { withTimeout(5_000) { http.call("${connection.url}/api/auth/logout", "POST", connection.headers()) } }
-        }
-    }
+    suspend fun revoke(connection: AcquisitionConnection) = connection.provider.revoke(connection, http)
     suspend fun disconnect() = mutex.withLock {
         val old = connection()
         storage.write(mapOf("acquisition.credentials" to "")); checkedAt = null; blockedToken = null
@@ -213,8 +172,7 @@ internal class MusicGrabberAccount(private val storage: ProfileStorage, private 
             if (!force && checkedAt?.let { now() - it < cacheMillis } == true) return@withLock state.value.available
             state.value = AcquisitionConnectionState(true, checking = true, message = "Checking connection…", url = c.url, username = c.username)
             try {
-                val response = call("/api/bulk-imports?limit=1", expected = c.identity)
-                require(response.optJSONArray("imports") != null)
+                c.provider.check(this@AcquisitionAccount, c)
                 checkedAt = now(); healthGeneration++
                 state.value = AcquisitionConnectionState(true, true, message = "Connected", url = c.url, username = c.username)
                 true
@@ -231,7 +189,7 @@ internal class MusicGrabberAccount(private val storage: ProfileStorage, private 
             lastReadAt?.let { delay((readSpacingMillis - (now() - it)).coerceAtLeast(0)) }
             lastReadAt = now()
         }
-        var c = connection() ?: throw AcquisitionFailure(401, "Connect MusicGrabber in Settings")
+        var c = connection() ?: throw AcquisitionFailure(401, "Connect a music service in Settings")
         require(expected == null || c.identity == expected) { "Connection changed; request is paused" }
         if (blockedToken == c.token && !c.apiKeyMode) throw AcquisitionFailure(401, "Sign in again")
         try {
@@ -296,11 +254,11 @@ internal data class AcquisitionRequestState(val id: String, val recording: Catal
         j.optString("participant"), j.optString("connection"), j.optString("library"), j.optString("room"), j.getString("status"), j.optString("importId"), j.optString("message")) }
 }
 internal fun plexIdentity(source: PersonalPlexSource?) = source?.let { "${it.machineIdentifier}|${it.libraryKey}" }.orEmpty()
-internal class AcquisitionCoordinator(val ownerAccount: MusicGrabberAccount, val catalog: MusicBrainzCatalog, private val storage: ProfileStorage,
+internal class AcquisitionCoordinator(val ownerAccount: AcquisitionAccount, val catalog: MusicBrainzCatalog, private val storage: ProfileStorage,
     private val source: () -> PersonalPlexSource?, private val core: () -> HarmonicastCore,
     private val recent: suspend () -> List<Song>, private val autoStart: Boolean = true,
     val shared: SharedAcquisition? = null) {
-    val account: MusicGrabberAccount get() = if (source()?.canWriteToPlex == false && shared != null) shared.account else ownerAccount
+    val account: AcquisitionAccount get() = if (source()?.canWriteToPlex == false && shared != null) shared.account else ownerAccount
     suspend fun checkAccess(force: Boolean = false): Boolean {
         if (NearbyGuestParticipation.active) { roomAllowed.value = false; return false }
         val selected = source()
@@ -362,7 +320,7 @@ internal class AcquisitionCoordinator(val ownerAccount: MusicGrabberAccount, val
     private fun readRequests(): List<AcquisitionRequestState> = runCatching {
         val values = JSONArray(storage.read("acquisition.requests") ?: "[]")
         List(values.length()) { AcquisitionRequestState.decode(values.getJSONObject(it)).let { request ->
-            if (request.status == "submitting") request.copy(status = "unconfirmed", message = "Submission could not be confirmed. Check MusicGrabber") else request
+            if (request.status == "submitting") request.copy(status = "unconfirmed", message = "Submission could not be confirmed. Check the acquisition service") else request
         } }
     }.getOrDefault(emptyList())
     @Synchronized private fun update(value: AcquisitionRequestState) {
@@ -374,7 +332,7 @@ internal class AcquisitionCoordinator(val ownerAccount: MusicGrabberAccount, val
     }
     fun dismissUnconfirmed(id: String) {
         val request = requests.value.firstOrNull { it.id == id && it.status == "unconfirmed" } ?: return
-        update(request.copy(status = "failed", message = "Tracking dismissed. Check MusicGrabber before requesting this track again"))
+        update(request.copy(status = "failed", message = "Tracking dismissed. Check the acquisition service before requesting this track again"))
     }
     fun pending(participant: String) = requests.value.count { it.participant == participant && it.status !in setOf("failed", "fulfilled") }
     fun visible(participant: String?, room: String? = null) = requests.value.filter { (participant == null || it.participant == participant) && (room == null || it.room == room) }.takeLast(50)
@@ -390,11 +348,10 @@ internal class AcquisitionCoordinator(val ownerAccount: MusicGrabberAccount, val
         require(checkAccess(true)) { "Music acquisition access could not be verified" }
         if (room.isNotBlank()) require(roomId.value == room && roomAllowed.value) { "Music acquisition is disabled in this room" }
         require(account.check()) { account.state.value.message }
-        val conn = account.connection() ?: throw IllegalArgumentException("Connect MusicGrabber first")
+        val conn = account.connection() ?: throw IllegalArgumentException("Connect a music service first")
         val lib = plexIdentity(source())
         val recording = catalog.recording(recordingId)
-        val line = acquisitionLine(recording)
-        require(line.length <= 200 && !line.contains('\n') && !line.contains('\r')) { "This track cannot be represented by MusicGrabber's single-track input" }
+        conn.provider.validateRecording(recording)
         // Duplicate taps return the accepted request rather than submitting twice.
         requests.value.lastOrNull { it.participant == participant && it.recording.id == recordingId && it.library == lib && it.connection == conn.identity && it.status !in setOf("failed", "fulfilled") }?.let { return@withLock it }
         if (room.isNotBlank()) require(roomId.value == room && roomAllowed.value) { "Music acquisition is disabled in this room" }
@@ -420,14 +377,12 @@ internal class AcquisitionCoordinator(val ownerAccount: MusicGrabberAccount, val
             }
             if (room.isNotBlank()) require(roomId.value == room && roomAllowed.value) { "Music acquisition is disabled in this room" }
             submissionStarted = true
-            val result = account.call("/api/bulk-import-async", "POST", JSONObject().put("songs", line).put("create_playlist", false).put("use_playlists_dir", false), conn.identity)
-            val importId = result.optString("import_id")
-            require(importId.isNotBlank()) { "Submission could not be confirmed. Check MusicGrabber before retrying" }
+            val importId = conn.provider.submit(account, recording, conn.identity)
             val accepted = request.copy(status = "acquiring", importId = importId, message = "Acquiring track…")
             update(accepted); if (autoStart) start(); accepted
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             val definite = !submissionStarted || e is AcquisitionFailure && e.status in setOf(400, 401, 403, 404, 422, 429) || e is IllegalArgumentException && !e.message.orEmpty().startsWith("Submission")
-            val failed = request.copy(status = if (definite) "failed" else "unconfirmed", message = if (definite) safeAcquisitionError(e) else "Submission could not be confirmed. Check MusicGrabber; it will not be resubmitted automatically")
+            val failed = request.copy(status = if (definite) "failed" else "unconfirmed", message = if (definite) safeAcquisitionError(e) else "Submission could not be confirmed. Check the acquisition service; it will not be resubmitted automatically")
             update(failed); failed
         }
     }
@@ -459,28 +414,23 @@ internal class AcquisitionCoordinator(val ownerAccount: MusicGrabberAccount, val
             if (saved.status == "unconfirmed") continue
             var request = saved
             try {
-                if (request.status == "acquiring") {
-                    val job = account.call("/api/bulk-import/${encode(request.importId)}/status", expected = request.connection)
-                    val terminal = job.optString("status") in setOf("error", "failed", "cancelled")
-                    if (terminal || job.optBoolean("complete") && job.optInt("completed") == 0 && job.optInt("failed") > 0) {
-                        update(request.copy(status = "failed", message = "MusicGrabber could not acquire this track")); continue
-                    }
-                    if (job.optBoolean("complete") && job.optInt("completed") == 0 && job.optInt("failed") == 0 && job.optInt("skipped") == 0 && job.optInt("dupe_skipped") == 0) {
-                        update(request.copy(status = "failed", message = "MusicGrabber finished without a track")); continue
-                    }
-                    if (job.optBoolean("complete") && (job.optInt("completed") > 0 || job.optInt("skipped") > 0 || job.optInt("dupe_skipped") > 0)) {
-                        request = request.copy(status = "waiting_for_plex", message = "Waiting for Plex to index the track…"); update(request)
-                    }
+                val progress = if (request.status == "acquiring") account.connection()!!.provider.poll(account, request)
+                    else AcquisitionProgress("waiting_for_plex", "Waiting for Plex to index the track…", true)
+                // Persist completion before a Plex lookup, which can fail independently.
+                if (progress.status == "waiting_for_plex") {
+                    request = request.copy(status = progress.status, message = progress.message); update(request)
                 }
-                if (request.status == "waiting_for_plex") {
+                if (progress.checkPlex) {
                     val found = match(request.recording)
-                    if (found != null) fulfill(request, found) else update(request.copy(message = "Waiting for Plex to index the track…"))
-                } else update(request.copy(message = "Acquiring track…"))
+                    if (found != null) { fulfill(request, found); continue }
+                }
+                request = request.copy(status = progress.status, message = progress.message)
+                update(request)
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
                 val verifyingPlex = request.status == "waiting_for_plex"
                 val missingImport = !verifyingPlex && e is AcquisitionFailure && e.status == 404
                 val message = if (verifyingPlex) "Acquisition finished; waiting for Plex access to verify the track"
-                    else if (missingImport) "Import no longer exists in MusicGrabber" else safeAcquisitionError(e)
+                    else if (missingImport) "Request no longer exists in the acquisition service" else safeAcquisitionError(e)
                 update(request.copy(message = message, status = if (missingImport) "failed" else request.status))
                 throw e
             }
@@ -510,7 +460,7 @@ internal object AcquisitionRuntime {
         var coordinator: AcquisitionCoordinator? = null
         val shared = SharedAcquisition(storage, AndroidSecretCipher(), { profile.personalSource },
             onUnavailable = { coordinator?.roomAllowed?.value = false })
-        AcquisitionCoordinator(MusicGrabberAccount(storage, AndroidSecretCipher()), MusicBrainzCatalog(), storage,
+        AcquisitionCoordinator(AcquisitionAccount(storage, AndroidSecretCipher()), MusicBrainzCatalog(), storage,
             { profile.personalSource }, { LocalHarmonicastCore(profile.personalSource, storage) },
             { profile.personalSource?.let { plex.recentTracks(it) } ?: emptyList() }, shared = shared).also {
                 coordinator = it; instance = it; it.start()

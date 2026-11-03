@@ -110,6 +110,23 @@ class SettingsScreenTest {
         }
     }
 
+    @Test fun acquisitionServiceChoiceShowsSoulSyncKeyAndClearsItWhenSwitching() {
+        setup(); open("Music acquisition")
+        compose.onNodeWithText("SoulSync", useUnmergedTree = false).performScrollTo().performClick()
+        compose.onNodeWithText("SoulSync URL").assertExists().performTextInput("https://soul.example")
+        compose.onNodeWithText("Username").assertDoesNotExist()
+        compose.onNodeWithText("Password").assertDoesNotExist()
+        compose.onNodeWithText("API key").performScrollTo().performTextInput("temporary-test-key")
+        screenshot("acquisition-soulsync-phone")
+        compose.onNodeWithText("MusicGrabber").performScrollTo().performClick()
+        compose.onNodeWithText("Username").assertExists()
+        compose.onNodeWithText("API key").assertDoesNotExist()
+        compose.onNodeWithText("SoulSync").performScrollTo().performClick()
+        val editable = compose.onNodeWithText("API key").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText]
+        assertEquals("", editable.text)
+        compose.onNodeWithText("SoulSync URL").assertTextContains("https://soul.example")
+    }
+
     @Test fun acquisitionUsesAccountLoginAndKeepsApiKeyInAdvancedSettings() {
         setup()
         open("Music acquisition")

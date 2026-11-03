@@ -14,7 +14,7 @@ so new tracks become available. For server installation, configuration, and
 troubleshooting, use the [MusicGrabber documentation](https://gitlab.com/g33kphr33k/musicgrabber/-/blob/main/README.md)
 and project support resources. Harmonicast support covers the app's integration.
 
-Once your server is running, open **Settings → Music acquisition**, enter its
+Once your server is running, open **Settings → Music acquisition**, choose **MusicGrabber**, enter its
 reachable URL and your MusicGrabber username/password, then tap **Connect**.
 You can also use **Set up from another device** to enter credentials on a computer
 and confirm the connection on Android. API-key connections are available under
@@ -23,9 +23,10 @@ Owners can use **Set up shared access** to publish a
 separate non-admin connection for approved Plex recipients. Shared-library room
 hosting does not require acquisition access.
 
-Acquisition starts disabled in each room. The host can enable **Allow music acquisition**
-for guest requests using the host device's MusicGrabber connection. Accepted requests
-continue even after the room closes.
+Room acquisition defaults on after the configured connection passes its access
+check, while preserving an explicit host opt-out. Shared-library hosts also need
+the owner's published room-acquisition grant. Accepted requests continue even
+after the room closes.
 
 ## Shared Plex access
 

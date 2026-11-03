@@ -34,6 +34,7 @@ internal class AcquisitionSettingsModel : ViewModel() {
     var url by mutableStateOf("")
     var rememberLogin by mutableStateOf(true)
     var keyMode by mutableStateOf(false)
+    var providerId by mutableStateOf("musicgrabber")
     var busy by mutableStateOf(false); private set
     var message by mutableStateOf(""); private set
     private var operation: Job? = null
@@ -45,13 +46,22 @@ internal class AcquisitionSettingsModel : ViewModel() {
             finally { busy = false }
         }
     }
-    fun start(context: Context, account: MusicGrabberAccount) = run {
+    fun start(context: Context, account: AcquisitionAccount) = run {
         gateway?.close()
-        val next = AcquisitionSetupGateway(context.applicationContext, account)
+        val next = AcquisitionSetupGateway(context.applicationContext, account, initialProviderId = providerId)
         try { next.start(); gateway = next } catch (e: Exception) { next.close(); throw e }
     }
     fun closeSetup() { val old = gateway; gateway = null; if (old != null) viewModelScope.launch { old.close() } }
     fun clearSecrets() { password = ""; key = "" }
+    fun selectProvider(provider: AcquisitionProvider) {
+        if (busy) return
+        providerId = provider.id; keyMode = provider.apiKeyOnly; message = ""; clearSecrets()
+    }
+    fun load(connection: AcquisitionConnection) {
+        providerId = connection.providerId; url = connection.url
+        username = if (connection.apiKeyMode) "" else connection.username
+        keyMode = connection.apiKeyMode; rememberLogin = connection.password.isNotBlank(); clearSecrets()
+    }
     override fun onCleared() {
         val old = gateway
         if (old != null) CoroutineScope(Dispatchers.IO).launch { old.close() }
@@ -99,7 +109,7 @@ internal class AcquisitionSettingsModel : ViewModel() {
     var editPersonal by rememberSaveable { mutableStateOf(false) }
     val canConfigure = vm.plexAccess.canManageAcquisition
     LaunchedEffect(Unit) {
-        account.connection()?.let { model.url = it.url; model.username = if (it.apiKeyMode) "" else it.username; model.keyMode = it.apiKeyMode; model.rememberLogin = it.password.isNotBlank() }
+        account.connection()?.let(model::load)
         account.check()
     }
     LaunchedEffect(isActive, canConfigure) { if (!isActive || !canConfigure) { model.closeSetup(); model.clearSecrets() } }
@@ -113,7 +123,7 @@ internal class AcquisitionSettingsModel : ViewModel() {
     }
     SettingsDescription(state.message)
     if (state.configured) {
-        SettingsDescription("${state.url}\n${state.username}")
+        SettingsDescription("${account.connection()?.provider?.label.orEmpty()}\n${state.url}\n${state.username}")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { model.run { account.check(true) } }, enabled = !model.busy, modifier = Modifier.tvFocusFeedback()) { Text("Test connection") }
             TextButton(onClick = { model.run { account.disconnect(); model.clearSecrets(); acquisition.roomAllowed.value = false } }, enabled = !model.busy, modifier = Modifier.tvFocusFeedback()) { Text("Disconnect") }
@@ -129,31 +139,44 @@ internal class AcquisitionSettingsModel : ViewModel() {
             Box(Modifier.size(180.dp)) { RoomQrCode(setup.url, "Computer setup address") }
         }
         setup.staged?.let { candidate ->
-            Text("${candidate.url}\n${candidate.username}")
+            Text("${candidate.provider.label}\n${candidate.url}\n${candidate.username}")
             Button(onClick = { model.run { gateway.save(); model.closeSetup() } }, enabled = !model.busy, modifier = Modifier.tvFocusFeedback()) { Text("Save connection") }
         }
         OutlinedButton(onClick = model::closeSetup, modifier = Modifier.tvFocusFeedback()) { Text("Close setup") }
     } else if (state.configured && !editPersonal) {
-        OutlinedButton(onClick = { editPersonal = true }, modifier = Modifier.tvFocusFeedback()) {
+        OutlinedButton(onClick = { account.connection()?.let(model::load); editPersonal = true }, modifier = Modifier.tvFocusFeedback()) {
             Text("Edit connection")
         }
     } else {
         SettingsDescription("This connection is for your own requests. Shared access uses its dedicated account above.")
         Button(onClick = { model.start(context, account) }, enabled = !model.busy, modifier = Modifier.tvFocusFeedback()) { Text("Set up from another device") }
         Text("Or enter on this device", style = MaterialTheme.typography.titleMedium)
-        LoginField(model.url, { model.url = it }, "MusicGrabber URL")
-        if (!model.keyMode) {
+        Text("Music service", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AcquisitionProviders.all.forEach { provider ->
+                FilterChip(selected = model.providerId == provider.id, onClick = {
+                    model.selectProvider(provider)
+                }, enabled = !model.busy, modifier = Modifier.tvFocusFeedback(), label = { Text(provider.label) })
+            }
+        }
+        val provider = AcquisitionProviders.get(model.providerId)
+        SettingsDescription("Selected: ${provider.label}")
+        LoginField(model.url, { model.url = it }, "${provider.label} URL", enabled = !model.busy)
+        if (provider.apiKeyOnly) {
+            SettingsDescription(provider.credentialHelp)
+            LoginField(model.key, { model.key = it }, "API key", secret = true, enabled = !model.busy)
+        } else if (!model.keyMode) {
             LoginField(model.username, { model.username = it }, "Username", username = true)
             LoginField(model.password, { model.password = it }, "Password", secret = true)
             SettingsToggle("Remember login on this device", "Save the login securely to reconnect when the session expires. When off, you will need to sign in again.", model.rememberLogin, !model.busy) { model.rememberLogin = it }
         }
-        TextButton(onClick = { advanced = !advanced }, modifier = Modifier.tvFocusFeedback()) { Text("Advanced settings") }
-        if (advanced || model.keyMode) {
+        if (!provider.apiKeyOnly) TextButton(onClick = { advanced = !advanced }, enabled = !model.busy, modifier = Modifier.tvFocusFeedback()) { Text("Advanced settings") }
+        if (!provider.apiKeyOnly && (advanced || model.keyMode)) {
             SettingsToggle("Use API key instead", "For services configured to use an API key.", model.keyMode, !model.busy) { model.keyMode = it; model.clearSecrets() }
             if (model.keyMode) LoginField(model.key, { model.key = it }, "API key", secret = true)
         }
         Button(onClick = { model.run {
-            val candidate = account.validate(AcquisitionLogin(model.url, model.username, model.password, model.rememberLogin, model.keyMode, model.key))
+            val candidate = account.validate(AcquisitionLogin(model.url, model.username, model.password, model.rememberLogin, model.keyMode, model.key, model.providerId))
             try { require(vm.plexAccess.canManageAcquisition) { "An owner Plex library is required" }; account.save(candidate); model.clearSecrets(); editPersonal = false } catch (e: Exception) { account.revoke(candidate); throw e }
         } }, enabled = !model.busy && model.url.isNotBlank(), modifier = Modifier.tvFocusFeedback()) { Text("Connect") }
         TextButton(onClick = { editPersonal = false; model.clearSecrets() }, enabled = !model.busy, modifier = Modifier.tvFocusFeedback()) { Text("Cancel personal setup") }
@@ -169,7 +192,7 @@ internal class AcquisitionSettingsModel : ViewModel() {
         Text("Acquisition requests", style = MaterialTheme.typography.titleMedium)
         requests.filter { participant == null || it.participant == participant }.takeLast(10).reversed().forEach {
             Text("${it.recording.title} — ${it.message}", style = MaterialTheme.typography.bodyMedium)
-            if (it.status == "unconfirmed") TextButton(onClick = { acquisition.dismissUnconfirmed(it.id) }, modifier = Modifier.tvFocusFeedback()) { Text("Dismiss after checking MusicGrabber") }
+            if (it.status == "unconfirmed") TextButton(onClick = { acquisition.dismissUnconfirmed(it.id) }, modifier = Modifier.tvFocusFeedback()) { Text("Dismiss after checking the music service") }
         }
     }
 }

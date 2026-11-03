@@ -60,7 +60,7 @@ internal class GrabberStub : AcquisitionHttp {
 internal class AcquisitionFixture {
     val storage = AcquisitionMemory()
     val network = GrabberStub()
-    val account = MusicGrabberAccount(storage, TestSecretCipher(), network, readSpacingMillis = 0)
+    val account = AcquisitionAccount(storage, TestSecretCipher(), network, readSpacingMillis = 0)
     var source: PersonalPlexSource? = PersonalPlexSource("plex-secret", "https://plex", "machine", "Plex", "7", "Music")
     var inPlex = false
     var plexUnavailable = false
@@ -144,7 +144,7 @@ class AcquisitionTest {
                 return stub.call(url, method, headers, body)
             }
         }
-        val account = MusicGrabberAccount(AcquisitionMemory(), TestSecretCipher(), http, { clock }, 0)
+        val account = AcquisitionAccount(AcquisitionMemory(), TestSecretCipher(), http, { clock }, 0)
         account.save(account.validate(AcquisitionLogin("https://grabber", "listener", "password")))
         reads = 0
         clock = 299_999
@@ -175,7 +175,7 @@ class AcquisitionTest {
                 return stub.call(url, method, headers, body)
             }
         }
-        val account = MusicGrabberAccount(AcquisitionMemory(), TestSecretCipher(), http, readSpacingMillis = 0)
+        val account = AcquisitionAccount(AcquisitionMemory(), TestSecretCipher(), http, readSpacingMillis = 0)
         account.save(account.validate(AcquisitionLogin("https://grabber", "listener", "password")))
         reads = 0; gate = CompletableDeferred()
         val first = async { account.check(true) }

@@ -98,7 +98,7 @@ class SharedAcquisitionTest {
 
     @Test fun restrictedLoginRequiresSessionEnforcementAndNonAdminAndNeverSendsPlexTokens() = runBlocking {
         val mg = SharedGrabberStub()
-        val account = MusicGrabberAccount(AcquisitionMemory(), TestSecretCipher(), mg, readSpacingMillis = 0, restricted = true)
+        val account = AcquisitionAccount(AcquisitionMemory(), TestSecretCipher(), mg, readSpacingMillis = 0, restricted = true)
         val input = AcquisitionLogin("https://shared.example", "guests", "test-password")
         assertEquals("peon", account.validate(input).role)
         mg.role = "admin"
@@ -215,7 +215,7 @@ class SharedAcquisitionTest {
     }
 
     @Test fun expiredServiceSessionRelogsOnceAndRejectsRolePromotion() = runBlocking {
-        val mg = SharedGrabberStub(); val account = MusicGrabberAccount(AcquisitionMemory(), TestSecretCipher(), mg, readSpacingMillis = 0, restricted = true)
+        val mg = SharedGrabberStub(); val account = AcquisitionAccount(AcquisitionMemory(), TestSecretCipher(), mg, readSpacingMillis = 0, restricted = true)
         account.save(account.validate(AcquisitionLogin("https://shared.example", "guests", "test-password")))
         mg.token = "expired"
         account.call("/api/bulk-imports?limit=1")

@@ -110,7 +110,8 @@ host's preferences apply.
 Music tuning and the Settings layout were introduced in v1.1.8.
 
 For the optional connection in **Settings → Music acquisition**, see the
-[MusicGrabber integration setup guide](docs/MUSICGRABBER_SETUP.md).
+[MusicGrabber setup guide](docs/MUSICGRABBER_SETUP.md) or the
+[SoulSync setup guide](docs/SOULSYNC_SETUP.md) (available starting with v1.1.29).
 
 ## Share the app
 

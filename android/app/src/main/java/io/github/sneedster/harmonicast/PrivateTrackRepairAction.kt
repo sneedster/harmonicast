@@ -43,6 +43,8 @@ import kotlinx.coroutines.launch
     val account = remember { AcquisitionRuntime.get(context).ownerAccount }
     val accountState by account.state.collectAsState()
     val connection = account.connection() ?: return
+    // This destructive workflow still uses MusicGrabber-specific replacement APIs.
+    if (connection.providerId != MusicGrabberProvider.id) return
     val model = remember(source, connection.identity) {
         val plex = LocalPlexClient(storage)
         val valid = { profile.personalSource == source && account.connection()?.identity == connection.identity && PrivateRepairSwitch(storage).enabled }

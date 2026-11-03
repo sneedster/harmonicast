@@ -46,10 +46,22 @@ local SDK configuration outside Git.
 ## Optional music acquisition
 
 The process-wide acquisition coordinator owns MusicBrainz catalogue lookups,
-MusicGrabber authentication, durable requests, import polling, and Plex
+provider authentication, durable requests, job polling, and Plex
 verification. It starts with the app/media service and resumes persisted work
 when the process returns; it does not schedule a separate Android background job.
-Playback remains Plex-only. Shared read-only libraries cannot acquire or host.
+Playback remains Plex-only. Shared libraries need a verified delegated grant
+for acquisition; room hosting is independent of that grant.
+
+AcquisitionProvider adapters own service authentication, input validation, submission,
+health checks, and progress mapping. AcquisitionAccount owns encrypted storage,
+connection identity, read pacing, and bounded session refresh. The coordinator
+owns catalogue selection, access checks, durable request state, Plex verification,
+and queue admission. MusicGrabber and SoulSync use this same coordinator. Old
+credentials without a provider field keep MusicGrabber and their original identity.
+SoulSync connections bind pending work to a key fingerprint and use Bearer API-key
+authentication; no session login or logout is sent. SoulSync tracking expiry checks
+Plex before marking an unmatched request unconfirmed, without replaying its POST.
+See [SoulSync setup](SOULSYNC_SETUP.md) for scope and recovery details.
 
 Account login uses MusicGrabber's session API and fetches `/api/auth/me` to bind
 requests to the actual account ID. Keystore-encrypted credentials are separate
