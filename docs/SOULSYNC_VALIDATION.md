@@ -18,7 +18,8 @@ The signed local upgrade is `android/releases/harmonicast-1.1.30.apk`, package
 APK signature verification passed; its certificate SHA-256 matches 1.1.29:
 `dfc39bdbf60bed1f1fb1135b9a19a007fd194b001fd2461e8ff046415b7f13f8`.
 APK SHA-256: `e26a44cfb5d159660c6857da1609ea7b94bce587059e80d7b3b5f3db3592ffa9`.
-This is local packaging; no public release or device installation is claimed.
+The packaging checkpoint above is separate from public publication. Device
+installation and physical playback are not established by these checks.
 
 A temporary actual-adapter test also passed against the public HTTPS API using
 a separately stored owner key: validate/save, submit the already-wanted

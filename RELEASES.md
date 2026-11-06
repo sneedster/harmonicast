@@ -1,5 +1,22 @@
 # Releases
 
+## v1.1.30 — complete SoulSync acquisition
+
+Version code: **95**.
+
+- Send SoulSync requests through its native wishlist processor so verification,
+  tagging and library import run before Plex queue fulfillment.
+- Keep accepted requests tracked when processing is busy, handle paginated
+  wishlists and require a playable Plex match before adding music to the queue.
+- Check older transfer-only receipts against Plex without automatically replaying
+  their submissions. Inspect SoulSync before retrying an unconfirmed old request.
+
+Validation: all 452 Android tests in 65 classes passed with zero failures, errors
+or skips. Debug lint passed with zero errors and 40 warnings; debug/signed release
+assembly, release vital lint, APK metadata and signing continuity passed. An actual
+public HTTPS adapter check submitted an already-wanted track and polled progress.
+Device installation and acquisition through phone playback remain unverified.
+
 ## v1.1.29 — SoulSync music acquisition
 
 Version code: **94**.
