@@ -151,28 +151,61 @@ internal object SoulSyncProvider : AcquisitionProvider {
         }
     }
     override suspend fun submit(account: AcquisitionAccount, recording: CatalogEntry, expected: String): String {
-        val body = JSONObject().put("query", "${recording.artist} - ${recording.title}")
-            .put("artist", recording.artist).put("title", recording.title)
-        if (recording.durationMs > 0) body.put("duration_ms", recording.durationMs)
-        val result = data(account.call("/api/v1/request", "POST", body, expected))
-        return result.optString("request_id").also {
-            require(it.isNotBlank()) { "Submission could not be confirmed. Check SoulSync before retrying" }
+        // /request reports a raw transfer, without the normal verification/import
+        // lifecycle. A durable wishlist item uses the same pipeline as the UI.
+        val artist = recording.artist.trim()
+        val title = recording.title.trim()
+        val key = java.security.MessageDigest.getInstance("SHA-256")
+            .digest((artist + "\u0000" + title).toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        val track = JSONObject().put("id", "harmonicast:$key").put("name", title)
+            .put("artists", org.json.JSONArray().put(JSONObject().put("name", artist)))
+        if (recording.durationMs > 0) track.put("duration_ms", recording.durationMs)
+        val body = JSONObject().put("track_data", track).put("source_type", "manual")
+            .put("failure_reason", "Requested by Harmonicast")
+        val stored = data(account.call("/api/v1/wishlist", "POST", body, expected))
+            .optJSONObject("track") ?: throw AcquisitionFailure(502, "SoulSync did not confirm the wishlist item")
+        val trackId = stored.optString("track_id")
+        require(trackId.isNotBlank() && trackId != "null") {
+            "Submission could not be confirmed. Check SoulSync before retrying"
         }
+        try {
+            data(account.call("/api/v1/wishlist/process", "POST", JSONObject(), expected))
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) {
+            // The item was already accepted. Busy/offline processing must not
+            // lose its receipt or cause the wishlist POST to be replayed; the
+            // server's normal scheduled processor can pick it up later.
+        }
+        return "wishlist:$trackId"
     }
     override suspend fun poll(account: AcquisitionAccount, request: AcquisitionRequestState): AcquisitionProgress {
-        val job = try { data(account.call("/api/v1/request/${encode(request.importId)}", expected = request.connection)) }
-        catch (e: AcquisitionFailure) {
-            if (e.status != 404) throw e
-            // Request records expire and are lost on server restart. Never replay an accepted POST.
-            return AcquisitionProgress("unconfirmed", "SoulSync tracking expired. Check SoulSync before requesting again", true)
+        if (!request.importId.startsWith("wishlist:")) {
+            // Older app versions started transfer-only requests. Check Plex,
+            // but never resubmit them or mistake transfer success for import.
+            return AcquisitionProgress("unconfirmed", "Older SoulSync transfer request: check SoulSync before retrying", true)
         }
-        require(job.optString("request_id") == request.importId) { "SoulSync returned a different request" }
-        return when (job.optString("status")) {
-            "completed" -> AcquisitionProgress("waiting_for_plex", "Waiting for Plex to index the track…", true)
-            "failed", "not_found", "cancelled" -> AcquisitionProgress("failed", "SoulSync could not acquire this track")
-            "queued", "searching", "downloading" -> AcquisitionProgress(message = if (job.optBoolean("timed_out"))
-                "SoulSync is still downloading; checking Plex…" else "Acquiring track…", checkPlex = true)
-            else -> throw AcquisitionFailure(502, "SoulSync returned an unknown request status")
+        val trackId = request.importId.removePrefix("wishlist:")
+        var page = 1
+        while (true) {
+            val response = account.call("/api/v1/wishlist?limit=200&page=$page", expected = request.connection)
+            val tracks = data(response).optJSONArray("tracks")
+                ?: throw AcquisitionFailure(502, "SoulSync returned incompatible wishlist data")
+            for (i in 0 until tracks.length()) {
+                val row = tracks.optJSONObject(i)
+                    ?: throw AcquisitionFailure(502, "SoulSync returned an invalid wishlist item")
+                val id = row.optString("track_id")
+                require(id.isNotBlank() && id != "null") { "SoulSync returned an invalid wishlist identity" }
+                if (id == trackId) return AcquisitionProgress(
+                    message = "Queued in SoulSync; waiting for processing and Plex…", checkPlex = true)
+            }
+            val more = response.optJSONObject("pagination")?.opt("has_next")
+            require(more is Boolean) { "SoulSync did not confirm wishlist pagination" }
+            if (!more) break
+            page++
         }
+        // Removal can mean imported, already owned, or removed by the owner.
+        // Only the coordinator's positive Plex match may fulfill the request.
+        return AcquisitionProgress(message = "SoulSync wishlist entry cleared; checking Plex…", checkPlex = true)
     }
 }

@@ -1,6 +1,7 @@
 # SoulSync acquisition setup
 
-The SoulSync adapter is available starting with Harmonicast v1.1.29.
+Use Harmonicast v1.1.30 or later for SoulSync’s full native acquisition workflow.
+Version 1.1.29 used its transfer-only endpoint.
 
 Connect an existing [SoulSync server](https://github.com/Nezreka/SoulSync) under
 **Settings → Music acquisition → Your personal connection**:
@@ -16,31 +17,29 @@ choose the service, and test the connection. The credentials are staged until
 **Save connection** is selected on Android. Keys are stored using Android
 Keystore encryption and are never included in guest responses.
 
-SoulSync must already send completed music through its configured import pipeline
-into the selected Plex music library. Harmonicast does not change SoulSync's
-sources, quality rules, naming, beets configuration, or retry automations.
-Playback and queue fulfillment still use Plex.
+SoulSync must be configured to publish into the selected Plex music library.
+Harmonicast leaves its sources, quality, naming, extras and automations under
+SoulSync’s control. Playback and queue fulfillment use Plex.
 
 ## Requests and recovery
 
-Harmonicast uses SoulSync's [native REST API](https://github.com/Nezreka/SoulSync/blob/main/Support/API.md),
-not its Lidarr compatibility layer. A track is submitted to `POST /api/v1/request`
-with separate artist, title, and available duration fields. The returned
-`request_id` is polled through `GET /api/v1/request/{id}`. The existing
-MusicBrainz catalogue, room quotas, access checks, Plex matching, and durable queue
-receipts apply to both acquisition providers.
+Harmonicast submits structured artist, title and available duration data to
+`POST /api/v1/wishlist`, saves the returned track identity, then calls
+`POST /api/v1/wishlist/process`. This starts SoulSync’s normal verification,
+tagging and library-import workflow, including its configured Plex scan.
+A busy processor does not discard the accepted wishlist item or replay the
+submission; SoulSync’s normal processor can pick it up later.
 
-A server download completion is not a playable queue item. Harmonicast waits for a
-matching track in the selected Plex library, including any delay introduced by
-beets or Plex scanning. It also checks Plex during SoulSync's queued, searching,
-and downloading states because server-side request tracking can lag the import.
+The app checks the paginated wishlist and the selected Plex library. A wishlist
+entry disappearing does not prove a successful import. Only a matching playable
+Plex track fulfills the request and adds it to the queue. Existing catalogue,
+room quotas, access checks and durable queue receipts still apply.
 
-SoulSync request status records are temporary: they expire after about an hour
-and disappear on a server restart. If tracking disappears, Harmonicast checks
-Plex first. If no match is available, the request becomes **unconfirmed**; inspect
-SoulSync and dismiss tracking before deciding to request again. An uncertain
-submission is never automatically replayed. Changing the service, key, or Plex
-library pauses requests bound to the previous connection.
+Older transfer-only request receipts become **unconfirmed** after a Plex check;
+the app does not replay them. Inspect SoulSync before dismissing and requesting
+again. A submission whose response was lost is also never automatically replayed.
+Changing the service, key or Plex library pauses requests bound to the previous
+connection.
 
 ## Access and current limits
 

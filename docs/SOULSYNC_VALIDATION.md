@@ -1,4 +1,41 @@
-# SoulSync integration validation — November 2, 2026
+# Native wishlist adapter — November 5, 2026
+
+Harmonicast 1.1.30 (95) replaces the transfer-only SoulSync request adapter with
+native wishlist submission and processing. It persists the server-returned
+wishlist identity, handles pagination and busy processors, and requires a
+positive playable Plex match before queue fulfillment. Earlier raw-transfer
+receipts are checked against Plex without replaying their submissions.
+
+The Java 21 wrapper passed **452 repository tests in 65 classes**, with zero
+failures, errors or skips. Debug lint passed with zero errors and 40 warnings;
+debug assembly, signed release assembly and release vital lint also passed.
+The focused SoulSync tests cover paginated results, uncertain submissions,
+busy/unavailable processing, old transfer receipts, Plex indexing and queue
+recovery. No UI changes were made in this follow-up.
+
+The signed local upgrade is `android/releases/harmonicast-1.1.30.apk`, package
+`io.github.sneedster.harmonicast`, code 95, minimum API 26, target API 35.
+APK signature verification passed; its certificate SHA-256 matches 1.1.29:
+`dfc39bdbf60bed1f1fb1135b9a19a007fd194b001fd2461e8ff046415b7f13f8`.
+APK SHA-256: `e26a44cfb5d159660c6857da1609ea7b94bce587059e80d7b3b5f3db3592ffa9`.
+This is local packaging; no public release or device installation is claimed.
+
+A temporary actual-adapter test also passed against the public HTTPS API using
+a separately stored owner key: validate/save, submit the already-wanted
+Télépopmusik **Mathematics** through the native wishlist, invoke processing,
+poll progress with Plex checks enabled, recheck health and disconnect. The
+harness source stayed outside Git and its temporary key copy was removed.
+This verifies real submission through the public route, not phone installation
+or completion of that recording’s download/import/playback.
+
+Evidence under `~/.cache/harmonicast-soulsync/`: `release-1.1.30.log`,
+`full-test-results-1.1.30/`, `live-wishlist-1.1.30.log`,
+`live-wishlist-test-results-1.1.30/` and `build/app/reports/lint-results-debug.xml`.
+The earlier November 2 account, public API route and release notes below remain
+historical evidence; beets and MusicGrabber were retired on November 5.
+Physical Android request-to-playback acceptance is still pending.
+
+## Earlier validation — November 2, 2026
 
 Initial implementation was prepared on `codex/soulsync-acquisition`.
 Stable packaging for v1.1.29 (94) is recorded below; the earlier checks describe
