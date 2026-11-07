@@ -398,8 +398,28 @@ class LocalHarmonicastCoreTest {
     @Test fun playNextPreservesPlaylistOrderAheadOfExistingQueue() = runBlocking {
         val core = LocalHarmonicastCore(source, MemoryStorage())
         core.queue.add(song("old"))
-        core.queue.addAll(listOf(song("1"), song("2")), next = true)
+        core.queue.addPlaylist(listOf(song("1"), song("2")), next = true)
         assertEquals(listOf("1", "2", "old"), core.queue.songs().map { it.id.substringAfterLast(':') })
+    }
+
+    @Test fun requestsInterruptPlaylistTracksAndThePlaylistResumesInOrder() = runBlocking {
+        val storage = MemoryStorage()
+        val original = LocalHarmonicastCore(source, storage).queue
+        original.addPlaylist(listOf(song("playing"), song("playlist-2"), song("playlist-3")))
+        assertEquals(song("playing").id, original.dequeue().song?.id)
+
+        val restored = LocalHarmonicastCore(source, storage).queue
+        restored.add(song("owner"))
+        restored.addGuest(song("guest").copy(addedByEmail = "Guest"))
+        restored.addOnce("receipt", song("acquired").copy(addedByEmail = "Guest"))
+        restored.addOnce("receipt", song("duplicate"))
+
+        for (id in listOf("owner", "guest", "acquired", "playlist-2", "playlist-3")) {
+            val selected = restored.dequeue()
+            assertEquals(song(id).id, selected.song?.id)
+            assertTrue(selected.isManual)
+        }
+        assertNull(restored.dequeue().song)
     }
 
     @Test fun manualRequestsStayAheadOfAutomaticTracksWithoutPassingEarlierRequests() = runBlocking {

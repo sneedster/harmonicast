@@ -583,7 +583,7 @@ class HarmonicastMediaService : MediaLibraryService() {
                         var tracks = core.library.playlistTracks(playlistId)
                         if (prefix == SHUFFLE_PLAYLIST_PREFIX) tracks = tracks.shuffled()
                         core.queue.clear()
-                        core.queue.addAll(tracks)
+                        core.queue.addPlaylist(tracks)
                         val selection = core.queue.dequeue()
                         currentIsAuto.set(false)
                         val item = selection.song?.let(::createMediaItem)

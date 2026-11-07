@@ -100,7 +100,7 @@ internal enum class SettingsCategory(val title: String, val icon: ImageVector) {
                                 SettingsCategory.MIX -> "${vm.ratedTrackShare} rated / ${10 - vm.ratedTrackShare} unrated · ${selectionLabels[vm.musicTuning.selection]}"
                                 SettingsCategory.RADIO -> "Sound match range ${String.format(Locale.ROOT, "%.2f", vm.trackRadioDistance)}"
                                 SettingsCategory.RATINGS -> if (!vm.automaticPlexRatings) "Off" else if (vm.musicTuning.defaultRatings) "On · Default tuning" else "On · Custom tuning"
-                                SettingsCategory.ACQUISITION -> "Connect an existing MusicGrabber service"
+                                SettingsCategory.ACQUISITION -> "Connect a music service for missing tracks"
                                 SettingsCategory.PLEX -> vm.plexSourceLabel.ifBlank { "Connect your music library" }
                                 SettingsCategory.ABOUT -> "Version ${BuildConfig.VERSION_NAME}" + if (updates.release != null) " · Update available" else ""
                             }

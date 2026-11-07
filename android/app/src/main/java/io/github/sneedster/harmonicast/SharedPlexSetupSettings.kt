@@ -176,7 +176,7 @@ internal class SharedPlexSetupModel : ViewModel() {
             SharedPlexPreparation.Stage.REVIEW -> {
                 Text("Finish library setup", style = MaterialTheme.typography.titleMedium)
                 SettingsDescription("${state.libraryName} · ${state.albumName}")
-                SettingsDescription("Harmonicast will save and lock an inactive setup record in this album. This step contains no MusicGrabber login and does not enable shared acquisition.")
+                SettingsDescription("Harmonicast will save and lock an inactive setup record in this album. You can review and publish shared access after setup.")
                 Button(onClick = onPrepare, enabled = !busy, modifier = Modifier.tvFocusFeedback()) { Text("Prepare library") }
             }
             SharedPlexPreparation.Stage.SCANNING -> {
@@ -186,7 +186,7 @@ internal class SharedPlexSetupModel : ViewModel() {
             SharedPlexPreparation.Stage.READY -> {
                 Text("Library ready", style = MaterialTheme.typography.titleMedium)
                 SettingsDescription("${state.libraryName} is prepared and its locked setup record has been verified.")
-                SettingsDescription("Shared acquisition is still off. Connect and review a dedicated non-admin MusicGrabber account below to publish access.")
+                SettingsDescription("Shared acquisition is still off. Connect and review a request relay or a dedicated account to publish access.")
                 var showDownload by remember { mutableStateOf(false) }
                 TextButton(onClick = { showDownload = !showDownload }, enabled = !busy, modifier = Modifier.tvFocusFeedback()) { Text(if (showDownload) "Hide setup files" else "Setup files and instructions") }
                 if (showDownload) downloadContent()
@@ -221,7 +221,7 @@ internal class SharedPlexSetupModel : ViewModel() {
                 message.isNotBlank() -> "Open setup and check again to confirm the current Plex status."
                 state?.stage == SharedPlexPreparation.Stage.PUBLISHED -> "Your shared account was published and verified in Plex. Share the Harmonicast library with your intended recipients."
                 state?.stage == SharedPlexPreparation.Stage.READY -> "Connect a dedicated account to finish sharing."
-                else -> "Let selected Plex users request music through a dedicated MusicGrabber account."
+                else -> "Let selected Plex users request missing tracks through your music service."
             })
         }
     }

@@ -144,7 +144,9 @@ internal class AcquisitionAccount(private val storage: ProfileStorage, private v
     }
     suspend fun validate(input: AcquisitionLogin): AcquisitionConnection {
         require(contextValid()) { "Plex source changed; start again" }
-        require(!restricted || input.providerId == MusicGrabberProvider.id) { "Shared access requires MusicGrabber's dedicated non-admin account" }
+        require(!restricted || input.providerId in setOf(MusicGrabberProvider.id, SoulSyncRelayProvider.id)) {
+            "Shared access requires a request key or a dedicated non-admin MusicGrabber account"
+        }
         val url = if (restricted) sharedAcquisitionUrl(input.url) else acquisitionUrl(input.url)
         return AcquisitionProviders.get(input.providerId).validate(input, url, http, restricted, contextValid)
     }
@@ -193,7 +195,7 @@ internal class AcquisitionAccount(private val storage: ProfileStorage, private v
         require(expected == null || c.identity == expected) { "Connection changed; request is paused" }
         if (blockedToken == c.token && !c.apiKeyMode) throw AcquisitionFailure(401, "Sign in again")
         try {
-        if (restricted) {
+        if (restricted && c.providerId == MusicGrabberProvider.id) {
             val config = http.call(c.url + "/api/config")
             val me = http.call(c.url + "/api/auth/me", headers = c.headers())
             // A 401 here must enter the same bounded relogin path as the actual call.

@@ -140,9 +140,10 @@ attestation because MusicGrabber paths cannot establish Plex's host/container
 mapping. Room permission defaults off. Review publication opens the existing
 FocusRestoringAlertDialog with the concrete destination and credential disclosure.
 
-The shared form initially copies only the saved personal connection URL, leaving
-the dedicated username and password empty. An edited URL is preserved. The paired
-computer page receives that URL after pairing.
+The shared form starts on SoulSync and asks for the request relay's HTTPS URL and
+request key. It keeps the existing fields, inline status, and publication review.
+The MusicGrabber option can prefill its own personal service URL for manual or
+paired setup. Neither option copies a saved credential.
 
 The computer form uses the existing Nocturne layout, inline validation and polite
 status. Shared mode hides API-key and forget-password alternatives and explicitly

@@ -66,6 +66,10 @@ interface MusicQueue {
 
 data class QueueSelection(val song: Song?, val isManual: Boolean = true)
 
+internal suspend fun MusicQueue.addPlaylist(tracks: List<Song>, next: Boolean = false) {
+    addAll(tracks.map { it.copy(isPlaylistTrack = true) }, next)
+}
+
 /** Explicit mix starts leave radio/offline mode while preserving manual requests. */
 suspend fun MusicQueue.startAutomaticMix(): QueueSelection {
     resetAutomaticTail()

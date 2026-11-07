@@ -310,8 +310,13 @@ internal class SharedPlexSetup(
         rooms: Boolean, verifyAccount: suspend () -> Unit): SharedPlexPreparation = mutex.withLock {
         withTimeout(60_000) {
             owner(source)
-            check(!connection.apiKeyMode && connection.role in setOf("peon", "user") && connection.password.isNotEmpty()) {
-                "Test a dedicated non-admin account before publishing"
+            check(when (connection.providerId) {
+                SoulSyncRelayProvider.id -> connection.apiKeyMode && connection.role == "track-request" &&
+                    SoulSyncRelayProvider.requestKey.matches(connection.apiKey)
+                MusicGrabberProvider.id -> !connection.apiKeyMode && connection.role in setOf("peon", "user") && connection.password.isNotEmpty()
+                else -> false
+            }) {
+                "Test a shared request key or a dedicated non-admin account before publishing"
             }
             sharedAcquisitionUrl(connection.url)
             val before = inspectUnlocked(source, review.folder)

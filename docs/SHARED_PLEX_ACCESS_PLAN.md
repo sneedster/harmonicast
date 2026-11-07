@@ -1,5 +1,8 @@
 # Shared Plex acquisition and room hosting
 
+This plan records the original MusicGrabber rollout. For the current SoulSync
+relay and in-place setup album migration, see [SoulSync shared Plex access](SOULSYNC_SETUP.md#shared-plex-access).
+
 Status: local implementation includes owner preparation, reviewed non-admin
 account publication, recipient discovery/login, revocation checks, and shared-host
 room acquisition. Live ZIP installation and inactive library preparation passed on

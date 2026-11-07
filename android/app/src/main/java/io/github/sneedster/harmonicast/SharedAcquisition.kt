@@ -107,14 +107,14 @@ internal class SharedAcquisition(private val storage: ProfileStorage, cipher: Se
                 }
                 val scope = "$binding|${record.id}"
                 val old = account.connection()
-                if (old == null || old.url != record.url || old.accountId != record.accountId || old.password != record.password || old.scopeId != scope) {
-                    val candidate = account.validate(AcquisitionLogin(record.url, record.username, record.password)).copy(scopeId = scope)
+                if (old == null || !record.matches(old, scope)) {
+                    val candidate = account.validate(record.login()).copy(scopeId = scope)
                     try {
                         current(selected, generation)
-                        require(candidate.accountId == record.accountId) { "Shared MusicGrabber account identity changed" }
+                        record.verify(candidate)
                         account.save(candidate)
                     } catch (e: Exception) { account.revoke(candidate); throw e }
-                } else if (!account.check(true)) throw AcquisitionFailure(503, "Shared MusicGrabber connection is unavailable")
+                } else if (!account.check(true)) throw AcquisitionFailure(503, "The shared acquisition service is unavailable")
                 current(selected, generation)
                 privateStorage.write(mapOf("library" to grant.first, "album" to grant.second,
                     "configurationId" to record.id, "revision" to record.revision.toString()))
@@ -132,7 +132,7 @@ internal class SharedAcquisition(private val storage: ProfileStorage, cipher: Se
                 val removed = e is PlexRequestFailure && e.status in setOf(401, 403, 404) || e is IllegalArgumentException
                 if (removed) account.disconnect()
                 unavailable(if (removed) "Shared access is missing, disabled, or invalid. Ask the Plex owner to check the Harmonicast library."
-                    else "Shared access could not be verified. Check Plex and MusicGrabber connectivity, then refresh.")
+                    else "Shared access could not be verified. Check Plex and the shared acquisition service, then refresh.")
             }
             false
         }

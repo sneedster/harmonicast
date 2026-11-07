@@ -21,6 +21,8 @@ data class Song(
     val lastPlayedAtMillis: Long? = null,
     /** Plex album organization; null identifies metadata saved before track-artist separation. */
     val albumArtist: String? = "",
+    /** A track queued as part of a playlist, with lower priority than individual requests. */
+    val isPlaylistTrack: Boolean = false,
 )
 data class NowPlaying(val song: Song? = null, val isPlaying: Boolean = false)
 data class ArtistDiscovery(val name: String, val bio: String, val genres: List<String>, val similarArtists: List<String>, val albumName: String, val albumYear: Int?, val albumSummary: String, val artistArtworkUri: String? = null)

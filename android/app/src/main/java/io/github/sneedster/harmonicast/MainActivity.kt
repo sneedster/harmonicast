@@ -628,11 +628,11 @@ class HarmonicastViewModel : ViewModel() {
                 when (action) {
                     PlaylistAction.PLAY, PlaylistAction.SHUFFLE -> {
                         core.queue.clear()
-                        core.queue.addAll(tracks)
+                        core.queue.addPlaylist(tracks)
                         nextSong()
                     }
-                    PlaylistAction.NEXT -> core.queue.addAll(tracks, next = true)
-                    PlaylistAction.QUEUE -> core.queue.addAll(tracks)
+                    PlaylistAction.NEXT -> core.queue.addPlaylist(tracks, next = true)
+                    PlaylistAction.QUEUE -> core.queue.addPlaylist(tracks)
                 }
                 val skipped = (playlist.trackCount - tracks.size).coerceAtLeast(0)
                 showTemporaryNotice(

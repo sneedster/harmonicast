@@ -1,0 +1,6 @@
+FROM python:3.13-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY relay.py .
+USER 65534:65534
+CMD ["python", "relay.py"]

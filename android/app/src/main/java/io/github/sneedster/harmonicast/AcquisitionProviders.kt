@@ -23,7 +23,7 @@ internal data class AcquisitionProgress(val status: String = "acquiring", val me
     val checkPlex: Boolean = false)
 internal object AcquisitionProviders {
     val all: List<AcquisitionProvider> = listOf(MusicGrabberProvider, SoulSyncProvider)
-    fun get(id: String): AcquisitionProvider = all.singleOrNull { it.id == id }
+    fun get(id: String): AcquisitionProvider = (all + SoulSyncRelayProvider).singleOrNull { it.id == id }
         ?: throw IllegalArgumentException("Unknown music acquisition service. Connect again in Settings")
 }
 internal object MusicGrabberProvider : AcquisitionProvider {
@@ -114,7 +114,7 @@ internal object SoulSyncProvider : AcquisitionProvider {
     override val id = "soulsync"
     override val label = "SoulSync"
     override val apiKeyOnly = true
-    override val credentialHelp = "Use an API key with download access from SoulSync Settings → Advanced → SoulSync API. Shared Plex account publishing currently supports MusicGrabber."
+    override val credentialHelp = "Use an API key with download access from SoulSync Settings → Advanced → SoulSync API. For shared access, use a separate request key."
     override fun headers(connection: AcquisitionConnection) = mapOf("Authorization" to "Bearer ${connection.apiKey}")
     override fun identity(connection: AcquisitionConnection) = "$id|${connection.url}|${connection.accountId}"
     private fun data(response: JSONObject): JSONObject {
@@ -208,4 +208,53 @@ internal object SoulSyncProvider : AcquisitionProvider {
         // Only the coordinator's positive Plex match may fulfill the request.
         return AcquisitionProgress(message = "SoulSync wishlist entry cleared; checking Plex…", checkPlex = true)
     }
+}
+
+internal object SoulSyncRelayProvider : AcquisitionProvider {
+    override val id = "soulsync-relay"
+    override val label = "SoulSync"
+    override val apiKeyOnly = true
+    val requestKey = Regex("hcr_[0-9a-f]{64}")
+
+    override fun headers(connection: AcquisitionConnection) = mapOf("Authorization" to "Bearer ${connection.apiKey}")
+
+    override fun identity(connection: AcquisitionConnection) =
+        "$id|${connection.url}|${connection.scopeId}"
+
+    private fun requireRelay(response: JSONObject) {
+        require(response.opt("version") == 1 && response.optString("scope") == "track-request") {
+            "This address is not a Harmonicast SoulSync request relay. Check the relay URL."
+        }
+    }
+
+    override suspend fun validate(input: AcquisitionLogin, url: String, http: AcquisitionHttp, restricted: Boolean,
+        contextValid: () -> Boolean): AcquisitionConnection {
+        require(restricted) { "Use a request key only in shared access setup" }
+        val key = input.apiKey.trim()
+        require(requestKey.matches(key)) { "Enter a Harmonicast request key beginning with hcr_" }
+        val fingerprint = java.security.MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        val connection = AcquisitionConnection(url, "SoulSync request key", fingerprint, "", apiKeyMode = true,
+            apiKey = key, role = "track-request", providerId = id)
+        requireRelay(http.call("$url/v1/status", headers = connection.headers()))
+        require(contextValid()) { "Plex source changed; start again" }
+        return connection
+    }
+
+    override suspend fun check(account: AcquisitionAccount, connection: AcquisitionConnection) {
+        requireRelay(account.call("/v1/status", expected = connection.identity))
+    }
+
+    override fun validateRecording(recording: CatalogEntry) = SoulSyncProvider.validateRecording(recording)
+
+    override suspend fun submit(account: AcquisitionAccount, recording: CatalogEntry, expected: String): String {
+        val body = JSONObject().put("artist", recording.artist.trim()).put("title", recording.title.trim())
+        if (recording.durationMs > 0) body.put("duration_ms", recording.durationMs)
+        val receipt = account.call("/v1/requests", "POST", body, expected).optString("receipt")
+        if (receipt.isBlank() || receipt == "null") throw AcquisitionFailure(502, "The relay did not confirm the request")
+        return receipt
+    }
+
+    override suspend fun poll(account: AcquisitionAccount, request: AcquisitionRequestState) =
+        AcquisitionProgress(message = "Requested from SoulSync. Checking Plex for the track…", checkPlex = true)
 }

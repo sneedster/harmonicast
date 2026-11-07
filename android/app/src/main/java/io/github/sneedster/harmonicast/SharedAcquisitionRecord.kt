@@ -59,24 +59,47 @@ internal class SharedAcquisitionRecord private constructor(val json: JSONObject)
     val revision: Int get() = json.getInt("revision")
     val enabled: Boolean get() = json.getBoolean("allowAcquisition")
     val rooms: Boolean get() = enabled && json.getBoolean("allowRoomAcquisition")
-    private val service get() = json.getJSONObject("musicGrabber")
+    val usesRelay: Boolean get() = json.getInt("version") == 2
+    private val service get() = json.getJSONObject(if (usesRelay) "soulSyncRelay" else "musicGrabber")
     val url: String get() = service.getString("url")
-    val username: String get() = service.getString("username")
-    val password: String get() = service.getString("password")
+    val username: String get() = if (usesRelay) "SoulSync request key" else service.getString("username")
     val accountId: String get() = service.optString("accountId")
+    private val credential: String get() = service.getString(if (usesRelay) "requestKey" else "password")
+    fun login(): AcquisitionLogin = if (usesRelay)
+        AcquisitionLogin(url, "", "", apiKeyMode = true, apiKey = credential, providerId = SoulSyncRelayProvider.id)
+    else AcquisitionLogin(url, username, credential)
+
+    fun matches(connection: AcquisitionConnection, scope: String): Boolean =
+        connection.url == url && connection.scopeId == scope && if (usesRelay) {
+            connection.providerId == SoulSyncRelayProvider.id && connection.apiKey == credential
+        } else connection.providerId == MusicGrabberProvider.id && connection.accountId == accountId && connection.password == credential
+
+    fun verify(connection: AcquisitionConnection) {
+        require(if (usesRelay) connection.providerId == SoulSyncRelayProvider.id && connection.role == "track-request"
+            else connection.accountId == accountId) { "The shared acquisition credential changed" }
+    }
     fun encoded(): String = json.toString()
     override fun toString() = "SharedAcquisitionRecord(redacted)"
 
     companion object {
         fun parse(text: String, source: PersonalPlexSource): SharedAcquisitionRecord {
             val j = strictConfigurationJson(text)
+            val version = j.opt("version")
+            require(j.opt("type") == "harmonicast.acquisition" && version in setOf(1, 2))
+            val serviceKey = if (version == 2) "soulSyncRelay" else "musicGrabber"
             require(j.keys().asSequence().toSet() == setOf("type", "version", "configurationId", "revision", "plexServerId",
-                "musicLibraryId", "allowAcquisition", "allowRoomAcquisition", "musicGrabber"))
-            require(j.opt("type") == "harmonicast.acquisition" && j.opt("version") == 1)
+                "musicLibraryId", "allowAcquisition", "allowRoomAcquisition", serviceKey))
             require(j.opt("revision") is Int && j.getInt("revision") > 0)
             require(j.opt("configurationId") is String && UUID.fromString(j.getString("configurationId")).toString() == j.getString("configurationId"))
             require(j.opt("plexServerId") == source.machineIdentifier && j.opt("musicLibraryId") == source.libraryKey)
             require(j.opt("allowAcquisition") is Boolean && j.opt("allowRoomAcquisition") is Boolean)
+            if (version == 2) {
+                val relay = j.getJSONObject(serviceKey)
+                require(j.getBoolean("allowAcquisition") && relay.keys().asSequence().toSet() == setOf("url", "requestKey"))
+                require(relay.opt("url") is String && sharedAcquisitionUrl(relay.getString("url")) == relay.getString("url"))
+                require(relay.opt("requestKey") is String && SoulSyncRelayProvider.requestKey.matches(relay.getString("requestKey")))
+                return SharedAcquisitionRecord(j)
+            }
             val mg = j.getJSONObject("musicGrabber")
             val keys = mg.keys().asSequence().toSet()
             require(keys == setOf("url", "username", "password", "accountId") ||
@@ -93,8 +116,15 @@ internal class SharedAcquisitionRecord private constructor(val json: JSONObject)
         fun publish(previous: SharedAcquisitionRecord, source: PersonalPlexSource, connection: AcquisitionConnection, rooms: Boolean): SharedAcquisitionRecord {
             val j = JSONObject(previous.encoded()).put("revision", Math.addExact(previous.revision, 1))
                 .put("allowAcquisition", true).put("allowRoomAcquisition", rooms)
-                .put("musicGrabber", JSONObject().put("url", connection.url).put("username", connection.username)
+            if (connection.providerId == SoulSyncRelayProvider.id) {
+                j.remove("musicGrabber")
+                j.put("version", 2).put("soulSyncRelay", JSONObject().put("url", connection.url).put("requestKey", connection.apiKey))
+            } else {
+                require(connection.providerId == MusicGrabberProvider.id)
+                j.remove("soulSyncRelay")
+                j.put("version", 1).put("musicGrabber", JSONObject().put("url", connection.url).put("username", connection.username)
                     .put("password", connection.password).put("accountId", connection.accountId))
+            }
             return parse(j.toString(), source)
         }
     }
@@ -104,7 +134,7 @@ internal fun sharedAcquisitionUrl(raw: String): String {
     val url = acquisitionUrl(raw)
     val uri = URI(url)
     require(uri.scheme == "https" && !uri.host.endsWith(".invalid") && uri.path.split('/').none { it == ".." || it == "." }) {
-        "Shared access requires a reachable HTTPS MusicGrabber address"
+        "Shared access requires a reachable HTTPS address"
     }
     return url
 }

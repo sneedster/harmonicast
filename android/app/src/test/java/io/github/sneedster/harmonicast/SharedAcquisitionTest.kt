@@ -80,7 +80,7 @@ internal class SharedPlexStub(val source: PersonalPlexSource) : PlexHttp {
 class SharedAcquisitionTest {
     private val source = PersonalPlexSource("plex-resource-secret", "https://plex.example", "machine", "Server", "1", "Music", "plex-account-secret", false)
     @After fun resetLease() { SharedAcquisitionAccess.clear() }
-    private fun manager(store: AcquisitionMemory, plex: SharedPlexStub, mg: SharedGrabberStub,
+    private fun manager(store: AcquisitionMemory, plex: SharedPlexStub, mg: AcquisitionHttp,
         current: () -> PersonalPlexSource? = { source }) = SharedAcquisition(store, TestSecretCipher(), current, plex, mg, readSpacingMillis = 0)
 
     @Test fun strictRecordRejectsAmbiguityUnknownFieldsWrongSourceAndUnsafeEndpoints() {
@@ -150,6 +150,63 @@ class SharedAcquisitionTest {
         assertTrue(runCatching { c.submit(f.recordingId, "Guest", "room") }.isFailure)
         assertEquals(0, mg.posts)
         assertFalse(SharedAcquisitionRecord.parse(plex.summary, source).rooms)
+    }
+
+    @Test fun migratedPlexRecordLetsAnApprovedSharedHostRouteGuestRequestsThroughSoulSync() = runBlocking {
+        val f = AcquisitionFixture(); f.source = source
+        val plex = SharedPlexStub(source)
+        val before = SharedAcquisitionRecord.parse(plex.summary, source)
+        val key = "hcr_" + "a".repeat(64)
+        val relayUrl = "https://relay.example/harmonicast"
+        val calls = mutableListOf<String>()
+        val relay = object : AcquisitionHttp {
+            override suspend fun call(url: String, method: String, headers: Map<String, String>, body: JSONObject?): JSONObject {
+                assertEquals(mapOf("Authorization" to "Bearer $key"), headers)
+                calls += "$method $url"
+                return when (url) {
+                    "$relayUrl/v1/status" -> JSONObject().put("version", 1).put("scope", "track-request")
+                    "$relayUrl/v1/requests" -> {
+                        assertEquals("POST", method)
+                        assertEquals("Artist", body!!.getString("artist"))
+                        assertEquals("Track", body.getString("title"))
+                        JSONObject().put("receipt", "relay-request")
+                    }
+                    else -> error("Unexpected relay route")
+                }
+            }
+        }
+        val publisher = AcquisitionAccount(AcquisitionMemory(), TestSecretCipher(), relay, restricted = true)
+        val login = AcquisitionLogin(relayUrl, "", "", apiKeyMode = true, apiKey = key, providerId = SoulSyncRelayProvider.id)
+        assertTrue(runCatching { publisher.validate(login.copy(apiKey = "sk_admin")) }.isFailure)
+        assertTrue(calls.isEmpty())
+        val candidate = publisher.validate(login)
+        val migrated = SharedAcquisitionRecord.publish(before, source, candidate, rooms = true)
+        assertEquals(before.id, migrated.id)
+        assertEquals(before.revision + 1, migrated.revision)
+        assertFalse(migrated.json.has("musicGrabber"))
+        assertTrue(runCatching { SharedAcquisitionRecord.parse(migrated.encoded().replace(key, "sk_admin"), source) }.isFailure)
+        plex.summary = migrated.encoded()
+        val shared = manager(f.storage, plex, relay) { f.source }
+        val c = AcquisitionCoordinator(f.account, f.catalog, f.storage, { f.source }, { f.core() },
+            { if (f.inPlex) listOf(Song("plex:machine:1", "Track", "Artist", duration = 180)) else emptyList() }, false, shared)
+        val cap = RoomCapability.create()
+        c.roomId.value = "${cap.roomCode}:${cap.expiresAtMillis}"
+        val router = GuestRoomRouter(f.core(), cap, acquisition = c)
+        val request = GuestApiRequest("POST", "/v1/acquisition/requests", cap.bearer,
+            body = JSONObject().put("recordingId", f.recordingId).toString(), participantId = "guest")
+        assertTrue(c.checkAccess(true)); assertTrue(c.roomAllowed.value)
+        val accepted = router.route(request)
+        assertEquals(202, accepted.status)
+        assertFalse(accepted.body.contains(key)); assertFalse(accepted.body.contains(relayUrl))
+        assertEquals("relay-request", c.requests.value.single().importId)
+        f.inPlex = true
+        c.advance()
+        assertEquals("fulfilled", c.requests.value.single().status)
+
+        plex.summary = JSONObject(plex.summary).put("allowRoomAcquisition", false).toString()
+        assertTrue(c.checkAccess(true)); assertFalse(c.roomAllowed.value)
+        assertEquals(403, router.route(request).status)
+        assertEquals(1, calls.count { it.startsWith("POST ") })
     }
 
     @Test fun approvedSharedHostDefaultsOnWithoutDownloadingButKeepsRecipientOptOut() = runBlocking {

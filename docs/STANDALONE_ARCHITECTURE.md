@@ -22,9 +22,12 @@ and displays use the HTTP gateway and bundled pages hosted by the Android device
 Keep these room endpoints separate from Plex credentials and owner-only controls.
 Ending sharing revokes room access and disconnects guests.
 
-Requests take priority over the automatic mix, with fairness between participants.
-Guests can request and vote; Plex configuration and playback ownership stay with
-the owner. Internet guest control and a public relay are outside scope.
+Requests take priority over upcoming playlist tracks and the automatic mix, with
+fairness between participants. The current song finishes and the playlist then
+resumes in its original or shuffled order.
+Restart a playlist queued before this change to record its track provenance.
+Guests can request and vote over the nearby connection. Plex configuration and
+playback ownership stay with the host device.
 
 ## Native TV transfer
 

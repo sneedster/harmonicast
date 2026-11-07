@@ -136,7 +136,7 @@ internal data class CatalogLocation(val query: String, val mode: String = "searc
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { acquisition.checkAccess() }
     if (vm.isPersonalMode && vm.plexAccess.canSubmitAcquisition && state.configured && (vm.canWriteToPlex || grant?.rooms == true)) {
-        SettingsToggle("Allow music acquisition", "Let guests acquire missing tracks using this device's MusicGrabber connection. Accepted requests finish even if the room ends.", allowed, state.available || allowed) {
+        SettingsToggle("Allow music acquisition", "Let guests request missing tracks through this room’s music service. Accepted requests can finish after the room ends.", allowed, state.available || allowed) {
             scope.launch { try { acquisition.setRoomAllowed(it) } catch (e: Exception) { vm.error = safeAcquisitionError(e) } }
         }
         if (!state.available) {

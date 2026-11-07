@@ -1,3 +1,26 @@
+# Shared Plex relay and playlist request priority — November 7, 2026
+
+The signed Harmonicast 1.1.31 upgrade (96) includes shared SoulSync
+acquisition and request priority during playlist playback. The upgrade signature
+matches 1.1.30. The Android suite passed 454 tests, including the shared-host guest
+flow and saved playlist interruption. After the final settings subtitle edit,
+57 targeted tests, debug lint, and release assembly passed. The relay's three
+integration tests also passed.
+
+The relay runs on a loopback listener behind HTTPS. The personal `/api/v1` route
+remained available. Anonymous relay checks returned 401, the request key was
+rejected by the original SoulSync API, and the authenticated relay check passed
+against live SoulSync. No song was submitted in the live preflight.
+
+The existing **Harmonicast** Plex library and **Shared Access Setup** album
+were reused. Readback verified the locked version 2 record at revision 4, with
+shared and room acquisition enabled. The prior inactive summary is backed up in
+the relay appdata directory. The SoulSync admin key stays on the server. Only the
+request key is in the shared album. See [shared setup and revocation](SOULSYNC_SETUP.md#shared-plex-access).
+
+Installation, a real shared-host guest request through playback, and playlist
+interruption on a device remain to be verified.
+
 # Native wishlist adapter — November 5, 2026
 
 Harmonicast 1.1.30 (95) replaces the transfer-only SoulSync request adapter with

@@ -148,7 +148,7 @@ class LocalHarmonicastCore(
         }
         override suspend fun add(song: Song) = QueueTransactions.mutex.withLock {
             val current = songs()
-            val requested = song.copy(isManual = true)
+            val requested = song.copy(isManual = true, isPlaylistTrack = false)
             val updated = fairManualQueue(current + requested)
             writeSongs("local.queue", updated)
             LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
@@ -157,13 +157,13 @@ class LocalHarmonicastCore(
             val current = songs()
             if (current.count { it.isManual && it.addedByEmail == song.addedByEmail } + pending() >= 5)
                 throw AcquisitionFailure(429, "You already have 5 songs queued or being acquired")
-            writeSongs("local.queue", fairManualQueue(current + song.copy(isManual = true)))
+            writeSongs("local.queue", fairManualQueue(current + song.copy(isManual = true, isPlaylistTrack = false)))
             LocalCoreEvents.publish(CoreEvent.QUEUE_CHANGED)
         }
         override suspend fun addOnce(requestId: String, song: Song) = QueueTransactions.mutex.withLock {
             val fulfilled = JSONArray(storage.read("acquisition.fulfilled") ?: "[]")
             if ((0 until fulfilled.length()).any { fulfilled.getString(it) == requestId }) return@withLock
-            val updated = fairManualQueue(songs() + song.copy(isManual = true))
+            val updated = fairManualQueue(songs() + song.copy(isManual = true, isPlaylistTrack = false))
             fulfilled.put(requestId)
             storage.write(mapOf("local.queue" to JSONArray().apply { updated.forEach { put(encodeSong(it)) } }.toString(),
                 "acquisition.fulfilled" to fulfilled.toString()))
@@ -475,12 +475,12 @@ class LocalHarmonicastCore(
 
 internal fun shouldSkipAfterVote(up: Boolean, isAutoQueue: Boolean) = !up && isAutoQueue
 
-/** Round-robin each participant's requests while keeping the automatic tail last. */
+/** Round-robin each participant's requests before the ordered playlist or automatic tail. */
 internal fun fairManualQueue(songs: List<Song>): List<Song> {
-    val manual = songs.filter(Song::isManual)
-    val participantOrder = manual.map { it.addedByEmail.ifBlank { "Owner" } }.distinct()
+    val (requests, tail) = songs.partition { it.isManual && !it.isPlaylistTrack }
+    val participantOrder = requests.map { it.addedByEmail.ifBlank { "Owner" } }.distinct()
     val lanes = participantOrder.associateWith { participant ->
-        manual.filter { it.addedByEmail.ifBlank { "Owner" } == participant }
+        requests.filter { it.addedByEmail.ifBlank { "Owner" } == participant }
     }
     val fair = buildList {
         val longest = lanes.values.maxOfOrNull { it.size } ?: 0
@@ -488,7 +488,7 @@ internal fun fairManualQueue(songs: List<Song>): List<Song> {
             participantOrder.forEach { participant -> lanes.getValue(participant).getOrNull(index)?.let(::add) }
         }
     }
-    return fair + songs.filterNot(Song::isManual)
+    return fair + tail
 }
 
 fun harmonicastCore(api: AppStorage): HarmonicastCore = LocalHarmonicastCore(api.profile.personalSource, api.storage, offline = api.offline)

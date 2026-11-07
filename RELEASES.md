@@ -1,5 +1,22 @@
 # Releases
 
+## v1.1.31 — playlist requests and shared SoulSync
+
+Version code: **96**.
+
+- Give individual requests the same priority during playlist playback as during
+  Random Mix. The current song finishes, requests play, and the playlist resumes
+  in order. Restart playlists queued before the upgrade.
+- Let approved shared Plex hosts use SoulSync for music requests, including in
+  guest rooms when the owner permits it. The existing Plex setup album can point
+  to a request relay that keeps the SoulSync administrator key on the server.
+
+The full suite passed 454 Android tests. After the final settings copy edit,
+57 targeted tests, debug lint, and signed release assembly passed. The relay's
+three integration tests and live HTTPS and Plex configuration checks passed.
+Device playback and a real shared guest acquisition through playback remain
+unverified. See the [SoulSync setup guide](docs/SOULSYNC_SETUP.md).
+
 ## v1.1.30 — complete SoulSync acquisition
 
 Version code: **95**.

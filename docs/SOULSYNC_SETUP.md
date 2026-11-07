@@ -43,12 +43,10 @@ connection.
 
 ## Access and current limits
 
-The first adapter supports the owner's personal connection and guest requests
-through that owner's room, subject to existing room controls. Publishing a
-SoulSync key through the shared Plex configuration is not supported: SoulSync's
-admin API key is not equivalent to MusicGrabber's dedicated non-admin account.
-Existing shared-account setup continues to use MusicGrabber. The private
-MusicGrabber-specific bad-file replacement action is hidden on SoulSync.
+Your personal connection also serves guest requests in rooms you host, subject to
+the room toggle. To let shared Plex users acquire music and allow guest requests
+in rooms they host, use the [SoulSync request relay](#shared-plex-access). The
+private MusicGrabber bad-file replacement action remains specific to MusicGrabber.
 
 The configured URL must be reachable from the Android device. A LAN URL works
 on the home network; remote access needs a separately configured reachable
@@ -58,3 +56,44 @@ Tailscale Funnel API route was configured during this integration; see
 
 Disconnecting removes the app's saved key, but does not revoke the key on the
 server. Revoke it in SoulSync when it is no longer needed.
+
+## Shared Plex access
+
+Keep the dedicated **Harmonicast** Plex library and its existing setup album.
+The album's locked summary is how approved Plex clients find the connection.
+The owner can update the same record in Settings without creating a new library,
+album, or Plex share. The updated app reads both the older MusicGrabber format
+and the new SoulSync relay format. Recipients need an updated app before they can
+use a SoulSync record.
+
+1. Run `services/soulsync-relay/relay.py` with Python 3 or build the Dockerfile in
+   that directory. Set `SOULSYNC_URL` to the trusted SoulSync origin. Set
+   `SOULSYNC_KEY_FILE` and `REQUEST_KEY_FILE` to separate private files readable
+   by the process. The former contains a SoulSync admin key. Generate the latter
+   with `python3 -c 'import secrets; print("hcr_" + secrets.token_hex(32))'` and
+   write it directly into the private file. The container runs as UID/GID 65534.
+2. Use your HTTPS reverse proxy to publish only the relay path. The service
+   listens on `127.0.0.1:8097` by default. Use host networking for loopback
+   access, or set `BIND_HOST=0.0.0.0` in an isolated container network and bind
+   the host port to loopback. Strip the public path prefix so the service
+   receives `/v1/status` and `/v1/requests`. Never send unencrypted client
+   traffic to the relay across a network.
+3. In **Settings → Music acquisition → Manage shared access**, choose **SoulSync**.
+   Enter the relay HTTPS URL, including its path prefix, and the `hcr_` request
+   key. Test the connection, verify that SoulSync publishes to the selected Plex
+   library, and choose whether to permit acquisition in rooms hosted by shared
+   users. Review and publish. Harmonicast updates the locked album summary in place.
+4. Verify that an approved Plex recipient can request a missing track from a
+   room they host and that it joins the queue when Plex has a playable match.
+
+The relay accepts only single-track requests and a connection check. It holds
+the SoulSync admin key server-side, submits to the native wishlist, and starts
+normal wishlist processing. It never returns SoulSync data beyond the request
+receipt. The app checks Plex for completion and preserves room quotas and opt-outs.
+The relay allows up to 10 submissions per minute and 100 per rolling day across
+all holders of the key. Restarting it resets those limits.
+
+Removing a recipient's Plex access stops fresh app requests. A copied relay key
+can still submit outside the app. To revoke copies, rotate the request key on the
+relay, restart it, and publish the new key to your intended recipients. Disabling
+shared access in the app replaces the active summary with an inactive record.
